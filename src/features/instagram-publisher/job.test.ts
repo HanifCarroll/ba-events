@@ -49,6 +49,7 @@ class World {
   ig = new FakeInstagram()
   catalog = weekend()
   statuses = new Map<string, string>()
+  notInScope = new Set<string>()
   reactions: Array<{ name: string; users?: string[] }> = []
   /** Reactions on the Reel's preview; `reactions` covers every other preview. */
   reelReactions: Array<{ name: string; users?: string[] }> = []
@@ -79,7 +80,7 @@ class World {
       readCatalog: async (_window: RunWindow) => this.catalog,
       readEvents: async ids => new Map(ids.map(id => {
         const event = this.catalog.find(candidate => candidate.id === id)!
-        return [id, { status: this.statuses.get(id) ?? 'scheduled', startsAt: event.startsAt, endsAt: event.endsAt }]
+        return [id, { status: this.statuses.get(id) ?? 'scheduled', startsAt: event.startsAt, endsAt: event.endsAt, inScope: !this.notInScope.has(id) }]
       })),
       render: async (_html, outDir, _height) => {
         this.renderCount++
@@ -556,6 +557,17 @@ describe('tick: cancelled events', () => {
 })
 
 describe('tick: events checked at the real publishing time', () => {
+  it('does not publish an approved draft after a selected event loses its in-scope judgment', async () => {
+    const w = await previewed()
+    w.approve()
+    w.notInScope.add(uuid(3))
+    w.at('2026-11-19', 12)
+    await w.job().tick()
+    expect(w.ig.calls.filter(call => call.startsWith('POST'))).toEqual([])
+    expect(w.draft().state).toBe('held')
+    expect(w.replies()).toEqual(['Held: Evento 3 is no longer marked in scope. Ask Hermes to regenerate it.'])
+  })
+
   it('holds a late approval when an event has already ended', async () => {
     const w = new World()
     // Event 1 runs Friday 10:00 to 11:00: after Thursday's slot, so it is selected, but over before a Friday-noon ✅.

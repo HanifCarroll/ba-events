@@ -6,7 +6,7 @@ Define how the VPS job drafts the recurring @baeventos.app posts from the catalo
 ## Requirements
 
 ### Requirement: Posts show only qualifying intake events
-A post MUST show only events from the Instagram intake that are scheduled, have a real start time (not time-TBA, not all-day), a venue, and a barrio, and fall in the format's days. Hoy MUST show only events starting at 18:00 or later Buenos Aires time; Gratis MUST show only free events. A post MUST NOT show two events at the same venue.
+A post MUST show only events from the Instagram intake that are scheduled, marked `scope = 'in'`, have a real start time (not time-TBA, not all-day), a venue, and a barrio, and fall in the format's days. Hoy MUST show only events starting at 18:00 or later Buenos Aires time; Gratis MUST show only free events. A post MUST NOT show two events at the same venue.
 
 #### Scenario: Placeholder start time
 - **WHEN** an event starts at 23:59, or at 00:00 while its intake candidate has no time
@@ -74,6 +74,10 @@ Each draft MUST go to #ba-eventos as a new top-level message with every frame at
 #### Scenario: A selected event is cancelled before publishing
 - **WHEN** any selected event is no longer scheduled at the first write of a publishing attempt, including a retry
 - **THEN** the draft is held and the thread gets "Held: {title} was cancelled. Ask Hermes to regenerate it."
+
+#### Scenario: A selected event is out of scope or unjudged before publishing
+- **WHEN** a selected event is not marked `in` at the first write of a publishing attempt
+- **THEN** the draft is held and the thread explains which event is no longer marked in scope
 
 #### Scenario: A selected event is over by the time the post would go out
 - **WHEN** at the first write of a publishing attempt a selected event has ended, or has started and has no end time
