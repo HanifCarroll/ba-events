@@ -1,10 +1,36 @@
-import { mkdtempSync, readFileSync, statSync, writeFileSync, utimesSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync, utimesSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { runWindow } from './formats.ts'
-import { catalogSql, loadToken, mediaBin, renderFrames, renderReel, toCatalogEvent, type Runner } from './runtime.ts'
+import { catalogSql, loadToken, mediaBin, readConfig, renderFrames, renderReel, toCatalogEvent, type Runner } from './runtime.ts'
 import { reelTiming } from './reel/project.ts'
+
+describe('publisher config', () => {
+  it.each([
+    { bucket: '', publicBaseUrl: 'https://media.example.com' },
+    { bucket: ' \t ', publicBaseUrl: 'https://media.example.com' },
+    { bucket: 'test-media', publicBaseUrl: '' },
+    { bucket: 'test-media', publicBaseUrl: ' \n ' },
+    { bucket: 'test-media', publicBaseUrl: ' / ' },
+  ])('stays preview-only with incomplete R2 config: %j', r2 => {
+    const dir = mkdtempSync(join(tmpdir(), 'ig-config-'))
+    try {
+      const path = join(dir, 'publisher.json')
+      writeFileSync(path, JSON.stringify({ linkStickers: { hoy: true }, r2 }))
+      expect(readConfig(path)).toMatchObject({ linkStickers: { hoy: true }, r2: null })
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+
+  it('trims a configured bucket and public URL before use', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ig-config-'))
+    try {
+      const path = join(dir, 'publisher.json')
+      writeFileSync(path, '{"r2":{"bucket":" test-media ","publicBaseUrl":" https://media.example.com/ "}}')
+      expect(readConfig(path).r2).toEqual({ bucket: 'test-media', publicBaseUrl: 'https://media.example.com' })
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+})
 
 describe('catalog read', () => {
   it('is one read-only SELECT over the run window, intake events only', () => {

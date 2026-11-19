@@ -1,5 +1,6 @@
+import { runInNewContext } from 'node:vm'
 import { describe, expect, it } from 'vitest'
-import { needsFacebookSignIn } from './story-composer.ts'
+import { needsFacebookSignIn, selectMentionResult } from './story-composer.ts'
 import { eventFrameTag } from './instagram.ts'
 import { confirmsStory, exactMentionOption, stickerFrames } from './story-stickers.ts'
 
@@ -42,6 +43,32 @@ describe('Business Suite mention search', () => {
   it('does not select an ambiguous exact result', () => {
     expect(exactMentionOption(['venue.one\nVenue 1', '@venue.one\nVenue 2'], 'venue.one')).toBeUndefined()
   })
+
+  it.each([
+    { scenario: 'selects the exact result when Meta opens the list late', opens: true },
+    { scenario: 'skips the mention when Meta never opens the list', opens: false },
+  ])('$scenario', async ({ opens }) => {
+    let reads = 0
+    const clicked: string[] = []
+    const options = ['venue.one_ar\nvenue.one', 'venue.one\nVenue'].map(innerText => ({
+      innerText,
+      getClientRects: () => [1],
+      getAttribute: () => null,
+      click: () => clicked.push(innerText),
+    }))
+    const getAttribute = (name: string) => name === 'aria-controls' && ++reads > 1 && opens ? 'late-results' : null
+    const document = {
+      querySelectorAll: () => [{ getAttribute, getClientRects: () => [1] }],
+      getElementById: (id: string) => id === 'late-results' ? { querySelectorAll: () => options } : null,
+    }
+    const tab = {
+      async evaluateExpression<T>(expression: string): Promise<T> {
+        return runInNewContext(expression, { document, getComputedStyle: () => ({ visibility: 'visible' }) })
+      },
+    }
+    await expect(selectMentionResult(tab, 'venue.one')).resolves.toBe(opens)
+    expect(clicked).toEqual(opens ? ['venue.one\nVenue'] : [])
+  }, 10_000)
 })
 
 describe('Business Suite sign-in loss', () => {

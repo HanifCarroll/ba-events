@@ -69,7 +69,6 @@ function inspect(tab: StoryCDP, rules: Query, action: 'read' | 'scroll' | 'click
         clicked: Boolean(hit && node.contains(hit) && node.getAttribute('aria-disabled') !== 'true' && !node.hasAttribute('disabled')),
         focused: action === 'focus' && document.activeElement === node,
         selected: node.getAttribute('aria-selected') === 'true', pressed: node.getAttribute('aria-pressed') === 'true',
-        controls: node.getAttribute('aria-controls'),
         facebook: Boolean(node.querySelector('img[alt="Facebook"]')),
         src: node instanceof HTMLImageElement && node.complete && node.naturalHeight > 0 ? node.src : '',
       }
@@ -197,13 +196,13 @@ async function addLink(tab: StoryCDP, frame: StickerFrame) {
   await placeSticker(tab, sticker('^🔗\\s'), frame.centerY)
 }
 
-async function chooseMention(tab: StoryCDP, username: string) {
-  await click(tab, button('Mention', editor))
-  await fill(tab, mentionInput, username)
-  const id = (await one(tab, mentionInput)).controls
-  if (!id) throw new Error('The mention search has no results control.')
+export async function selectMentionResult(tab: Pick<StoryCDP, 'evaluateExpression'>, username: string) {
+  const selector = JSON.stringify(mentionInput.map(rule => rule.css).join(' '))
   // Match and select in the same browser task so the async list cannot reorder in between.
-  const select = (id: string, username: string, exact: typeof exactMentionOption) => {
+  const select = (selector: string, username: string, exact: typeof exactMentionOption) => {
+    const inputs = [...document.querySelectorAll(selector)].filter(input => input.getClientRects().length && getComputedStyle(input).visibility !== 'hidden')
+    const id = inputs.length === 1 ? inputs[0]?.getAttribute('aria-controls') : null
+    if (!id) return false
     const rows = [...document.getElementById(id)?.querySelectorAll<HTMLElement>('[role="option"]') ?? []]
       .filter(row => row.getClientRects().length && getComputedStyle(row).visibility !== 'hidden')
     const index = exact(rows.map(row => row.innerText), username)
@@ -212,12 +211,20 @@ async function chooseMention(tab: StoryCDP, username: string) {
     row.click()
     return true
   }
-  const expression = `(${select})(${JSON.stringify(id)},${JSON.stringify(username)},${exactMentionOption})`
+  const expression = `(${select})(${selector},${JSON.stringify(username)},${exactMentionOption})`
   const end = Date.now() + MENTION_LOOKUP_MS
   do {
     if (await tab.evaluateExpression<boolean>(expression)) return true
-    await delay(150)
+    const remaining = end - Date.now()
+    if (remaining > 0) await delay(Math.min(150, remaining))
   } while (Date.now() < end)
+  return false
+}
+
+async function chooseMention(tab: StoryCDP, username: string) {
+  await click(tab, button('Mention', editor))
+  await fill(tab, mentionInput, username)
+  if (await selectMentionResult(tab, username)) return true
   await fill(tab, mentionInput, '')
   return false
 }
