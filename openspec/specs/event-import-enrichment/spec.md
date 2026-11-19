@@ -262,6 +262,9 @@ The agent SHALL submit validated structured candidates with supporting observati
 #### Scenario: A date, time or address appears only on an official page
 - **WHEN** a candidate cites `{ kind: 'official_page', url, excerpt }` evidence for a field the post doesn't state
 - **THEN** preview and commit each fetch the URL themselves (public HTTPS hosts only, no cookies, bounded size and time) and accept it only when the page's visible text contains the excerpt after whitespace-, case- and accent-insensitive normalization
+- **AND** on El Camarín de las Musas's Fanz event page with an explicit `eventDateId`, date and time evidence must quote the selected same-day performance's date-picker line and match its own event title, full local date, and start time; ordinary page text cannot substitute for that line, and a performance that has already started does not produce one
+- **AND** a scheme-less `www.` domain in a cited caption counts as a linked site even with trailing sentence punctuation; an unmentioned domain does not
+- **AND** a redirect to a Queue-it waiting room is not fetched and tells the operator to cite another official page
 - **AND** the candidate still needs at least one Instagram observation, caption evidence still requires an exact excerpt, and a correction of an existing event still needs the organizer's or venue's own post
 
 #### Scenario: A flyer describes several occurrences or several posts promote one occurrence
@@ -273,6 +276,10 @@ The agent SHALL submit validated structured candidates with supporting observati
 - **THEN** exactly one venue with the same normalized name and no conflicting address or barrio returns that venue, and several same-name venues, a conflicting location, a similar name, a possible alias, or another venue at the same address returns `ambiguous` without writing anything
 - **AND** a similar-name or alias candidate no longer blocks creation once the operator lists it in `distinct_from` with a reason, which is kept with the evidence; a same-name or same-address candidate always blocks
 - **AND** otherwise a venue is created only inside the city of Buenos Aires with a valid barrio, its evidence is kept as an approved `instagram-intake` row in `venue_review_queue`, and repeating the request returns the same venue
+- **AND** before creating, completing, or correcting a venue, Nominatim or USIG confirms the exact CABA street type, name, and house number; failures or lack of an exact match never authorize a write
+- **AND** catalog duplicate checks flag avenue and plain spellings of the same street and number as possible matches (for example, `Av. Rivadavia 4732`, `Rivadavia Av. 4732`, and `Rivadavia 4732`), except that Sarmiento and Avenida Sarmiento are different streets; geocoding still requires the exact street type
+- **AND** competing exact CABA and Provincia matches in USIG, or an exact Provincia match in Nominatim, hold unless the address or evidence explicitly identifies CABA or names a CABA barrio as a locality and USIG confirms a single matching CABA street without overriding a supplied non-CABA locality; a barrio name used only as a street name does not identify the city
+- **AND** multiple matching CABA street codes in USIG or a stated barrio that conflicts with USIG or the official `suburb` of an exact Nominatim result return `ambiguous` without writing; an informal `neighbourhood` mismatch alone does not block a write
 - **AND** the `held` operation lists unpublished future candidates grouped by venue with their hold reasons
 
 ### Requirement: Intake publication is transactional and revision checked

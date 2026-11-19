@@ -366,20 +366,21 @@ describe.skipIf(bun)('the operator flow on D1', () => {
   })
 
   it('resolves venues: creates with evidence, finds it again, fills an empty barrio, and stops on a lookalike', async () => {
-    const geocode = () => Effect.succeed({ lat: '0', lon: '0', display_name: 'synthetic',
-      address: { state: 'Ciudad Autónoma de Buenos Aires', suburb: 'Almagro', country_code: 'ar' } })
+    const geocode = (address: string) => Effect.succeed({ lat: '0', lon: '0', display_name: 'synthetic',
+      address: { state: 'Ciudad Autónoma de Buenos Aires', suburb: 'Almagro', country_code: 'ar',
+        ...(address === 'Calle Otra 55' ? { road: 'Calle Otra', house_number: '55' } : { road: 'Avenida Ficticia', house_number: '1234' }) } })
     const request = (fields: Record<string, unknown> = {}) => decodeVenueRequest({ name: 'Sala Sintética', address: 'Av. Ficticia 1234',
       neighborhood: 'Almagro', evidence: [{ url: 'https://example.org/sala', confirms: 'name and address on the official site' }], ...fields })
-    const created = await run(resolveIntakeVenueEffect(store, request(), geocode as never))
+    const created = await run(resolveIntakeVenueEffect(store, request(), { geocode }))
     expect(created).toMatchObject({ outcome: 'created', venue: { name: 'Sala Sintética', neighborhood: 'Almagro', address: 'Av. Ficticia 1234' } })
-    expect(await run(resolveIntakeVenueEffect(store, request(), geocode as never))).toMatchObject({ outcome: 'existing' })
+    expect(await run(resolveIntakeVenueEffect(store, request(), { geocode }))).toMatchObject({ outcome: 'existing' })
     const log = await db.prepare("SELECT source, status, final_venue_id FROM venue_review_queue").all()
     expect(log.results).toEqual([{ source: 'instagram-intake', status: 'approved', final_venue_id: (created as { venue: { id: string } }).venue.id }])
 
     const empty = await venue('Teatro Vacío', null, null)
-    expect(await run(resolveIntakeVenueEffect(store, request({ name: 'Teatro Vacío', address: 'Calle Otra 55' }), geocode as never)))
+    expect(await run(resolveIntakeVenueEffect(store, request({ name: 'Teatro Vacío', address: 'Calle Otra 55' }), { geocode })))
       .toMatchObject({ outcome: 'existing', venue: { id: empty, neighborhood: 'Almagro', address: 'Calle Otra 55' }, completed: ['address', 'neighborhood'] })
-    expect(await run(resolveIntakeVenueEffect(store, request({ name: 'Sala Sintetica 2', address: 'Lejana 900' }), geocode as never)))
+    expect(await run(resolveIntakeVenueEffect(store, request({ name: 'Sala Sintetica 2', address: 'Lejana 900' }), { geocode })))
       .toMatchObject({ outcome: 'ambiguous' })
   })
 
