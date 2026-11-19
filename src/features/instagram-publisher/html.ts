@@ -21,8 +21,7 @@ export const STORY_SAFE = { top: 250, bottom: 1670 } as const
 
 const coverInner = (c: ReturnType<typeof cover>) => `<div class='kicker'>${escape(c.kicker)}</div>
  <div class='serif' style='font-size:${c.headline.length === 1 ? 112 : 128}px;line-height:.98;letter-spacing:-3px;margin-top:30px'>${c.headline.map(line => `<span style='white-space:nowrap'>${escape(line)}</span>`).join('<br>')}</div>
- <div style='font-size:42px;margin-top:48px;color:rgba(255,255,255,.9)'>${escape(c.body)}</div>
- ${c.english ? `<div style='font-size:30px;margin-top:28px;color:rgba(255,255,255,.65)'>${escape(c.english)}</div>` : ''}`
+ <div style='font-size:42px;margin-top:48px;color:rgba(255,255,255,.9)'>${escape(c.body)}</div>`
 
 const cardText = (format: FormatKey, event: PostEvent) => `<div class='kicker'>${escape(cardKicker(format, event))}</div>
  <div class='serif' style='font-size:${titleSize(event.title)}px;line-height:1.02;letter-spacing:-2px;margin-top:34px'>${escape(event.title)}</div>

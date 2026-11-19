@@ -22,7 +22,7 @@ export const HOY_CLOSING = {
   footer: 'baeventos.com',
 } as const
 
-export interface Cover { kicker: string; headline: [string, string] | [string]; body: string; english: string | null }
+export interface Cover { kicker: string; headline: [string, string] | [string]; body: string }
 
 export function cover(format: FormatKey, window: RunWindow, count: number): Cover {
   const n = numberWord(count, 'es')
@@ -31,10 +31,9 @@ export function cover(format: FormatKey, window: RunWindow, count: number): Cove
       kicker: longDate(window.from),
       headline: ['Hoy en Buenos Aires'],
       body: `${n} planes para esta noche.`,
-      english: `Tonight in Buenos Aires: ${numberWord(count, 'en').toLowerCase()} independent events.`,
     }
-    case 'finde': return { kicker: dateRange(window.from, window.to), headline: ['Este finde', 'en Buenos Aires'], body: `${n} planes independientes para elegir.`, english: null }
-    case 'gratis': return { kicker: dateRange(window.from, window.to), headline: ['Gratis', 'esta semana'], body: `${n} planes gratis en Buenos Aires para elegir.`, english: null }
+    case 'finde': return { kicker: dateRange(window.from, window.to), headline: ['Este finde', 'en Buenos Aires'], body: `${n} planes independientes para elegir.` }
+    case 'gratis': return { kicker: dateRange(window.from, window.to), headline: ['Gratis', 'esta semana'], body: `${n} planes gratis en Buenos Aires para elegir.` }
     case 'reel': throw new Error('The Reel has no frame cover; see reel/project.ts')
   }
 }

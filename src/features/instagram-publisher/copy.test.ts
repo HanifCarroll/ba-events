@@ -44,7 +44,7 @@ Six independent events this weekend in Buenos Aires. More at baeventos.com.`)
 
   it('matches the live cover and card text', () => {
     const window = runWindow('finde', '2026-11-20')
-    expect(cover('finde', window, 6)).toEqual({ kicker: '20 al 22 de noviembre', headline: ['Este finde', 'en Buenos Aires'], body: 'Seis planes independientes para elegir.', english: null })
+    expect(cover('finde', window, 6)).toEqual({ kicker: '20 al 22 de noviembre', headline: ['Este finde', 'en Buenos Aires'], body: 'Seis planes independientes para elegir.' })
     expect(cardKicker('finde', weekend[1]!)).toBe('Sábado 21 · 11:00 a 16:30')
   })
 })
@@ -57,7 +57,7 @@ describe('Gratis esta semana', () => {
     expect(text).toContain('\nViernes 20, 21:00. Demián Ornstein Trío en @gelsomina_cultural, San Cristóbal.\n')
     expect(text.endsWith('Five free events this week in Buenos Aires. More at baeventos.com.')).toBe(true)
     const window = runWindow('gratis', '2026-11-30')
-    expect(cover('gratis', window, 5)).toEqual({ kicker: '30 de noviembre al 6 de diciembre', headline: ['Gratis', 'esta semana'], body: 'Cinco planes gratis en Buenos Aires para elegir.', english: null })
+    expect(cover('gratis', window, 5)).toEqual({ kicker: '30 de noviembre al 6 de diciembre', headline: ['Gratis', 'esta semana'], body: 'Cinco planes gratis en Buenos Aires para elegir.' })
   })
 })
 
@@ -85,7 +85,6 @@ describe('Hoy', () => {
       kicker: 'Miércoles 18 de noviembre',
       headline: ['Hoy en Buenos Aires'],
       body: 'Tres planes para esta noche.',
-      english: 'Tonight in Buenos Aires: three independent events.',
     })
     expect(cardKicker('hoy', weekend[0]!)).toBe('Hoy · 21:00')
     expect(caption('hoy', weekend)).toBeNull()
