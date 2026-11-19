@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 import { render } from 'svelte/server'
 import * as m from '#paraglide/messages.js'
 import { agendaEvent } from '../../../../tests/support/home-agenda.ts'
@@ -14,9 +14,14 @@ const events = Array.from({ length: 4 }, (_, index) => agendaEvent(
 ))
 
 // Bun's native runner has no Svelte compiler; Vitest's server project compiles these fixtures.
-describe('homepage server-rendered agenda', () => {
-  it.skipIf('Bun' in globalThis)('puts responsive artwork, titles, and event links in HTML before hydration', async () => {
-    const { default: HomeAgenda } = await import('../components/HomeAgenda.svelte')
+describe.skipIf('Bun' in globalThis)('homepage server-rendered agenda', () => {
+  let HomeAgenda: typeof import('../components/HomeAgenda.svelte').default
+
+  beforeAll(async () => {
+    ({ default: HomeAgenda } = await import('../components/HomeAgenda.svelte'))
+  }, 60_000)
+
+  it('puts responsive artwork, titles, and event links in HTML before hydration', () => {
     const { body } = render(HomeAgenda, { props: { agenda: { window, events }, url: new URL('https://example.test/'), onAsk() {}, onFilter() {} } })
     expect(body.match(/<source /g)).toHaveLength(4)
     expect(body).toContain('/api/event-artwork/')
@@ -27,10 +32,9 @@ describe('homepage server-rendered agenda', () => {
     expect(body.match(/loading="eager"/g)).toHaveLength(2)
     expect(body.match(/loading="lazy"/g)).toHaveLength(2)
     expect(body.match(/fetchpriority="high"/g)).toHaveLength(1)
-  }, 30_000)
+  })
 
-  it.skipIf('Bun' in globalThis)('server-renders selected and empty filter URLs, and links to other views', async () => {
-    const { default: HomeAgenda } = await import('../components/HomeAgenda.svelte')
+  it('server-renders selected and empty filter URLs, and links to other views', () => {
     const props = { agenda: { window, events }, onAsk() {}, onFilter() {} }
     const today = render(HomeAgenda, { props: { ...props, url: new URL('https://example.test/?f=hoy') } }).body
     expect(today).toContain('href="/?f=finde"')
@@ -42,5 +46,5 @@ describe('homepage server-rendered agenda', () => {
     const failed = render(HomeAgenda, { props: { ...props, agenda: null, url: new URL('https://example.test/') } }).body
     expect(failed).toContain(m.home_empty_feed())
     expect(failed).not.toContain('<article')
-  }, 30_000)
+  })
 })
