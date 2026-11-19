@@ -32,6 +32,7 @@ const homeRelative = (text: string) => text.replaceAll(`${homedir()}/`, '~/')
 const history = (n: number) => `${n}${n % 100 >= 11 && n % 100 <= 13 ? 'th' : ({ 1: 'st', 2: 'nd', 3: 'rd' })[n % 10] ?? 'th'} failed try in a row`
 const codes = (...parts: Array<string | undefined>) => parts.filter(Boolean).join(' · ')
 const errorCode = (message: string) => `\`${message}\``
+const composerEvidence = (dir?: string) => dir ? `composer evidence ${errorCode(homeRelative(dir))}` : undefined
 
 export function describeFailure(error: unknown): Failure {
   const raw = error instanceof Error ? error.message : String(error)
@@ -127,7 +128,7 @@ export function stickersFallback(draft: Draft, failure: StickerFailure) {
     `⚠️ *The ${label(draft)} went out on Instagram without tappable links*. ${TRIAGE}`,
     failure.signIn ? 'Hermes needs to sign Facebook in again in the Pro agent browser.'
       : `The publisher could not ${failure.step}. Hermes should check Business Suite before the next Hoy Story.`,
-    codes(draft.id, failure.signIn ? 'Business Suite sign-in required' : undefined),
+    codes(draft.id, failure.signIn ? 'Business Suite sign-in required' : undefined, composerEvidence(failure.evidenceDir)),
   ].join('\n')
 }
 
@@ -136,7 +137,7 @@ export function storyUnconfirmed(draft: Draft, now: Date, error?: string) {
   return [
     `🚨 *The ${label(draft)} is on hold*: the publisher couldn't confirm all its frames by ${when(deadline, now)}. ${TRIAGE}`,
     `Hermes needs to check @baeventos.app Stories. The publisher won't share it again.`,
-    codes(draft.id, `Expected ${draft.storyShare!.frameCount} new frames`, error && errorCode(error)),
+    codes(draft.id, `Expected ${draft.storyShare!.frameCount} new frames`, error && errorCode(error), composerEvidence(draft.storyShare?.evidenceDir)),
   ].join('\n')
 }
 

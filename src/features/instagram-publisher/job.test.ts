@@ -586,7 +586,11 @@ describe('Hoy link stickers', () => {
 
   it('falls back before Share, says why, and reports that the Story went out without links', async () => {
     const { w, load, advance } = await hoy()
-    w.composeStory = async () => { throw new StoryComposerError('open the Business Suite story composer', true) }
+    const evidence = join(w.dir, 'drafts', load().id, 'composer-failure-test')
+    w.composeStory = async (_frames, action) => {
+      expect('evidenceDir' in action && action.evidenceDir).toBe(join(w.dir, 'drafts', load().id))
+      throw new StoryComposerError('open the Business Suite story composer', true, evidence)
+    }
     // Leave one unclear Graph write and confirm it resumes via Graph next tick, never through the browser.
     w.ig.publishFault = 'after'
     await advance()
@@ -599,6 +603,8 @@ describe('Hoy link stickers', () => {
     expect(load().storyShare).toBeUndefined()
     expect(w.alerts[0]?.text).toContain('went out on Instagram without tappable links')
     expect(w.alerts[0]?.text).toContain('Hermes needs to sign Facebook in again in the Pro agent browser.')
+    expect(load().stickerFallback?.evidenceDir).toBe(evidence)
+    expect(w.alerts[0]?.text).toContain(evidence)
   })
 
   it.each(['removed approval', 'rejection', 'deadline', 'cancelled event'])('re-checks %s after composing and does not fall back', async changed => {
@@ -652,18 +658,21 @@ describe('Hoy link stickers', () => {
 
   it('holds an unconfirmed Share at the deadline, including when Graph is unavailable', async () => {
     const { w, load, advance } = await hoy()
+    const evidence = join(w.dir, 'drafts', load().id, 'composer-failure-test')
     w.composeStory = async (_frames, action) => {
       if (!('beforeShare' in action)) throw new Error('Expected Share callback')
       await action.beforeShare(new AbortController().signal, [])
       w.ig.postStoryByHand()
-      return []
+      throw new StoryComposerError('read the Share result', false, evidence)
     }
     await advance()
+    expect(load().storyShare?.evidenceDir).toBe(evidence)
     w.ig.get = async () => { throw new Error('Graph unavailable') }
     w.at(date, 19)
     await advance()
     expect(load().state).toBe('held')
     expect(w.alerts[0]?.text).toContain('Hermes needs to check @baeventos.app Stories.')
+    expect(w.alerts[0]?.text).toContain(evidence)
     await expect(w.job().regenerate(load().id, [])).rejects.toThrow("can't be rebuilt")
     expect(w.r2).toEqual([])
     expect(w.ig.published).toEqual([])

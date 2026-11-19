@@ -2,7 +2,7 @@ import { runInNewContext } from 'node:vm'
 import { describe, expect, it } from 'vitest'
 import { needsFacebookSignIn, selectMentionResult } from './story-composer.ts'
 import { eventFrameTag } from './instagram.ts'
-import { confirmsStory, exactMentionOption, stickerFrames } from './story-stickers.ts'
+import { confirmsStory, exactMentionOption, retryComposerOnce, stickerFrames, StoryComposerError } from './story-stickers.ts'
 
 describe('Hoy sticker frames', () => {
   it.each([2, 3, 4])('uses the saved frame and event order for %i events', count => {
@@ -87,6 +87,22 @@ describe('Business Suite sign-in loss', () => {
   it('does not mistake a composer error for sign-in loss', () => {
     expect(needsFacebookSignIn('https://business.facebook.com/latest/story_composer/', 'missing Edit')).toBe(false)
   })
+})
+
+it('tries a fresh composer at most once after a recoverable pre-Share error', async () => {
+  const error = new StoryComposerError('add the link sticker', false, undefined, true)
+  let attempts = 0
+  await expect(retryComposerOnce(async () => { attempts++; throw error }, new AbortController().signal)).rejects.toBe(error)
+  expect(attempts).toBe(2)
+})
+
+it.each([
+  { error: new StoryComposerError('read the Share result'), signal: new AbortController().signal },
+  { error: new StoryComposerError('add the link sticker', false, undefined, true), signal: AbortSignal.abort() },
+])('does not retry $error after the Share gate or flow deadline', async ({ error, signal }) => {
+  let attempts = 0
+  await expect(retryComposerOnce(async () => { attempts++; throw error }, signal)).rejects.toBe(error)
+  expect(attempts).toBe(1)
 })
 
 it('only confirms the exact number of new, unique Stories in the attempt window', () => {

@@ -1,16 +1,18 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { STEP_MS, openStoryTab, type StoryCDP } from './story-cdp.ts'
-import { exactMentionOption, StoryComposerError, type ComposeStory, type StickerFrame } from './story-stickers.ts'
+import { STEP_MS, openStoryTab, StoryCDPTimeout, type StoryCDP } from './story-cdp.ts'
+import { saveComposerEvidence } from './story-evidence.ts'
+import { exactMentionOption, retryComposerOnce, StoryComposerError, type ComposeStory, type StickerFrame } from './story-stickers.ts'
 
 const COMPOSER_URL = new URL('https://business.facebook.com/latest/story_composer/?asset_id=1442212152312492&business_id=1500991868617721')
 const ACCOUNT = 'baeventos.app'
 const SIGN_IN_TEXT = 'Unable to access Meta Business Suite'
 const FLOW_MS = 6 * 60_000
+const COMPOSER_LOAD_MS = 30_000
 const MENTION_LOOKUP_MS = 5_000
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 
-type Rule = { css: string; name?: string; pattern?: string; flags?: string; leaf?: boolean; index?: number; up?: number }
+type Rule = { css: string; name?: string; pattern?: string; flags?: string; index?: number; up?: number }
 type Query = Rule[]
 type Point = { x: number; y: number }
 type Box = Point & { width: number; height: number }
@@ -25,7 +27,6 @@ const preview: Query = [{ css: 'img#instagram_story_preview_media' }]
 const linkUrl: Query = [{ css: 'input[type="text"]', name: 'Link' }]
 const customText: Query = [{ css: 'input[type="text"]', pattern: '^Custom sticker text' }]
 const mentionInput: Query = [...editor, { css: 'input[role="combobox"][placeholder="Search for name"]' }]
-const signInError: Query = [{ css: 'div,span', pattern: SIGN_IN_TEXT, leaf: true }]
 const at = (query: Query, index: number): Query => [...query.slice(0, -1), { ...query.at(-1)!, index }]
 const parent = (query: Query, up: number): Query => [...query.slice(0, -1), { ...query.at(-1)!, up }]
 const sticker = (pattern: string, flags?: string): Query => [...editor, { css: 'div[style*="margin-left:"][style*="margin-top:"][style*="transform: rotate("]', pattern, flags }]
@@ -36,7 +37,7 @@ export function needsFacebookSignIn(url: string, message = ''): boolean {
 }
 
 /** Read the owned tab, optionally scrolling a control into view or focusing an input. */
-function inspect(tab: StoryCDP, rules: Query, action: 'read' | 'scroll' | 'clickPoint' | 'focus' = 'read') {
+function inspect(tab: StoryCDP, rules: Query, action: 'read' | 'scroll' | 'clickPoint' | 'activate' | 'focus' = 'read') {
   return tab.evaluate((rules, action) => {
     const normalized = (text: string) => text.replace(/\u200b/g, '').replace(/\s+/g, ' ').trim()
     const name = (node: HTMLElement) => {
@@ -52,21 +53,23 @@ function inspect(tab: StoryCDP, rules: Query, action: 'read' | 'scroll' | 'click
         const label = name(node)
         return (rule.name === undefined || label === rule.name) && (!pattern || pattern.test(label))
       })
-      if (rule.leaf) nodes = nodes.filter(node => !nodes.some(other => other !== node && node.contains(other)))
       if (rule.index !== undefined) nodes = nodes.slice(rule.index === -1 ? -1 : rule.index, rule.index === -1 ? undefined : rule.index + 1)
       for (let up = 0; up < (rule.up ?? 0); up++) nodes = nodes.flatMap(node => node.parentElement ? [node.parentElement] : [])
       roots = nodes
     }
     const one = nodes.length === 1 ? nodes[0] : undefined
-    if (one && (action === 'scroll' || action === 'clickPoint')) one.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' })
+    const wantsHit = action === 'clickPoint' || action === 'activate'
+    if (one && (action === 'scroll' || wantsHit)) one.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' })
     if (one && action === 'focus' && one instanceof HTMLInputElement) { one.focus(); one.select() }
     return nodes.map(node => {
       const { x, y, width, height } = node.getBoundingClientRect()
-      const hit = action === 'clickPoint' && document.elementFromPoint(x + width / 2, y + height / 2)
+      const hit = wantsHit && document.elementFromPoint(x + width / 2, y + height / 2)
+      const clickable = Boolean(hit && node.contains(hit) && node.getAttribute('aria-disabled') !== 'true' && !node.hasAttribute('disabled'))
+      if (one === node && action === 'activate' && clickable) (hit instanceof HTMLElement ? hit : node).click()
       return {
         text: node.innerText, name: name(node), box: { x, y, width, height },
         docBox: { x: x + scrollX, y: y + scrollY, width, height },
-        clicked: Boolean(hit && node.contains(hit) && node.getAttribute('aria-disabled') !== 'true' && !node.hasAttribute('disabled')),
+        clicked: clickable,
         focused: action === 'focus' && document.activeElement === node,
         selected: node.getAttribute('aria-selected') === 'true', pressed: node.getAttribute('aria-pressed') === 'true',
         facebook: Boolean(node.querySelector('img[alt="Facebook"]')),
@@ -78,14 +81,14 @@ function inspect(tab: StoryCDP, rules: Query, action: 'read' | 'scroll' | 'click
 
 const single = <T>(items: T[]): T | undefined => items.length === 1 ? items[0] : undefined
 
-async function until<T>(read: () => Promise<T | undefined | false>, ms = STEP_MS, interval = 100): Promise<T> {
+async function until<T>(read: () => Promise<T | undefined | false>, ms = STEP_MS, interval = 100, expected = 'the expected control'): Promise<T> {
   const end = Date.now() + ms
   do {
     const result = await read()
     if (result !== undefined && result !== false) return result
     await delay(interval)
   } while (Date.now() < end)
-  throw new Error('Business Suite did not show the expected control.')
+  throw new Error(`Business Suite did not show ${expected}.`)
 }
 
 const visible = async (tab: StoryCDP, query: Query) => (await inspect(tab, query)).length > 0
@@ -108,11 +111,15 @@ async function clickPoint(tab: StoryCDP, point: Point) {
 async function click(tab: StoryCDP, query: Query, timeout?: number) {
   await clickPoint(tab, centerOf((await until(() => hit(tab, query), timeout)).box))
 }
+// React controls can move before a remote pointer click arrives. Resolve and activate editor controls in one task.
+async function activate(tab: StoryCDP, query: Query, timeout?: number) {
+  await until(async () => single(await inspect(tab, query, 'activate'))?.clicked, timeout, 100, query.at(-1)?.name ?? 'the expected control')
+}
 async function key(tab: StoryCDP, name: string, code: number) {
   for (const type of ['keyDown', 'keyUp']) await tab.send('Input.dispatchKeyEvent', { type, key: name, code: name, windowsVirtualKeyCode: code })
 }
 async function fill(tab: StoryCDP, query: Query, value: string) {
-  const input = await until(async () => single(await inspect(tab, query, 'focus')) || undefined)
+  const input = await until(async () => single(await inspect(tab, query, 'focus')), STEP_MS, 100, query.at(-1)?.name ?? query.at(-1)?.pattern ?? 'the text input')
   if (!input.focused) throw new Error('The composer input did not get focus.')
   if (value) await tab.send('Input.insertText', { text: value })
   else await key(tab, 'Backspace', 8)
@@ -120,8 +127,7 @@ async function fill(tab: StoryCDP, query: Query, value: string) {
 
 async function verifyDestination(tab: StoryCDP) {
   await until(async () => {
-    const destination = single(await inspect(tab, combo))
-    const now = single(await inspect(tab, button('Share now')))
+    const [destination, now] = (await Promise.all([inspect(tab, combo), inspect(tab, button('Share now'))])).map(single)
     return destination?.text.replace(/\u200b/g, '').trim() === ACCOUNT && !destination.facebook && now?.pressed
   })
 }
@@ -144,18 +150,24 @@ async function upload(tab: StoryCDP, frames: StickerFrame[]) {
   if (!backendNodeId) throw new Error('The browser did not report the chooser input.')
   const { executionContextId } = await tab.send<{ executionContextId: number }>('Page.createIsolatedWorld', { frameId, worldName: 'instagram-publisher' })
   const { object } = await tab.send<{ object: { objectId: string } }>('DOM.resolveNode', { backendNodeId, executionContextId })
-  const files = frames.map(({ path }, index) => ({ name: `frame-${index + 1}.jpg`, bytes: readFileSync(path).toString('base64') }))
-  const setFiles = function (this: HTMLInputElement, files: Array<{ name: string; bytes: string }>) {
+  const appendFile = function (this: HTMLInputElement, name: string, bytes: string, last: boolean) {
     const transfer = new DataTransfer()
-    for (const { name, bytes } of files) transfer.items.add(new File([Uint8Array.from(atob(bytes), char => char.charCodeAt(0))], name, { type: 'image/jpeg' }))
+    for (const file of this.files ?? []) transfer.items.add(file)
+    transfer.items.add(new File([Uint8Array.fromBase64(bytes)], name, { type: 'image/jpeg' }))
     this.files = transfer.files
-    this.dispatchEvent(new Event('input', { bubbles: true, composed: true }))
-    this.dispatchEvent(new Event('change', { bubbles: true }))
+    if (last) {
+      this.dispatchEvent(new Event('input', { bubbles: true, composed: true }))
+      this.dispatchEvent(new Event('change', { bubbles: true }))
+    }
   }
-  const result = await tab.send<{ exceptionDetails?: unknown }>('Runtime.callFunctionOn', {
-    objectId: object.objectId, functionDeclaration: setFiles.toString(), arguments: [{ value: files }], userGesture: true,
-  })
-  if (result.exceptionDetails) throw new Error('The composer did not accept the selected JPEGs.')
+  // Send one frame per tunnel request; only the completed selection should reach Meta.
+  for (const [index, { path }] of frames.entries()) {
+    const values = [`frame-${index + 1}.jpg`, readFileSync(path).toString('base64'), index === frames.length - 1]
+    const result = await tab.send<{ exceptionDetails?: unknown }>('Runtime.callFunctionOn', {
+      objectId: object.objectId, functionDeclaration: appendFile.toString(), arguments: values.map(value => ({ value })), userGesture: true,
+    })
+    if (result.exceptionDetails) throw new Error('The composer did not accept the selected JPEGs.')
+  }
   await tab.send('Page.setInterceptFileChooserDialog', { enabled: false })
   await until(async () => (await inspect(tab, mediaRows)).length === frames.length)
 }
@@ -164,8 +176,11 @@ async function drag(tab: StoryCDP, from: Point, to: Point) {
   await mouse(tab, 'mouseMoved', from)
   await mouse(tab, 'mousePressed', from, 1)
   try {
-    for (let i = 1; i <= 12; i++) await mouse(tab, 'mouseMoved', { x: from.x + (to.x - from.x) * i / 12, y: from.y + (to.y - from.y) * i / 12 }, 1)
-    // Meta coalesces drag events; give it time to process the last movement before releasing.
+    // Separate the moves so Chrome doesn't coalesce a resize into a single pointer event.
+    for (const progress of [0.25, 0.6, 1]) {
+      await mouse(tab, 'mouseMoved', { x: from.x + (to.x - from.x) * progress, y: from.y + (to.y - from.y) * progress }, 1)
+      await delay(50)
+    }
     await delay(150)
   } finally { await mouse(tab, 'mouseReleased', to) }
   await delay(150)
@@ -186,13 +201,19 @@ async function placeSticker(tab: StoryCDP, item: Query, centerY: number, left?: 
 }
 
 async function addLink(tab: StoryCDP, frame: StickerFrame) {
-  await click(tab, button('More stickers', editor))
-  // The frame-level Add link button is Facebook-only; this is the Instagram sticker tile.
-  await click(tab, button('Create link sticker', editor))
+  // Opening Edit can leave the crop panel active while the media loads. Only retry the menu click from Crop.
+  const createLink = button('Create link sticker', editor)
+  await until(async () => {
+    if (await visible(tab, createLink)) return true
+    if (await visible(tab, button('Original', editor))) await activate(tab, button('More stickers', editor))
+    return false
+  }, STEP_MS, 300, 'the sticker menu')
+  // The link tile opens a popover; use pointer input so its outside-click handler sees the right sequence.
+  await click(tab, createLink)
   await fill(tab, linkUrl, frame.url)
   if (await visible(tab, customText)) await fill(tab, customText, frame.text)
   await click(tab, at(button('Apply'), -1))
-  await until(async () => !await visible(tab, linkUrl))
+  await until(async () => !await visible(tab, linkUrl), STEP_MS, 100, 'the link form close')
   await placeSticker(tab, sticker('^🔗\\s'), frame.centerY)
 }
 
@@ -222,7 +243,7 @@ export async function selectMentionResult(tab: Pick<StoryCDP, 'evaluateExpressio
 }
 
 async function chooseMention(tab: StoryCDP, username: string) {
-  await click(tab, button('Mention', editor))
+  await activate(tab, button('Mention', editor))
   await fill(tab, mentionInput, username)
   if (await selectMentionResult(tab, username)) return true
   await fill(tab, mentionInput, '')
@@ -287,35 +308,55 @@ async function capturePreviews(tab: StoryCDP, dir: string, count: number) {
 }
 
 async function discard(tab: StoryCDP) {
-  await key(tab, 'Escape', 27)
-  if (await visible(tab, editor)) await click(tab, button('Cancel', editor), 2_000)
-  await click(tab, button('Cancel'), 2_000)
-  await click(tab, button('Discard changes'), 2_000)
+  if (await visible(tab, editor)) {
+    await activate(tab, button('Cancel', editor))
+    await until(async () => !await visible(tab, editor))
+  }
+  const confirm = button('Discard changes')
+  // A failed cleanup may already have opened the confirmation dialog.
+  if (!await visible(tab, confirm)) await activate(tab, button('Cancel'))
+  await activate(tab, confirm)
+  await until(async () => new URL(await locationOf(tab).catch(() => COMPOSER_URL.href)).pathname !== COMPOSER_URL.pathname)
 }
 
 const locationOf = (tab: StoryCDP) => tab.evaluate(() => location.href)
+const signInErrorOnPage = (tab: StoryCDP) => tab.evaluate(text => document.body?.innerText.includes(text), SIGN_IN_TEXT)
 
-export const composeStory: ComposeStory = async (frames, action) => {
+async function composeAttempt(frames: StickerFrame[], action: Parameters<ComposeStory>[1], cap: AbortSignal) {
   let owned: Awaited<ReturnType<typeof openStoryTab>> | undefined
+  let evidenceTab: StoryCDP | undefined
+  let lastUrl = ''
   let editing = false
+  let shareGateEntered = false
   let shareAttempted = false
   let step = 'reach the Pro agent browser'
-  const cap = AbortSignal.timeout(FLOW_MS)
   const expire = () => owned?.tab.close()
   cap.addEventListener('abort', expire, { once: true })
   try {
+    cap.throwIfAborted()
     owned = await openStoryTab()
+    cap.throwIfAborted()
     const { tab } = owned
     await tab.send('Emulation.setFocusEmulationEnabled', { enabled: true })
     step = 'open the Business Suite story composer'
     const navigation = await tab.send<{ errorText?: string }>('Page.navigate', { url: COMPOSER_URL.href })
     if (navigation.errorText) throw new Error(navigation.errorText)
+    // Navigation can finish before Meta has mounted the composer; only initial readiness gets a longer window.
     await until(async () => {
-      const url = await locationOf(tab).catch(() => '')
-      if (!url) return false
-      if (needsFacebookSignIn(url) || await visible(tab, signInError)) throw new StoryComposerError(step, true)
-      return visible(tab, button('Add photo/video'))
-    })
+      const page = await tab.evaluate(text => ({
+        url: location.href,
+        signInError: document.body?.innerText.includes(text),
+        ready: [...document.querySelectorAll<HTMLElement>('button,[role="button"]')].some(node =>
+          (node.getAttribute('aria-label') ?? node.innerText).trim() === 'Add photo/video' && node.getClientRects().length > 0),
+      }), SIGN_IN_TEXT).catch(error => {
+        if (tab.connected && (error instanceof StoryCDPTimeout || error instanceof Error && /execution context/i.test(error.message))) return undefined
+        throw error
+      })
+      if (!page) return false
+      lastUrl = page.url
+      if (needsFacebookSignIn(page.url) || page.signInError) throw new StoryComposerError(step, true)
+      return page.ready
+    }, COMPOSER_LOAD_MS, 250, 'the Story composer')
     step = 'select only Instagram and Share now'
     editing = true
     if ('previewDir' in action && await visible(tab, button('Instagram story'))) await click(tab, button('Instagram story'))
@@ -326,13 +367,13 @@ export const composeStory: ComposeStory = async (frames, action) => {
     for (const [index, frame] of frames.entries()) {
       step = `add the link sticker to frame ${index + 1} in Business Suite`
       const edit = button('Edit', at(mediaRows, index))
-      await click(tab, edit)
+      await activate(tab, edit)
       await addLink(tab, frame)
       if (frame.mention) {
         step = `add the mention sticker to frame ${index + 1} in Business Suite`
         if (!await addMention(tab, frame.mention)) skippedMentions.push(frame.mention)
       }
-      await click(tab, button('Apply', editor))
+      await activate(tab, button('Apply', editor))
       await until(async () => !await visible(tab, editor))
       await one(tab, edit)
     }
@@ -351,27 +392,49 @@ export const composeStory: ComposeStory = async (frames, action) => {
     cap.throwIfAborted()
     // Errors from approval, catalog, or state checks are not browser errors.
     step = ''
+    shareGateEntered = true
     await action.beforeShare(cap, skippedMentions)
     shareAttempted = true
     step = 'share the Instagram Story in Business Suite'
     cap.throwIfAborted()
     await click(tab, button('Share'))
+    step = 'read the Business Suite Share result'
     // Keep the tab alive while Meta handles the async request. Only Graph can confirm the result.
-    await until(async () => new URL(await locationOf(tab)).pathname !== COMPOSER_URL.pathname, 30_000, 500).catch(() => {})
+    await until(async () => new URL(await locationOf(tab)).pathname !== COMPOSER_URL.pathname, 30_000, 500, 'the composer close after Share')
     return skippedMentions
   } catch (error) {
-    if (!step || error instanceof StoryComposerError) throw error
+    const known = error instanceof StoryComposerError ? error : undefined
+    if (!step && !known) throw error
     const message = error instanceof Error ? error.message : String(error)
-    const tab = owned?.tab
-    const signIn = needsFacebookSignIn(tab && !cap.aborted ? await locationOf(tab).catch(() => '') : '', message)
-      || (tab && !cap.aborted && await visible(tab, signInError).catch(() => false))
-    throw new StoryComposerError(cap.aborted ? 'finish the Business Suite flow within six minutes' : step, signIn)
+    const failedStep = known?.step ?? (cap.aborted ? 'finish the Business Suite flow within six minutes' : step)
+    const commandTimedOut = error instanceof StoryCDPTimeout
+    // A stalled socket can report OPEN while neither a URL read nor a screenshot comes back.
+    if (owned && (commandTimedOut || !owned.tab.connected)) evidenceTab = await owned.reconnect().catch(() => undefined)
+    const tab = evidenceTab ?? owned?.tab
+    const [url, image, signInErrorVisible] = await Promise.all([
+      tab ? locationOf(tab).catch(() => '') : '',
+      tab?.send<{ data: string }>('Page.captureScreenshot', { format: 'jpeg', quality: 65 }).catch(() => undefined),
+      tab && !known && !cap.aborted && signInErrorOnPage(tab).catch(() => false),
+    ])
+    const root = 'previewDir' in action ? action.previewDir : action.evidenceDir
+    let evidenceDir: string | undefined
+    try { evidenceDir = saveComposerEvidence(root, failedStep, url || lastUrl, message, image?.data) }
+    catch { console.warn(`Could not save composer failure evidence in ${root}.`) }
+    const signIn = known?.signIn || needsFacebookSignIn(url || lastUrl, message) || Boolean(signInErrorVisible)
+    // Never retry a flow that reached the callback which persists the Share marker.
+    throw new StoryComposerError(failedStep, signIn, evidenceDir, commandTimedOut && !signIn && !shareGateEntered)
   } finally {
     try {
-      if (owned && editing && !shareAttempted && !cap.aborted) await discard(owned.tab).catch(() => {})
+      if (owned && editing && !shareAttempted && !cap.aborted) await discard(evidenceTab ?? owned.tab).catch(() => {})
     } finally {
       cap.removeEventListener('abort', expire)
+      evidenceTab?.close()
       await owned?.close()
     }
   }
+}
+
+export const composeStory: ComposeStory = (frames, action) => {
+  const cap = AbortSignal.timeout(FLOW_MS)
+  return retryComposerOnce(() => composeAttempt(frames, action, cap), cap)
 }
