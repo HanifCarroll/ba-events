@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict'
+import { writeFileSync } from 'node:fs'
 // @ts-expect-error Bun-only fixture; application type checking has no Bun test declarations.
 import { mock } from 'bun:test'
 import { Effect } from 'effect'
 import type { RequestEvent } from '@sveltejs/kit'
 
-const mode = process.argv[2]
+const [, , output, mode] = process.argv
 const started: string[] = []
 const writes: unknown[] = []
 let release!: () => void
@@ -75,4 +76,4 @@ if (mode === 'events') {
   assert.match(await response.text(), /Chat turn unavailable/)
   assert.deepEqual(writes, ['failed'])
 }
-console.log(JSON.stringify({ mode, passed: true }))
+writeFileSync(output, JSON.stringify({ mode, passed: true }))

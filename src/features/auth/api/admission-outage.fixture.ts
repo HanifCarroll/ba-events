@@ -1,4 +1,5 @@
 /** Isolated real route probe: no backend credentials or external requests. */
+import { writeFileSync } from 'node:fs'
 import type { RequestEvent } from '@sveltejs/kit'
 
 Object.assign(process.env, { ADMIN_API_KEY: 'test-only-key', NODE_ENV: 'production',
@@ -19,4 +20,4 @@ for (const [name, method, handler] of [['events-read', 'GET', events.GET], ['eve
   const response = await handler(event)
   results.push({ name, status: response.status, retryAfter: response.headers.get('Retry-After'), body: await response.json() })
 }
-console.log(JSON.stringify({ results, networkCalls, downstream }))
+writeFileSync(process.argv[2], JSON.stringify({ results, networkCalls, downstream }))
