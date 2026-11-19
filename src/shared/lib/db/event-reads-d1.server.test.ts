@@ -74,11 +74,14 @@ async function linkIntakeEvidence(eventIds: string[]) {
 }
 
 describe('public event reads on D1', () => {
-  it('home agenda: only scheduled, in-scope events in the local week and at most four later', async () => {
+  it('home agenda: only scheduled, in-scope events with artwork in the local week and at most four later', async () => {
     const window = homeWindow(new Date('2026-11-19T08:00:00.000Z'))
     const bar = await venue('Bar Sintético', { neighborhood: 'Palermo', address: 'Calle Falsa 123' })
     const older = await event('Ayer en Buenos Aires', { starts_at: '2026-11-19T02:59:59.999Z' })
-    const first = await event('Empieza hoy a medianoche', { starts_at: window.start, image_url: null })
+    const first = await event('Empieza hoy a medianoche', { starts_at: window.start })
+    const missingImage = await event('Sin foto', { starts_at: window.start, image_url: null })
+    const emptyImage = await event('Foto vacía', { starts_at: window.start, image_url: '' })
+    const laterMissingImage = await event('Sin foto después de la semana', { starts_at: window.end, image_url: null })
     const linked = await event('Jazz a la gorra', { venue_id: bar, starts_at: window.tomorrow, is_free: false, facets: { eventType: ['concert'] } })
     const hidden = await event('Lugar privado', { venue_id: bar, location_hidden: true, starts_at: '2026-11-21T20:00:00.000Z' })
     const unconfirmed = await event('Lugar por confirmar', { venue_id: bar, location_tba: true, starts_at: '2026-11-22T20:00:00.000Z' })
@@ -91,14 +94,14 @@ describe('public event reads on D1', () => {
     }
     await linkIntakeEvidence([linked, out])
     await db.batch([
-      ...[older, first, linked, hidden, unconfirmed, canceled, ...tail].map(eventId =>
+      ...[older, first, linked, hidden, unconfirmed, canceled, missingImage, emptyImage, laterMissingImage, ...tail].map(eventId =>
         db.prepare("UPDATE events SET scope = 'in' WHERE id = ?").bind(eventId)),
       db.prepare("UPDATE events SET scope = 'out' WHERE id = ?").bind(out),
     ])
 
     const cards = await getHomeAgendaEvents(window)
     expect(cards.map(card => card.id)).toEqual([first, linked, hidden, unconfirmed, ...tail.slice(0, 4)])
-    expect(cards[0]).toMatchObject({ image_url: null, sourceUrl: null, music: false, payWhatYouCan: false })
+    expect(cards[0]).toMatchObject({ image_url: 'https://images.lumacdn.com/uploads/a.png', sourceUrl: null, music: false, payWhatYouCan: false })
     expect(cards[1]).toMatchObject({ sourceUrl: 'https://www.instagram.com/p/fixture/', price: null, is_free: false,
       payWhatYouCan: true, music: true, venue_name: 'Bar Sintético', venue_neighborhood: 'Palermo' })
     expect(cards[1]).not.toHaveProperty('venue_address')

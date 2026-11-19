@@ -8,6 +8,7 @@ export type HomeEventCard = Pick<ChatEventPayload,
   'venue_name' | 'venue_neighborhood' | 'price' | 'is_free'>
 
 export type HomeAgendaEvent = HomeEventCard & {
+  image_url: string
   is_all_day: boolean
   location_hidden: boolean
   location_tba: boolean

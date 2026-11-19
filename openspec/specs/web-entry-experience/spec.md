@@ -80,11 +80,11 @@ The desktop chat sidebar and mobile menu SHALL display a localized Privacy link 
 - **AND** activating the mobile link closes the menu and opens the privacy policy
 
 ### Requirement: The MCP entry addresses AI assistant users
-The homepage link to MCP setup SHALL address people using AI assistants without implying that building software is required, and SHALL retain the public beta label.
+The homepage link to MCP setup SHALL address people using AI assistants without implying that building software is required, and SHALL NOT include a beta label.
 
 #### Scenario: Visitor reads the MCP setup link
 - **WHEN** the homepage renders in English or Spanish
-- **THEN** the link invites AI assistant users to connect BA Eventos and identifies the integration as public beta
+- **THEN** the link invites AI assistant users to connect BA Eventos without a beta label
 
 ### Requirement: MCP setup includes Claude and ChatGPT instructions
 The MCP setup page SHALL provide localized Claude web and desktop connector instructions followed by ChatGPT web plugin instructions. Both SHALL use the public endpoint without BA Eventos sign-in and link to their official setup guides. The page SHALL NOT claim verification in a client unless the project has verified it.

@@ -36,15 +36,17 @@ type AgendaRow = Omit<HomeAgendaEvent, 'is_free' | 'time_tba' | 'is_all_day' | '
   sourceUrl: string | null
 }
 
+const AGENDA_ELIGIBLE = "e.scope = 'in' AND e.status = 'scheduled' AND e.image_url IS NOT NULL AND e.image_url <> ''"
+
 /** The whole local week plus a short tail for date filters with no matches. */
 export async function homeAgendaD1(db: D1Database, window: HomeWindow): Promise<HomeAgendaEvent[]> {
   const { results } = await db.prepare(`
     WITH selected AS (
-      SELECT id FROM events WHERE scope = 'in' AND status = 'scheduled' AND starts_at >= ? AND starts_at < ?
+      SELECT e.id FROM events e WHERE ${AGENDA_ELIGIBLE} AND e.starts_at >= ? AND e.starts_at < ?
       UNION ALL
       SELECT id FROM (
-        SELECT id FROM events WHERE scope = 'in' AND status = 'scheduled' AND starts_at >= ?
-        ORDER BY starts_at, id LIMIT ?
+        SELECT e.id FROM events e WHERE ${AGENDA_ELIGIBLE} AND e.starts_at >= ?
+        ORDER BY e.starts_at, e.id LIMIT ?
       )
     )
     SELECT e.id, e.name, e.starts_at, e.time_tba, e.is_all_day, e.image_url, e.image_width, e.image_height,

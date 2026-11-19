@@ -24,24 +24,18 @@
 
 <article class="min-w-0 border-b border-[#3b3b42] pb-3">
 	<a href={`/events/${encodeURIComponent(event.id)}`} class="group block">
-		{#if event.image_url}
-			<EventArtwork
-				eventId={event.id}
-				imageUrl={event.image_url}
-				imageWidth={event.image_width}
-				imageHeight={event.image_height}
-				sizes={HOME_ARTWORK_SIZES}
-				aspectRatio="4 / 3"
-				alt={event.name}
-				loading={index < 2 ? 'eager' : 'lazy'}
-				fetchpriority={index === 0 ? 'high' : 'auto'}
-				class="w-full rounded-none! bg-[#1d1d23]!"
-			/>
-		{:else}
-			<div aria-hidden="true" class="grid aspect-[4/3] place-content-center overflow-hidden border border-[#534768] bg-[#261f32] p-5 text-center text-[#e5d8ff]">
-				<span class="line-clamp-4 font-display text-3xl leading-none font-semibold wrap-anywhere sm:text-4xl">{event.name}</span>
-			</div>
-		{/if}
+		<EventArtwork
+			eventId={event.id}
+			imageUrl={event.image_url}
+			imageWidth={event.image_width}
+			imageHeight={event.image_height}
+			sizes={HOME_ARTWORK_SIZES}
+			aspectRatio="4 / 3"
+			alt={event.name}
+			loading={index < 2 ? 'eager' : 'lazy'}
+			fetchpriority={index === 0 ? 'high' : 'auto'}
+			class="w-full rounded-none! bg-[#1d1d23]!"
+		/>
 		<div class="space-y-1 pt-3 wrap-anywhere">
 			<time datetime={event.starts_at} class="block font-mono text-xs text-[#d0ff36] sm:text-sm">
 				{formatShortDate(event.starts_at)}{#if event.time_tba}{' · '}{m.concierge_time_tba()}{:else if !event.is_all_day}{' · '}{formatTime(event.starts_at)}{/if}

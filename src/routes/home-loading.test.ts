@@ -23,7 +23,7 @@ describe('homepage event discovery', () => {
     const response = await GET(event() as unknown as Parameters<typeof GET>[0])
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual({ success: true, data: [{
-      id: 'event-1', name: 'event-1', starts_at: events[0].starts_at, time_tba: false, image_url: null,
+      id: 'event-1', name: 'event-1', starts_at: events[0].starts_at, time_tba: false, image_url: events[0].image_url,
       image_width: null, image_height: null, venue_name: 'Sala sintética', venue_neighborhood: 'Almagro', price: null, is_free: false,
     }], meta: { total: 1 } })
     for (const [key, value] of Object.entries(HOME_FEED_HEADERS)) expect(response.headers.get(key)).toBe(value)

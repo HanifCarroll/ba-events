@@ -56,10 +56,14 @@ Event detail and summaries SHALL distinguish BA Eventos pages, original event so
 - **THEN** the link remains identified as external source evidence rather than BA Eventos-authored fact
 
 ### Requirement: The homepage reads the in-scope agenda from a shared cache
-The homepage SHALL load scheduled events with `events.scope = 'in'`, from the start of the current Buenos Aires date through the next six local dates, soonest first. An intake link, description, or image SHALL NOT be required. The query MAY also load the first four in-scope scheduled events after this window for labeled date-filter fallbacks. Hidden or unconfirmed venue data SHALL NOT be exposed. The view SHALL render in server HTML even on a cache miss.
+The homepage SHALL load scheduled events with `events.scope = 'in'`, from the start of the current Buenos Aires date through the next six local dates, soonest first. Events SHALL have a non-empty catalog image URL. An intake link or description SHALL NOT be required. The query MAY also load the first four in-scope scheduled events after this window for labeled date-filter fallbacks. Hidden or unconfirmed venue data SHALL NOT be exposed. The view SHALL render in server HTML even on a cache miss.
 
 #### Scenario: An event awaits classification or is out of scope
 - **WHEN** an event has NULL or `'out'` scope
+- **THEN** it appears in neither the weekly agenda nor the date-filter fallback
+
+#### Scenario: An otherwise eligible event lacks artwork
+- **WHEN** its catalog image URL is NULL or empty
 - **THEN** it appears in neither the weekly agenda nor the date-filter fallback
 
 #### Scenario: A new Buenos Aires date begins

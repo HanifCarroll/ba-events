@@ -2,7 +2,7 @@ import { getHomeAgendaEvents } from '#shared/lib/db/client.server.ts'
 import { HOME_FEED_FRESH_SECONDS, HOME_FEED_STALE_SECONDS, homeWindow, type HomeAgenda, type HomeAgendaEvent, type HomeWindow } from '../lib/home-feed.ts'
 import type { PublicCache } from './platform-cache.ts'
 
-const CACHE_PREFIX = 'https://baeventos.com/__cache/home-feed-v3'
+const CACHE_PREFIX = 'https://baeventos.com/__cache/home-feed-v4'
 type Entry = { events: HomeAgendaEvent[]; storedAt: number }
 type Options = { cache?: PublicCache; retain?: (task: Promise<unknown>) => void; now?: () => number; load?: (window: HomeWindow) => Promise<HomeAgendaEvent[]> }
 
