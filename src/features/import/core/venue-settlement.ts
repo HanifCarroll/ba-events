@@ -9,7 +9,7 @@
  */
 import { Data, Effect } from 'effect'
 import { findSameNameVenuesEffect, matchVenueEffect, type VenueMatchResult } from '../scrapers/venue-matcher.ts'
-import { addressKey, pickVenue } from './venue-identity.ts'
+import { addressKey, pickVenue, trimVenueName } from './venue-identity.ts'
 import {
   lookupNeighborhoodTieredEffect,
   delayEffect,
@@ -257,8 +257,8 @@ export function settleVenueEffect(
   }
 ): Effect.Effect<VenueSettlementResult, VenueSettlementError> {
   return Effect.gen(function* () {
-    // Handle empty/null names
-    if (!input.name || input.name.trim() === '') {
+    const venueName = trimVenueName(input.name ?? '')
+    if (!venueName) {
       return {
       venueId: null,
       action: 'skipped',
@@ -266,8 +266,6 @@ export function settleVenueEffect(
       venueName: input.name || '',
       } satisfies VenueSettlementResult
     }
-
-    const venueName = input.name.trim()
 
   // Check for placeholder addresses (e.g., "Register to See Address")
   // These should not create venues - the event should be marked with location_hidden instead
@@ -325,9 +323,10 @@ export function settleVenueEffect(
         Effect.mapError((error) => settlementError('venue-settlement.business-lookup', error.message, error))
       )
 
-      if (businessLookup.name) {
-        console.log(`[venue-settlement] Found business "${businessLookup.name}" at address "${venueName}"`)
-        resolvedVenueName = businessLookup.name
+      const businessName = trimVenueName(businessLookup.name ?? '')
+      if (businessName) {
+        console.log(`[venue-settlement] Found business "${businessName}" at address "${venueName}"`)
+        resolvedVenueName = businessName
         addressLookupNeighborhood = businessLookup.neighborhood
       } else {
         console.log(`[venue-settlement] No business found at address "${venueName}", will use address as venue name`)
@@ -491,7 +490,7 @@ export async function settleVenue(
  * Importers pass one input per event and look each event up with its own name and address.
  */
 export function venueSettlementKey(name: string, address: string | null | undefined): string {
-  return `${name.trim().toLowerCase()}\u0000${addressKey(address) ?? ''}`
+  return `${trimVenueName(name).toLowerCase()}\u0000${addressKey(address) ?? ''}`
 }
 
 /**

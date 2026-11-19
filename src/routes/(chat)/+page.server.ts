@@ -1,7 +1,8 @@
 import type { PageServerLoad } from './$types'
 import { readHomeFeed, homeFeedOptions } from '#features/events/api/home-feed.server.ts'
 
-export const load: PageServerLoad = async ({ platform }) => {
+export const load: PageServerLoad = async ({ platform, depends }) => {
+  depends('ba:home-agenda')
   try {
     return { homeAgenda: await readHomeFeed(homeFeedOptions(platform)) }
   } catch (cause) {

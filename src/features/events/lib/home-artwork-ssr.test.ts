@@ -2,9 +2,10 @@ import { beforeAll, describe, expect, it } from 'vitest'
 import { render } from 'svelte/server'
 import * as m from '#paraglide/messages.js'
 import { agendaEvent } from '../../../../tests/support/home-agenda.ts'
-import { homeWindow } from './home-feed.ts'
+import { homeWindow, parseHomeFilter, selectHomeView, type HomeAgendaEvent } from './home-feed.ts'
 
-const window = homeWindow(new Date('2026-11-19T14:00:00Z'))
+const asOf = Date.parse('2026-11-19T14:00:00Z')
+const window = homeWindow(new Date(asOf))
 const events = Array.from({ length: 4 }, (_, index) => agendaEvent(
   `00000000-0000-4000-8000-00000000000${index}`, index < 3 ? '2026-11-19T18:00:00.000Z' : '2026-11-20T18:00:00.000Z', {
     name: index === 0 ? 'Jam sintética' : `Evento sintético ${index}`,
@@ -21,8 +22,15 @@ describe.skipIf('Bun' in globalThis)('homepage server-rendered agenda', () => {
     ({ default: HomeAgenda } = await import('../components/HomeAgenda.svelte'))
   }, 60_000)
 
+  function renderAgenda(href: string, occurrences: HomeAgendaEvent[] | null = events) {
+    const url = new URL(href, 'https://example.test')
+    const filter = parseHomeFilter(url.searchParams.get('f'))
+    const view = occurrences ? selectHomeView({ window, events: occurrences, asOf }, filter) : { events: [], empty: 'feed' as const }
+    return render(HomeAgenda, { props: { view, filter, url, onAsk() {}, onFilter() {} } }).body
+  }
+
   it('puts responsive artwork, titles, and event links in HTML before hydration', () => {
-    const { body } = render(HomeAgenda, { props: { agenda: { window, events }, url: new URL('https://example.test/'), onAsk() {}, onFilter() {} } })
+    const body = renderAgenda('/')
     expect(body.match(/<source /g)).toHaveLength(4)
     expect(body).toContain('calc((100vw - 44px) / 2)')
     expect(body).toContain('/api/event-artwork/')
@@ -36,7 +44,7 @@ describe.skipIf('Bun' in globalThis)('homepage server-rendered agenda', () => {
   })
 
   it('renders contained 4:5 flyers and puts glossary triggers inside the original text', () => {
-    const { body } = render(HomeAgenda, { props: { agenda: { window, events }, url: new URL('https://example.test/'), onAsk() {}, onFilter() {} } })
+    const body = renderAgenda('/')
     expect(body.match(/aspect-ratio:\s*4 \/ 5/g)).toHaveLength(4)
     const cards = [...body.matchAll(/<article\b.*?<\/article>/gs)].map(([card]) => card)
     const title = cards[0]?.match(/<h2\b.*?<\/h2>/s)?.[0]
@@ -47,16 +55,29 @@ describe.skipIf('Bun' in globalThis)('homepage server-rendered agenda', () => {
     expect(body.match(/aria-controls="gloss-/g)).toHaveLength(2)
   })
 
+  it('renders the remaining times and links to the next upcoming slot', () => {
+    const fields = { name: 'Visita guiada', venue_id: 'sala' }
+    const occurrences = [
+      agendaEvent('ended', '2026-11-19T10:00:00.000Z', fields),
+      agendaEvent('running', '2026-11-19T13:00:00.000Z', fields),
+      agendaEvent('upcoming', '2026-11-19T15:00:00.000Z', fields),
+    ]
+    const body = renderAgenda('/?f=hoy', occurrences)
+    expect(body.match(/<article\b/g)).toHaveLength(1)
+    expect(body).toContain('href="/events/upcoming"')
+    expect(body).toMatch(/<time[^>]+13:00:00.000Z[^>]*>[^<]+<\/time>.* · .*<time[^>]+15:00:00.000Z/s)
+    expect(body).not.toContain('10:00:00.000Z')
+  })
+
   it('server-renders selected and empty filter URLs, and links to other views', () => {
-    const props = { agenda: { window, events }, onAsk() {}, onFilter() {} }
-    const today = render(HomeAgenda, { props: { ...props, url: new URL('https://example.test/?f=hoy') } }).body
+    const today = renderAgenda('/?f=hoy')
     expect(today).toContain('href="/?f=finde"')
     expect(today).toContain('Evento sintético 2')
     expect(today).not.toContain('Evento sintético 3')
-    const free = render(HomeAgenda, { props: { ...props, url: new URL('https://example.test/?f=gratis') } }).body
+    const free = renderAgenda('/?f=gratis')
     expect(free).toContain(m.home_empty_free())
     expect(free).not.toContain('<article')
-    const failed = render(HomeAgenda, { props: { ...props, agenda: null, url: new URL('https://example.test/') } }).body
+    const failed = renderAgenda('/', null)
     expect(failed).toContain(m.home_empty_feed())
     expect(failed).not.toContain('<article')
   })

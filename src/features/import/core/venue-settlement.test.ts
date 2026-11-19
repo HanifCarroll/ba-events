@@ -113,6 +113,15 @@ describe('barrio-named venues across imports', () => {
 })
 
 describe('settleVenue with duplicate and lookalike catalog names', () => {
+  it('drops dangling venue separators from BA Tourism without changing internal dashes', async () => {
+    const { client, rows } = venuesTable()
+    const input = { name: 'Sala Norte-Sur — - ', address: 'Calle Norte 100', neighborhood: 'Palermo' }
+    const { results } = await settleVenues(client, [input], { source: 'ba-tourism' })
+    expect(getVenueIdFromResults(results, input.name, input.address)).toBe('created-1')
+    expect(rows).toMatchObject([{ name: 'Sala Norte-Sur', address: 'Calle Norte 100' }])
+    expect(await settleVenue(client, { ...input, name: '— - ' }, { source: 'ba-tourism' })).toMatchObject({ action: 'skipped' })
+    expect(rows).toHaveLength(1)
+  })
   it('matches a stored name with doubled or non-breaking spaces and a city suffix', async () => {
     const { client } = venuesTable([{ id: 'sala', name: 'Sala\u00a0Sintética  - Buenos Aires', address: 'Av. Ficticia 1234', neighborhood: 'Almagro' }])
     expect(await settleVenue(client, { name: 'SALA SINTETICA' }, { source: 'meetup' })).toMatchObject({ venueId: 'sala', action: 'matched', method: 'exact' })
