@@ -58,6 +58,8 @@ export function writeJson(path: string, value: unknown) {
 export interface Config {
   /** Per-format auto mode: publish at the slot unless Hanif reacted ❌. Off by default. */
   auto: Record<FormatKey, boolean>
+  /** Hoy can use Business Suite when enabled. Off by default. */
+  linkStickers: { hoy: boolean }
   /** R2 bucket and its public base URL (no trailing slash). Publishing is skipped until both are set. */
   r2: { bucket: string; publicBaseUrl: string } | null
   /** The Reel's music directory (tracks.json and the audio files), outside the repo. */
@@ -71,7 +73,7 @@ export function readConfig(): Config {
     ? { bucket: raw.r2.bucket, publicBaseUrl: raw.r2.publicBaseUrl.replace(/\/+$/, '') }
     : null
   const musicDir = typeof raw.reel?.musicDir === 'string' ? raw.reel.musicDir.replace(/^~(?=\/)/, HOME) : join(HOME, '.local/share/ba-events/reel-music')
-  return { auto, r2, reel: { musicDir } }
+  return { auto, linkStickers: { hoy: raw.linkStickers?.hoy === true }, r2, reel: { musicDir } }
 }
 
 // Lock: one tick or command at a time.
