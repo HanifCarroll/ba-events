@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import type { RequestEvent } from '@sveltejs/kit'
+import type { ChatTurnBootstrapInput } from '../../src/features/chat/api/turn-authority.ts'
 import { runSchemathesis } from './schemathesis.mjs'
 import { handleTelegramWebhook } from '../../src/features/telegram/webhook.server.ts'
 import { openTelegramEnvelope } from '../../src/features/telegram/envelope.server.ts'
@@ -22,6 +23,7 @@ await runSchemathesis(async (origin: string) => {
   const { db, dispose } = await freshD1()
   await db.prepare('INSERT INTO profiles (id, email) VALUES (?, ?)').bind(ownerId, 'owner@example.test').run()
   let writes = 0
+  const bootstrappedTurns = new Map<string, string>()
   useD1Binding({ DB: { prepare: db.prepare.bind(db), batch: (...args: Parameters<typeof db.batch>) => {
     writes++
     return db.batch(...args)
@@ -38,18 +40,24 @@ await runSchemathesis(async (origin: string) => {
       }
       if (url.pathname === '/api/chat/bootstrap' && request.method === 'POST') {
         const before = writes
-        const input = await request.clone().json().catch(() => null) as { turnId: string } | null
+        const input = await request.clone().json().catch(() => null) as ChatTurnBootstrapInput | null
         const response = await bootstrap.POST(event)
         if (response.status === 200) {
-          assert.ok(user)
+          assert.ok(user && input)
           const { turn } = await response.clone().json() as { turn: { content: string; id: string } }
-          assert.equal(turn.id, input?.turnId)
+          // A replay of the same submission returns its original durable turn ID.
+          const submission = JSON.stringify([user.id, input.conversationId, input.userClientMessageId])
+          assert.equal(turn.id, bootstrappedTurns.get(submission) ?? input.turnId)
           assert.ok(turn.content.trim())
-          assert.deepEqual(await db.prepare(`SELECT c.user_id, m.content FROM chat_turns t
-            JOIN conversations c ON c.id = t.conversation_id JOIN messages m ON m.id = t.user_message_id
-            WHERE t.id = ?`).bind(turn.id).first(), { user_id: ownerId, content: turn.content })
+          assert.deepEqual(await db.prepare(`SELECT c.user_id, m.content, t.conversation_id, t.user_client_message_id, t.assistant_client_message_id
+            FROM chat_turns t JOIN conversations c ON c.id = t.conversation_id JOIN messages m ON m.id = t.user_message_id
+            WHERE t.id = ?`).bind(turn.id).first(), {
+            user_id: ownerId, content: turn.content, conversation_id: input.conversationId,
+            user_client_message_id: input.userClientMessageId, assistant_client_message_id: input.assistantClientMessageId,
+          })
+          bootstrappedTurns.set(submission, turn.id)
           successfulBootstraps++
-        } else if (response.status === 400 || response.status === 401) assert.equal(writes, before, 'Invalid bootstrap must not contact D1')
+        } else if (response.status === 400 || response.status === 401) assert.equal(writes, before, 'Invalid bootstrap must not write to D1')
         return response
       }
       if (url.pathname === '/api/telegram' && request.method === 'POST') {
@@ -121,6 +129,25 @@ await runSchemathesis(async (origin: string) => {
   // Fixed probes ensure exact-payload replay and each rejection oracle run even
   // when generated JSON uses a different whitespace representation.
   try {
+    const submission = {
+      conversationId: 'f0000000-0000-4000-8000-000000000001',
+      turnId: 'f0000000-0000-4000-8000-000000000002',
+      userClientMessageId: 'f0000000-0000-4000-8000-000000000003',
+      assistantClientMessageId: 'f0000000-0000-4000-8000-000000000004',
+      content: 'Synthetic tango tonight', locale: 'es',
+    }
+    for (const { body, status } of [
+      { body: { locale: submission.locale, assistantClientMessageId: submission.assistantClientMessageId, extra: true }, status: 400 },
+      { body: submission, status: 200 },
+      { body: { ...submission, turnId: 'f0000000-0000-4000-8000-000000000005', extra: true }, status: 200 },
+    ]) {
+      const response = await application.handle(new Request(`${origin}/api/chat/bootstrap`, {
+        method: 'POST', body: JSON.stringify(body), headers: { 'x-test-session': 'owner', 'content-type': 'application/json' },
+      }))
+      assert.equal(response.status, status)
+      if (status === 200) assert.equal((await response.json()).turn.id, submission.turnId)
+      else await response.body?.cancel()
+    }
     for (const probe of [
       { session: 'owner', token: 'a'.repeat(64), body: '{"message":"Synthetic question"}', status: 200 },
       { session: 'anonymous', token: 'a'.repeat(64), body: '{"message":"Synthetic question"}', status: 409 },
