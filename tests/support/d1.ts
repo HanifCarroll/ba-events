@@ -16,8 +16,8 @@ const START_ATTEMPTS = 3
 /**
  * Bun 1.3.14 sometimes fails to open a child's extra stdio pipe (`connect ENOENT` on fd 3; about 1 spawn in 10 in a
  * plain `bun` loop). Miniflare reads workerd's ready signal from fd 3 and has no listener for that error, so under
- * `bun test` it surfaced as an unhandled error and Miniflare waited forever for ports. While Miniflare starts, this
- * listens on fd 3 and kills a workerd whose pipe failed, so the start fails at once and is retried. Node never fails here.
+ * Bun-based fuzzing and local diagnostics still need this. While Miniflare starts, listen on fd 3 and kill a
+ * workerd whose pipe failed, so the start fails at once and is retried. The Node test runner does not need this.
  */
 function watchControlPipes(onBrokenPipe: () => void) {
 	const spawn = childProcess.spawn
@@ -35,18 +35,23 @@ function watchControlPipes(onBrokenPipe: () => void) {
 	return () => { childProcess.spawn = spawn }
 }
 
-/** Starts Miniflare, retrying a start that fails or never settles. */
+function openProxy() {
+	return getPlatformProxy<{ DB: D1Database }>({
+		configPath: join(root, 'tests/support/wrangler.d1-test.jsonc'),
+		persist: false,
+		remoteBindings: false,
+		envFiles: [],
+	})
+}
+
+/** Retries a Bun startup that fails or never settles. */
 async function startProxy(): Promise<Proxy> {
+	if (!('Bun' in globalThis)) return openProxy()
 	let brokenPipes = 0
 	const restore = watchControlPipes(() => { brokenPipes++ })
 	try {
 		for (let attempt = 1; ; attempt++) {
-			const start = getPlatformProxy<{ DB: D1Database }>({
-				configPath: join(root, 'tests/support/wrangler.d1-test.jsonc'),
-				persist: false,
-				remoteBindings: false,
-				envFiles: [],
-			})
+			const start = openProxy()
 			let timer: ReturnType<typeof setTimeout> | undefined
 			const timedOut = new Promise<null>((resolve) => { timer = setTimeout(() => resolve(null), START_TIMEOUT_MS) })
 			let failure: unknown

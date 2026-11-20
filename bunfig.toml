@@ -1,3 +1,0 @@
-# Literal `bun test` runtime shims. `bun run test` (Vitest) ignores this file.
-[test]
-preload = ["./test/bun-test-preload.ts"]

@@ -16,8 +16,7 @@ const events = Array.from({ length: 4 }, (_, index) => agendaEvent(
   },
 ))
 
-// Bun's native runner has no Svelte compiler; Vitest's server project compiles these fixtures.
-describe.skipIf('Bun' in globalThis)('homepage server-rendered agenda', () => {
+describe('homepage server-rendered agenda', () => {
   let HomeAgenda: typeof import('../components/HomeAgenda.svelte').default
 
   beforeAll(async () => {

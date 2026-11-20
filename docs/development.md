@@ -7,15 +7,14 @@ BA Eventos uses SvelteKit 3 RC, Svelte 5 runes, Vite 8, and TypeScript 6. Bun is
 ```sh
 bun run paraglide:compile  # generate src/lib/paraglide before tests/type-check
 bun run check
-bun run test               # full Vitest suite, excluding evals/
-bun test                   # Bun native suites, including deterministic evals
-bunx vitest run <path>     # focused Vitest suite
+bun run test               # deterministic Vitest suite
+bunx vitest run <path>     # focused Vitest suite (compile Paraglide first)
 bunx tsc --noEmit
 ```
 
-`bun run test` is the authoritative full Vitest suite. Its `pretest` hook compiles Paraglide automatically. `bun test` discovers every `*.test.ts`, including `evals/concierge/deterministic.test.ts`, and runs the unit suites without Vitest-specific module mocks. Compile Paraglide once before invoking Bun's native runner directly; CI performs that as an explicit step. Both runners are supported from a clean checkout.
+`bun run test` runs Vitest on Node and is the same suite CI runs. Its `pretest` hook compiles Paraglide automatically. It includes `src/`, `tests/`, `scripts/`, and `evals/concierge/deterministic.test.ts`. Do not use the native `bun test` runner. A few suites launch isolated Bun fixtures with no `.env` access. Storybook and the generative workflow keep their own commands.
 
-Unit tests do not require real provider credentials. Orchestration tests use synthetic repository fixtures.
+Unit tests do not require real provider credentials or staging bindings. Orchestration tests use synthetic repository fixtures.
 
 Run `node scripts/check-home-paging-browser.mjs <local-url>` with Chrome installed against an isolated local build seeded with at least 25 homepage cards, exactly eight Music cards, and a small Free view that scrolls less than two viewport heights at 390×844. It checks composer placement with and without JavaScript from 390 to 1440 pixels, mobile paging, back-to-top clearance and footer visibility, and both motion modes. It also checks that returning from event details does not count as a second install-hint visit, and that a late install prompt does not move the first card.
 

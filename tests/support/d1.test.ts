@@ -1,9 +1,10 @@
 import childProcess from 'node:child_process'
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
 import { freshD1 } from './d1.ts'
 
 // Bun sometimes fails to open workerd's fd-3 control pipe; freshD1 must retry instead of hanging or erroring.
 it('retries a Miniflare start whose control pipe breaks', async () => {
+	vi.stubGlobal('Bun', {})
 	const spawn = childProcess.spawn
 	let spawns = 0
 	childProcess.spawn = ((...args: Parameters<typeof spawn>) => {
@@ -17,6 +18,7 @@ it('retries a Miniflare start whose control pipe breaks', async () => {
 		await dispose()
 	} finally {
 		childProcess.spawn = spawn
+		vi.unstubAllGlobals()
 	}
 	expect(spawns).toBeGreaterThan(1)
 }, 90_000)

@@ -7,7 +7,7 @@
 		"dev": "vite dev --port 3001",
 		"build": "vite build",
 		"deploy": "bun run build && wrangler deploy --config wrangler.jsonc && wrangler deploy --config wrangler.chat.jsonc",
-		"cloudflare:ci": "bun run paraglide:compile && bun test && bun run test && bun run check && bunx tsc --noEmit && git diff --check",
+		"cloudflare:ci": "bun run test && bun run check && bunx tsc --noEmit && git diff --check",
 		"cloudflare:build": "bun install --frozen-lockfile && bun run cloudflare:ci && bun run build",
 		"migrate:production": "wrangler d1 migrations apply baeventos-production --remote --config wrangler.jsonc",
 		"cloudflare:deploy": "env -u WRANGLER_CI_MATCH_TAG -u WRANGLER_CI_OVERRIDE_NAME wrangler deploy --config wrangler.telegram.jsonc && env -u WRANGLER_CI_MATCH_TAG -u WRANGLER_CI_OVERRIDE_NAME wrangler deploy --config wrangler.mcp.jsonc && wrangler deploy --config wrangler.jsonc && env -u WRANGLER_CI_MATCH_TAG -u WRANGLER_CI_OVERRIDE_NAME wrangler deploy --config wrangler.chat.jsonc && env -u WRANGLER_CI_MATCH_TAG -u WRANGLER_CI_OVERRIDE_NAME wrangler deploy --config wrangler.jobs.jsonc",
@@ -54,7 +54,7 @@
 		"test:property": "vitest run src/shared/lib/*properties.test.ts && node scripts/run-fuzz.mjs search",
 		"test:fuzz": "node scripts/run-fuzz.mjs jazzer",
 		"test:api": "node scripts/run-fuzz.mjs api",
-		"test:generative": "bun run test:property && bun run test:fuzz && bun run test:api"
+		"test:generative": "node scripts/run-fuzz.mjs search && bun run test:fuzz && bun run test:api"
 	},
 	"devDependencies": {
 		"@cloudflare/workers-types": "^5.20260901.1",
