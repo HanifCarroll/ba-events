@@ -20,7 +20,7 @@ it('previews without writing and records only successful, guarded scheduled upda
     const extract = vi.fn(async ([text]: readonly (string | null)[]) => text === 'Actúa el Trío Nube.' ? participants : {})
     const preview = await backfillEventCredits(db, { from, limit: 2, apply: false, extract })
     expect(preview).toMatchObject([{ id: 'a', status: 'preview', performers: participants.performers }, { id: 'b', status: 'preview' }])
-    expect(preview[0]?.organizer).toBeUndefined()
+    expect(preview[0]).toMatchObject({ organizer: undefined })
     expect(await db.prepare('SELECT performers, enrichment_provenance FROM events WHERE id = \'a\'').first())
       .toEqual({ performers: null, enrichment_provenance: null })
 

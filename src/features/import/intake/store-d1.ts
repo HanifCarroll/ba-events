@@ -17,7 +17,7 @@ import type { EventInsert } from '#shared/lib/types.ts'
 import { importTry, ImportOperationError } from '../core/effect-utils.ts'
 import { mostSimilarVenue, similarIntakeVenues } from '../core/venue-similarity-d1.ts'
 import { pickVenue, venueNameKey } from '../core/venue-identity.ts'
-import { baDate, searchInputsChanged, type Media } from './planning.ts'
+import { baDate, canonicalTicket, searchInputsChanged, type Media } from './planning.ts'
 import type { Source } from './schema.ts'
 import type { IntakePlanRow, IntakePolicy, IntakeStore, Reservation, VenueRow } from './store.ts'
 
@@ -376,10 +376,14 @@ export function d1Intake({ db, evidence, artwork, vectors }: IntakeBindings, sit
       if (needsEmbedding && (!e.embedding || e.search_document == null)) throw new Error('Search preparation is required')
 
       const performers = e.performers ?? previous?.performers
+      const oldTicket = typeof previous?.ticket_url === 'string' ? previous.ticket_url : null
+      const replacedTicket = !!e.ticket_url && (canonicalTicket(e.ticket_url) ?? e.ticket_url) !== (canonicalTicket(oldTicket) ?? oldTicket)
+      const sameDay = typeof previous?.starts_at === 'string' && baDate(previous.starts_at) === baDate(startsAt)
+      const retainedDoors = sameDay && typeof previous?.doors_at === 'string' && (e.time_tba || previous.doors_at <= startsAt) ? previous.doors_at : null
       const details = [e.organizer_name ?? previous?.organizer_name ?? null,
         e.organizer_url ?? (e.organizer_name === undefined || e.organizer_name === previous?.organizer_name ? previous?.organizer_url ?? null : null),
-        performers ? JSON.stringify(performers) : null, e.offers_valid_from ?? previous?.offers_valid_from ?? null,
-        e.doors_at ?? previous?.doors_at ?? null] as const
+        performers ? JSON.stringify(performers) : null, e.offers_valid_from ?? (replacedTicket ? null : previous?.offers_valid_from ?? null),
+        e.doors_at ?? retainedDoors] as const
       const protects = [...PROTECTED_FIELDS,
         ...(e.organizer_name !== undefined ? ['organizer_name', 'organizer_url'] : []),
         ...(e.performers !== undefined ? ['performers'] : []),

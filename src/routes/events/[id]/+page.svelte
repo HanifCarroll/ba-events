@@ -237,10 +237,10 @@
 							<dd>
 								{#if event.time_tba}
 									{dateStr} ·
-									{#if event.doors_at}<time datetime={event.doors_at}>{formatDoorsTime(event.doors_at)}</time>{:else}{m.concierge_time_tba()}{/if}
+									{#if event.doors_at}<time datetime={event.doors_at}>{formatDoorsTime(event.doors_at, event.starts_at)}</time>{:else}{m.concierge_time_tba()}{/if}
 								{:else}
 									{formatEventTime(event.starts_at, event.ends_at)}
-									{#if event.doors_at}<time class="block" datetime={event.doors_at}>{formatDoorsTime(event.doors_at)}</time>{/if}
+									{#if event.doors_at}<time class="block" datetime={event.doors_at}>{formatDoorsTime(event.doors_at, event.starts_at)}</time>{/if}
 								{/if}
 							</dd>
 						</div>
