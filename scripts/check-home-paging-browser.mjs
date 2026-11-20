@@ -66,7 +66,7 @@ async function checkComposerPlacement(javaScriptEnabled) {
     assert.deepEqual(checks.filter(({ placement, expected }) => placement !== expected), [])
     assert.equal(await textbox.count(), 1, 'the composer must have a descriptive accessible name')
     if (await page.evaluate(() => CSS.supports('reading-flow', 'grid-rows'))) {
-      await cards.last().getByRole('button', { name: 'Preguntar por este evento' }).focus()
+      await cards.last().getByRole('button', { name: /^Preguntar sobre / }).focus()
       await page.keyboard.press('Tab')
       assert.ok(await textbox.evaluate(el => el === document.activeElement), 'Tab from the last visual card must reach the composer')
     }
@@ -79,7 +79,64 @@ async function checkComposerPlacement(javaScriptEnabled) {
   }
 }
 
+async function checkInstallHint() {
+  const context = await browser.newContext(profile)
+  const hint = '[data-section="install-hint"]'
+  const card = '[data-section="event-card"]'
+  const visitKey = 'ba:home-install-hint'
+  const armNativePrompt = page => page.waitForFunction(() => {
+    const event = new Event('beforeinstallprompt', { cancelable: true })
+    Object.assign(event, { prompt: async () => {}, userChoice: Promise.resolve({ outcome: 'accepted' }) })
+    return !window.dispatchEvent(event)
+  })
+  try {
+    await context.route('**/*', route => new URL(route.request().url()).origin === url.origin ? route.continue() : route.abort())
+    const first = await context.newPage()
+    first.setDefaultTimeout(5000)
+    assert.equal((await first.goto(url.href)).status(), 200)
+    await armNativePrompt(first)
+    assert.equal(await first.locator(hint).count(), 0)
+    await first.locator(`${card} a[href^="/events/"]`).first().click()
+    await first.waitForURL('**/events/**')
+    await first.goBack()
+    await first.waitForURL(url.href)
+    await armNativePrompt(first)
+    assert.equal(await first.locator(hint).count(), 0, 'Back must not qualify as a second visit')
+
+    const second = await context.newPage()
+    second.setDefaultTimeout(5000)
+    assert.equal((await second.goto(url.href)).status(), 200)
+    await second.waitForFunction(key => sessionStorage.getItem(key) === '2', visitKey)
+    await second.evaluate(() => document.fonts.ready)
+    const before = await second.locator(card).first().boundingBox()
+    await armNativePrompt(second)
+    await second.locator(hint).waitFor({ state: 'visible' })
+    assert.deepEqual(await second.locator(card).first().boundingBox(), before, 'late hint must not move the first card')
+    console.log('PASS first phone visit survives Back; a late hint on the second visit does not move the first card')
+
+    await second.setViewportSize({ width: 390, height: 280 })
+    await second.reload()
+    await second.evaluate(() => document.fonts.ready)
+    const top = second.locator('.back-to-top')
+    const resizeBefore = await second.locator('[data-section="chat"]').evaluate(el => {
+      const scroller = el.closest('.home')
+      const button = scroller.querySelector('.back-to-top')
+      scroller.scrollTop += el.getBoundingClientRect().bottom - button.getBoundingClientRect().top + 16
+      return scroller.scrollTop
+    })
+    await top.waitFor({ state: 'visible' })
+    await armNativePrompt(second)
+    await second.locator(hint).waitFor({ state: 'visible' })
+    assert.equal(await second.locator('.home').evaluate(el => el.scrollTop), resizeBefore)
+    await top.waitFor({ state: 'hidden' })
+    console.log('PASS late hint keeps Back to top clear without requiring a scroll')
+  } finally {
+    await context.close()
+  }
+}
+
 try {
+  await checkInstallHint()
   await checkComposerPlacement(false)
   await checkComposerPlacement(true)
   await check('tap near top of viewport reveals card 25 without a scroll jump', 'reduce', async (page, scroller) => {

@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('$app/env', () => ({ dev: false }));
 
-import { handleCanonicalOrigin, handleReadOnly } from './hooks.server';
+import { handleCanonicalOrigin, handleLocaleSync, handleReadOnly } from './hooks.server';
 
 const eventFor = (url: string, method = 'GET') => ({ url: new URL(url), request: new Request(url, { method }) });
 
@@ -53,6 +53,35 @@ describe('canonical origin', () => {
 		expect(await handleCanonicalOrigin({ event, resolve: vi.fn().mockResolvedValue(rendered) } as never)).toBe(rendered);
 		const production = await handleCanonicalOrigin({ event: eventFor(`https://${staging}/path`), resolve: vi.fn() } as never);
 		expect(production.headers.get('location')).toBe('https://baeventos.com/path');
+	});
+});
+
+describe('locale preference synchronization', () => {
+	it.each([null, { locale: 'es' }])('reissues a matching or legacy preference on HTML requests (profile %j)', async (profile) => {
+		const url = 'https://baeventos.com/?f=gratis';
+		const cookies = { get: () => 'es', set: vi.fn() };
+		const event = { ...eventFor(url), request: new Request(url, { headers: { accept: 'text/html' } }), cookies, locals: { profile } };
+		const resolve = vi.fn(() => new Response());
+		await handleLocaleSync({ event, resolve } as never);
+		expect(cookies.set).toHaveBeenCalledWith('PARAGLIDE_LOCALE', 'es', { path: '/', maxAge: 34560000, httpOnly: false });
+		expect(resolve).toHaveBeenCalledWith(event);
+	});
+
+	it('forwards the saved locale on the same request without dropping the other cookies or the body', async () => {
+		const url = 'https://baeventos.com/?f=gratis';
+		const request = new Request(url, { method: 'POST', body: 'payload', headers: {
+			cookie: 'other=first; PARAGLIDE_LOCALE=en; session=fixture%2Etoken', accept: 'text/html'
+		} });
+		const cookies = { get: () => 'en', set: vi.fn() };
+		const event = { url: new URL(url), request, cookies, locals: { profile: { locale: 'es' } } };
+		const resolve = async ({ request: synced }: typeof event) => {
+			expect(synced.url).toBe(url);
+			expect(synced.headers.get('cookie')).toBe('PARAGLIDE_LOCALE=es; other=first; session=fixture%2Etoken');
+			expect(await synced.text()).toBe('payload');
+			return new Response();
+		};
+		await handleLocaleSync({ event, resolve } as never);
+		expect(cookies.set).toHaveBeenCalledWith('PARAGLIDE_LOCALE', 'es', expect.objectContaining({ httpOnly: false }));
 	});
 });
 

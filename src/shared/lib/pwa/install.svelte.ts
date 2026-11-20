@@ -1,4 +1,5 @@
 import { isIosDevice, isStandalone, type BeforeInstallPromptEvent } from './install'
+import { hideInstallHint } from './install-hint.ts'
 import { createInstallController } from './install.machine.ts'
 
 const controller = createInstallController()
@@ -29,7 +30,10 @@ export function initInstallPrompt(): void {
 		event.preventDefault()
 		controller.actor.send({ type: 'AVAILABLE', prompt: event as BeforeInstallPromptEvent })
 	})
-	window.addEventListener('appinstalled', () => controller.actor.send({ type: 'INSTALLED' }))
+	window.addEventListener('appinstalled', () => {
+		hideInstallHint()
+		controller.actor.send({ type: 'INSTALLED' })
+	})
 }
 
 export async function promptInstall(): Promise<void> {

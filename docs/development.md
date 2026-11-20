@@ -17,7 +17,7 @@ bunx tsc --noEmit
 
 Unit tests do not require real provider credentials. Orchestration tests use synthetic repository fixtures.
 
-Run `node scripts/check-home-paging-browser.mjs <local-url>` with Chrome installed against an isolated local build seeded with at least 25 homepage cards, exactly eight Music cards, and a small Free view that scrolls less than two viewport heights at 390×844. It checks composer placement with and without JavaScript from 390 to 1440 pixels, mobile paging, back-to-top clearance and footer visibility, and both motion modes.
+Run `node scripts/check-home-paging-browser.mjs <local-url>` with Chrome installed against an isolated local build seeded with at least 25 homepage cards, exactly eight Music cards, and a small Free view that scrolls less than two viewport heights at 390×844. It checks composer placement with and without JavaScript from 390 to 1440 pixels, mobile paging, back-to-top clearance and footer visibility, and both motion modes. It also checks that returning from event details does not count as a second install-hint visit, and that a late install prompt does not move the first card.
 
 Tests of D1 SQL run against a fresh in-memory Miniflare D1 with `migrations/` applied (`freshD1()` in `tests/support/d1.ts`). See [D1 baseline](d1.md).
 

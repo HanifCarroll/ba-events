@@ -2,6 +2,7 @@ import { beforeAll, describe, expect, it } from 'vitest'
 import { createRawSnippet } from 'svelte'
 import { render } from 'svelte/server'
 import * as m from '#paraglide/messages.js'
+import { paraglideMiddleware } from '#paraglide/server.js'
 import { agendaEvent } from '../../../../tests/support/home-agenda.ts'
 import { homeWindow, pageHomeView, parseHomeFilter, selectHomeView, type HomeAgendaEvent } from './home-feed.ts'
 
@@ -47,6 +48,23 @@ describe.skipIf('Bun' in globalThis)('homepage server-rendered agenda', () => {
     const firstImage = body.match(/<img\b[^>]*>/)?.[0]
     expect(firstImage).toContain('alt="Jam sintética"')
     expect(firstImage).toContain('fetchpriority="high"')
+  })
+
+  it.each([
+    ['es', 'Ver post', 'Ver post de Jam sintética', 'Ver evento', 'Ver evento: Evento sintético 1', 'Preguntar', 'Preguntar sobre Jam sintética'],
+    ['en', 'View post', 'View post for Jam sintética', 'View event', 'View event: Evento sintético 1', 'Ask', 'Ask about Jam sintética'],
+  ])('renders visible, event-specific source and ask actions in %s', async (locale, post, postName, external, externalName, ask, askName) => {
+    const request = new Request('https://example.test/', { headers: { cookie: `PARAGLIDE_LOCALE=${locale}` } })
+    await paraglideMiddleware(request, () => {
+      const sourceUrl = 'https://lu.ma/synthetic'
+      const body = renderAgenda('/', [events[0], { ...events[1], sourceUrl }])
+      expect(body).toContain(`aria-label="${postName}"`)
+      expect(body).toContain(`aria-label="${externalName}"`)
+      expect(body).toContain(`aria-label="${askName}"`)
+      expect(body).toContain(`href="${sourceUrl}"`)
+      for (const label of [post, external, ask]) expect(body).toContain(`<span>${label}</span>`)
+      return new Response()
+    })
   })
 
   it('renders a plain paging link, resets paging in filter links, and keeps later flyers lazy', () => {

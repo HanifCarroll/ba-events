@@ -4,6 +4,7 @@
 	import { getLocale } from '#paraglide/runtime.js'
 	import { HOME_FILTERS, HOME_PAGE_SIZE, homeDay, type HomeAgendaCardEvent, type HomeAgendaEvent, type HomeFilter, type HomeViewPage } from '../lib/home-feed.ts'
 	import HomeAgendaCard from './HomeAgendaCard.svelte'
+	import InstallApp from '#shared/ui/InstallApp.svelte'
 
 	let { view, filter, url, onAsk, onMore, day, chat }: {
 		view: HomeViewPage
@@ -88,7 +89,10 @@
 		{#each beforeChat as event, index (event.id)}
 			{@render card(event, index)}
 		{/each}
-		<div class="agenda-composer col-span-full min-w-0 py-2">{@render chat()}</div>
+		<div data-section="agenda-composer" class="agenda-composer col-span-full min-w-0 py-2">
+			{@render chat()}
+			<InstallApp hint />
+		</div>
 		{#each afterChat as event, index (event.id)}
 			{@render card(event, chatAfter + index)}
 		{/each}

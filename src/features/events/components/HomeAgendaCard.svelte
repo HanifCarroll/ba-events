@@ -23,6 +23,7 @@
 		if (visibleTooltip) return on(window, 'keydown', dismissTooltip)
 	})
 
+	const sourceIsPost = $derived(/^https:\/\/(?:www\.)?instagram\.com\/(?:p|reel)\/[\w-]+\/?(?:[?#].*)?$/i.test(event.sourceUrl ?? ''))
 	const hasTime = $derived(event.time_tba || !event.is_all_day)
 	const price = $derived(event.payWhatYouCan ? m.home_price_pay_what_you_can() : formatPrice(event.price, event.is_free))
 	const venue = $derived(event.location_hidden ? m.event_location_hidden() :
@@ -102,14 +103,23 @@
 			</p>
 		</div>
 	</div>
-	<div class="card-actions mt-auto flex flex-wrap items-center gap-x-2.5 pt-1 text-xs">
+	<div class="card-actions mt-auto flex flex-wrap items-center gap-x-1 pt-1 text-xs md:gap-x-2.5">
 		{#if event.sourceUrl}
-			<a href={event.sourceUrl} title={m.home_original_post()} class="inline-flex min-h-8 max-w-full items-center gap-1 text-[#ccccd4] underline underline-offset-4 hover:text-white sm:min-h-10 sm:whitespace-nowrap">
-				<ArrowUpRight class="size-3.5 shrink-0" aria-hidden="true" /> <span class="max-md:sr-only">{m.home_original_post()}</span>
+			<a
+				href={event.sourceUrl}
+				aria-label={sourceIsPost ? m.home_view_post_for_event({ name: event.name }) : m.home_view_event_named({ name: event.name })}
+				class="inline-flex min-h-11 min-w-11 items-center justify-center gap-1 px-1 whitespace-nowrap text-[#ccccd4] underline-offset-4 hover:text-white hover:underline focus-visible:underline md:px-0"
+			>
+				<ArrowUpRight class="size-3.5 shrink-0" aria-hidden="true" /> <span>{sourceIsPost ? m.home_view_post() : m.home_view_event()}</span>
 			</a>
 		{/if}
-		<button type="button" title={m.home_ask_event()} onclick={() => onAsk(event)} class="inline-flex min-h-8 max-w-full items-center gap-1 text-left text-[#d0ff36] hover:underline sm:min-h-10 sm:whitespace-nowrap">
-			<MessageCircle class="size-3.5 shrink-0" aria-hidden="true" /> <span class="max-md:sr-only">{m.home_ask_event()}</span>
+		<button
+			type="button"
+			aria-label={m.home_ask_event({ name: event.name })}
+			onclick={() => onAsk(event)}
+			class="inline-flex min-h-11 min-w-11 items-center justify-center gap-1 px-1 whitespace-nowrap text-[#d0ff36] underline-offset-4 hover:underline focus-visible:underline md:px-0"
+		>
+			<MessageCircle class="size-3.5 shrink-0" aria-hidden="true" /> <span>{m.home_ask()}</span>
 		</button>
 	</div>
 </article>
@@ -132,12 +142,9 @@
 			z-index: 2;
 			align-self: start;
 			justify-self: start;
-			gap: 0.25rem;
 			margin: 0;
 		}
 		.card-actions > :is(a, button) {
-			min-width: 2.25rem;
-			justify-content: center;
 			border: 1px solid #3b3b42;
 			border-radius: 0.5rem;
 		}

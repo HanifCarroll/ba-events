@@ -1,7 +1,7 @@
 import { sequence, type Handle } from '@sveltejs/kit/hooks';
 import { dev } from '$app/env';
 import { Effect } from 'effect';
-import { getTextDirection } from '#lib/paraglide/runtime.js';
+import { cookieMaxAge, cookieName, getTextDirection, isLocale } from '#lib/paraglide/runtime.js';
 import { paraglideMiddleware } from '#lib/paraglide/server.js';
 import { requestChatTiming } from "#features/chat/lib/timing.ts";
 import { getSessionUserEffect } from '#features/auth/api/session.server.ts';
@@ -54,19 +54,23 @@ const handleSession: Handle = async ({ event, resolve }) => {
 	return resolve(event);
 };
 
-// (b) Locale sync — persist the user's saved locale to the paraglide cookie
-// (port of the legacy __root.tsx beforeLoad locale-sync).
-const handleLocaleSync: Handle = async ({ event, resolve }) => {
-	const savedLocale = event.locals.profile?.locale;
+// Paraglide reads the locale in both the server request and document.cookie.
+export const handleLocaleSync: Handle = ({ event, resolve }) => {
+	const previous = event.cookies.get(cookieName);
+	const locale = event.locals.profile?.locale ?? (isLocale(previous) ? previous : undefined);
+	if (!locale) return resolve(event);
 
-	if (savedLocale && event.cookies.get('PARAGLIDE_LOCALE') !== savedLocale) {
-		event.cookies.set('PARAGLIDE_LOCALE', savedLocale, {
-			path: '/',
-			maxAge: 34560000 // matches paraglide's cookieMaxAge (1 year)
-		});
+	// The request doesn't say whether a legacy cookie was HttpOnly. Reissue it on document loads.
+	if (locale !== previous || event.request.headers.get('accept')?.includes('text/html')) {
+		event.cookies.set(cookieName, locale, { path: '/', maxAge: cookieMaxAge, httpOnly: false });
 	}
+	if (locale === previous) return resolve(event);
 
-	return resolve(event);
+	const headers = new Headers(event.request.headers);
+	const otherCookies = (headers.get('cookie') ?? '').split(';').map((cookie) => cookie.trim())
+		.filter((cookie) => cookie && !cookie.startsWith(`${cookieName}=`));
+	headers.set('cookie', [`${cookieName}=${locale}`, ...otherCookies].join('; '));
+	return resolve({ ...event, request: new Request(event.request, { headers }) });
 };
 
 // (c) Paraglide handle — keep LAST so transformPageChunk sees the final locale.
