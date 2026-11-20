@@ -158,6 +158,7 @@ export interface EventWithVenue extends Event {
   venue_neighborhood: Neighborhood | null
   venue_address: string | null
   venue_website?: string | null
+  payWhatYouCan?: boolean
 }
 
 /** Explicit public event read shape shared by transport adapters. */

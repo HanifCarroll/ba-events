@@ -1,5 +1,6 @@
 import { BA_TIMEZONE } from '#shared/lib/constants.ts';
 import { pickDescriptionSummary } from '#features/events/lib/description-presentation.ts';
+import { isPayWhatYouCan } from '#features/events/lib/admission.ts';
 import type { EventWithVenue } from '#shared/lib/types.ts';
 
 /**
@@ -39,10 +40,12 @@ export function buildEventJsonLd(
 	eventUrl: string,
 	imageUrl: string
 ) {
-	const isFree = event.is_free || event.price === 0;
+	const contribution = event.payWhatYouCan ?? isPayWhatYouCan(event.name, event.description_es);
+	const isFree = !contribution && (event.is_free || event.price === 0);
 	const showVenue = !event.location_hidden && !event.location_tba;
 	const venueName = showVenue ? event.venue_name?.trim() || undefined : undefined;
-	const dateOnly = event.time_tba || event.is_all_day;
+	// Luma uses is_all_day for long events with actual start and end times.
+	const dateOnly = event.time_tba || (event.is_all_day && event.source !== 'luma');
 	const localDate = (value: string) => new Date(value).toLocaleDateString('en-CA', { timeZone: BA_TIMEZONE });
 	const startDate = dateOnly ? localDate(event.starts_at) : event.starts_at;
 	const endDate = event.ends_at
@@ -55,7 +58,7 @@ export function buildEventJsonLd(
 
 	// BA Tourism copies its info page into ticket_url even when it isn't an admission link.
 	const ticketUrl = event.source !== 'ba-tourism' && event.ticket_url?.trim();
-	const price = isFree ? 0 : event.price;
+	const price = contribution ? undefined : (isFree ? 0 : event.price);
 
 	return {
 		'@context': 'https://schema.org',

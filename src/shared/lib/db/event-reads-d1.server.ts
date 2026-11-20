@@ -1,20 +1,29 @@
 /** Public catalog reads on D1: home, event, artwork, venue, event facts, and the events API. */
 import type { D1Database } from '@cloudflare/workers-types'
 import type { ChatEventPayload, Venue } from '../types.ts'
-import { normalizeText } from '../utils/normalize-text.ts'
+import { isPayWhatYouCan } from '#features/events/lib/admission.ts'
 import { HOME_EVENT_DEFAULT_DURATION_MS, HOME_FALLBACK_LIMIT, type HomeAgendaEvent, type HomeWindow } from '#features/events/lib/home-feed.ts'
 import { EVENT_COLUMNS, FROM_EVENTS, toPayload } from './search-d1.server.ts'
 
 /** Events visible to the public. */
 const DISPLAYABLE = `e.status IN ('scheduled', 'past')`
 
+const PRICE_NOTE = `(SELECT json_extract(r.payload, '$.price_note') FROM event_source_evidence x
+  JOIN intake_candidate_revisions r ON r.candidate_id = x.candidate_id AND r.revision = x.revision
+  WHERE x.event_id = e.id AND json_extract(r.payload, '$.intent') IN ('create', 'update', 'link')
+    AND (json_extract(r.payload, '$.price_kind') <> 'unknown' OR json_extract(r.payload, '$.price_note') IS NOT NULL)
+  ORDER BY r.created_at DESC, r.candidate_id, r.revision DESC LIMIT 1)`
+
 /** One event with its venue, or null. `displayableOnly` keeps it to scheduled and past events. */
 export async function eventByIdD1(db: D1Database, id: string, displayableOnly = false) {
   const row = await db.prepare(`SELECT ${EVENT_COLUMNS},
-    CASE WHEN NOT coalesce(e.location_hidden, 0) AND NOT e.location_tba THEN v.website END AS venue_website
+    CASE WHEN NOT coalesce(e.location_hidden, 0) AND NOT e.location_tba THEN v.website END AS venue_website,
+    ${PRICE_NOTE} AS priceNote
     FROM ${FROM_EVENTS} WHERE e.id = ?${displayableOnly ? ` AND ${DISPLAYABLE}` : ''}`)
-    .bind(id).first<{ venue_website: string | null }>()
-  return row ? { ...toPayload(row), venue_website: row.venue_website } : null
+    .bind(id).first<{ venue_website: string | null; priceNote: string | null }>()
+  if (!row) return null
+  const event = toPayload(row)
+  return { ...event, venue_website: row.venue_website, payWhatYouCan: isPayWhatYouCan(event.name, event.description_es, row.priceNote) }
 }
 
 /** The events among `ids` (any status), at most 100. */
@@ -30,8 +39,6 @@ export async function eventsByStartD1(db: D1Database, limit: number): Promise<Ch
   return results.map(toPayload)
 }
 
-const A_LA_GORRA = /\ba la gorra\b/
-const PAY_WHAT_YOU_CAN = /\b(?:a la gorra|contribucion consciente|a voluntad|paga lo que (?:quieras|puedas))\b/
 const INSTAGRAM_POST = /^https:\/\/www\.instagram\.com\/(?:p|reel)\/[\w-]+\/?$/i
 
 type AgendaRow = Omit<HomeAgendaEvent, 'is_free' | 'time_tba' | 'is_all_day' | 'location_hidden' | 'location_tba' | 'music' | 'payWhatYouCan' | 'sourceUrl'> & {
@@ -68,11 +75,7 @@ export async function homeAgendaD1(db: D1Database, window: HomeWindow): Promise<
         OR EXISTS (SELECT 1 FROM json_each(e.facets, '$.activities') WHERE value = 'live-music')) AS music,
       (SELECT o.post_url FROM event_source_evidence x JOIN intake_observations o ON o.id = x.observation_id
         WHERE x.event_id = e.id ORDER BY o.observed_at DESC, o.id DESC LIMIT 1) AS sourceUrl,
-      (SELECT json_extract(r.payload, '$.price_note') FROM event_source_evidence x
-        JOIN intake_candidate_revisions r ON r.candidate_id = x.candidate_id AND r.revision = x.revision
-        WHERE x.event_id = e.id AND json_extract(r.payload, '$.intent') IN ('create', 'update', 'link')
-          AND (json_extract(r.payload, '$.price_kind') <> 'unknown' OR json_extract(r.payload, '$.price_note') IS NOT NULL)
-        ORDER BY r.created_at DESC, r.candidate_id, r.revision DESC LIMIT 1) AS priceNote
+      ${PRICE_NOTE} AS priceNote
     FROM selected JOIN events e ON e.id = selected.id LEFT JOIN venues v ON v.id = e.venue_id
     ORDER BY e.starts_at, e.id
   `).bind(window.end, window.start, window.end, window.start, window.start, earliestOvernightStart, HOME_FALLBACK_LIMIT).all<AgendaRow>()
@@ -80,8 +83,7 @@ export async function homeAgendaD1(db: D1Database, window: HomeWindow): Promise<
   return results.map(({ is_free, time_tba, is_all_day, location_hidden, location_tba, music, priceNote, description_es, sourceUrl, ...card }) => ({
     ...card, is_free: is_free === 1, time_tba: time_tba === 1, is_all_day: is_all_day === 1,
     location_hidden: location_hidden === 1, location_tba: location_tba === 1, music: music === 1,
-    payWhatYouCan: A_LA_GORRA.test(normalizeText(card.name)) || A_LA_GORRA.test(normalizeText(description_es ?? '')) ||
-      (typeof priceNote === 'string' && PAY_WHAT_YOU_CAN.test(normalizeText(priceNote))),
+    payWhatYouCan: isPayWhatYouCan(card.name, description_es, priceNote),
     sourceUrl: sourceUrl && INSTAGRAM_POST.test(sourceUrl) ? sourceUrl : null,
   }))
 }
