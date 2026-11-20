@@ -17,6 +17,8 @@ import {
 } from './client.server.ts'
 import { createWorkerHandler } from '../../../mcp-worker/index.ts'
 import { homeWindow, selectHomeView } from '#features/events/lib/home-feed.ts'
+import { getEventDetailDataEffect } from '#features/events/api/detail.server.ts'
+import { Effect } from 'effect'
 
 let db: D1Database
 let dispose: () => Promise<void>
@@ -142,6 +144,17 @@ describe('public event reads on D1', () => {
     const pending = await event('En revisión', { status: 'pending_review' })
     expect((await getEventWithVenue(pending)).status).toBe('pending_review')
     await expect(getEventWithVenue(id())).rejects.toThrow('not found')
+  })
+
+  it('uses the stored venue website in public event markup only when its location is public', async () => {
+    const bar = await venue('Bar Sintético', { address: 'Calle Falsa 123' })
+    const website = 'https://barsintetico.example'
+    await db.prepare('UPDATE venues SET website = ? WHERE id = ?').bind(website, bar).run()
+    const visible = await event('Concierto', { venue_id: bar })
+    const hidden = await event('Lugar privado', { venue_id: bar, location_hidden: true })
+    const detail = await Effect.runPromise(getEventDetailDataEffect(visible))
+    expect(detail.meta.jsonLd.organizer).toMatchObject({ name: 'Bar Sintético', url: website })
+    expect(JSON.stringify(await Effect.runPromise(getEventDetailDataEffect(hidden)))).not.toContain(website)
   })
 
   it('MCP get_event: displayable events only, with the public columns', async () => {

@@ -48,6 +48,20 @@ Time-TBA, location-TBA, missing price, missing description, and missing source d
 - **AND** model-facing facts omit a start time and end time
 - **AND** canonical cards retain the source timestamps and time-TBA flag for their existing presentation rules
 
+### Requirement: Event structured data reflects known catalog facts
+Event detail JSON-LD SHALL use recorded times, status, admission facts, and visible venue facts. It SHALL NOT supply an unknown performer, ticket sales start, ticket availability, or timed end.
+
+#### Scenario: Event detail includes a confirmed venue and admission information
+- **WHEN** the event has a visible, confirmed venue
+- **THEN** JSON-LD uses the venue name as the organizer and includes its stored website when present
+- **AND** the Place uses the stored name and address without placeholder text; a hidden or unconfirmed location exposes neither its venue details nor its organizer
+- **AND** an offer uses an actual ticket or registration link and omits the price when it is unknown
+
+#### Scenario: The event has no precise start time or a changed status
+- **WHEN** the event is date-only or time TBA
+- **THEN** its start and end are Buenos Aires calendar dates, with the start date also serving as the end when no end is recorded
+- **AND** cancellation and postponement map to their corresponding schema statuses without changing the date or location
+
 ### Requirement: Source presentation preserves provenance
 Event detail and summaries SHALL distinguish BA Eventos pages, original event sources, and ticket links using the stored source fields. Sanitization or summary generation MUST NOT create a source URL.
 
@@ -132,6 +146,11 @@ The D1 catalog SHALL judge events individually for an independent and public cul
 - **WHEN** the hourly task selects events whose judgments were cleared in the last two hours
 - **THEN** it judges those rows ahead of other pending judgments, newest clear first
 - **AND** the operator backfill retains its stable start-time and ID order
+
+#### Scenario: A ticket listing provides no program
+- **WHEN** a listing provides only an opaque single-word title (optionally followed by an edition number) and empty text, a repeated title, or known generic ticket-sale copy
+- **THEN** the catalog judges it out with an `unclear:` reason without asking the model
+- **AND** longer titles, recognized event-type words, and additional evidence in a description or caption still reach the model when no other precheck decides the listing
 
 #### Scenario: An operator rehearses the backfill
 - **WHEN** the operator requests a dry run for scheduled events starting today or later in Buenos Aires

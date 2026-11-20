@@ -9,10 +9,12 @@ import { EVENT_COLUMNS, FROM_EVENTS, toPayload } from './search-d1.server.ts'
 const DISPLAYABLE = `e.status IN ('scheduled', 'past')`
 
 /** One event with its venue, or null. `displayableOnly` keeps it to scheduled and past events. */
-export async function eventByIdD1(db: D1Database, id: string, displayableOnly = false): Promise<ChatEventPayload | null> {
-  const row = await db.prepare(`SELECT ${EVENT_COLUMNS} FROM ${FROM_EVENTS} WHERE e.id = ?${displayableOnly ? ` AND ${DISPLAYABLE}` : ''}`)
-    .bind(id).first()
-  return row ? toPayload(row) : null
+export async function eventByIdD1(db: D1Database, id: string, displayableOnly = false) {
+  const row = await db.prepare(`SELECT ${EVENT_COLUMNS},
+    CASE WHEN NOT coalesce(e.location_hidden, 0) AND NOT e.location_tba THEN v.website END AS venue_website
+    FROM ${FROM_EVENTS} WHERE e.id = ?${displayableOnly ? ` AND ${DISPLAYABLE}` : ''}`)
+    .bind(id).first<{ venue_website: string | null }>()
+  return row ? { ...toPayload(row), venue_website: row.venue_website } : null
 }
 
 /** The events among `ids` (any status), at most 100. */

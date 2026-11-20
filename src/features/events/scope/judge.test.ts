@@ -13,10 +13,35 @@ describe('scope judgment', () => {
     expect(precheckScope({ name: 'After Office: sesión de jazz en vivo' })).toBeUndefined()
     expect(precheckScope({ name: 'After Office', descriptionEs: 'Una obra de teatro de humor.' })).toBeUndefined()
     const live = { name: 'Trap y Metal en Sala Chica', source: 'passline' }
-    const ambiguous = { name: 'Encuentro', source: 'instagram-intake' }
+    const ambiguous = { name: 'Encuentro', caption: 'Nos encontramos a las 20 en el patio.', source: 'instagram-intake' }
     expect(await judgeScopeBatch([{ name: 'Club Night' }, live, ambiguous], request))
       .toEqual([expect.objectContaining({ scope: 'out' }), inScope, unclear])
     expect(request).toHaveBeenCalledWith([live, ambiguous])
+  })
+
+  it('judges bare titles and Passline boilerplate out without sending them to the model', async () => {
+    const sora = {
+      name: 'Sora', source: 'passline',
+      descriptionEs: 'Consigue tus entradas para Sora en Passline. Encuentra detalles, asegura tu asistencia y prepárate para disfrutar de una experiencia inolvidable.',
+    }
+    const editions = ['Sora 2', 'Sora Edición 2'].map(name => ({ ...sora, name, descriptionEs: sora.descriptionEs.replace('Sora', name) }))
+    const empty = { name: 'Niebla', descriptionEs: '', descriptionEn: null, caption: '  ' }
+    const lineup = {
+      name: 'Hard Trap Fest 3', source: 'passline',
+      descriptionEs: '-Show de Dagger por primera vez en la Hard Trap Fest -Show Co-estelar Flakka Flakka Artistas Emergentes:',
+    }
+    const unresolved = [lineup, { name: 'Concierto de cámara' }, { name: 'Conciertos de cámara' },
+      { name: 'Ballet', descriptionEs: '' }, { name: 'Visitas guiadas al museo' },
+      { name: 'Función de títeres: Caperucita Roja' }, { name: 'Monólogo', descriptionEs: '' }, { name: 'Standup', descriptionEs: '' },
+      { ...sora, descriptionEs: `${sora.descriptionEs}\nTres bandas en vivo.` },
+      { ...sora, descriptionEn: 'A staged reading by a local theatre group.' },
+      { ...sora, caption: 'Esta fecha reúne a un trío de jazz.' }]
+    const ticketOnly = { scope: 'out', reason: 'unclear: The listing has only ticket-sale text, with no program or event type.' }
+    const request = vi.fn(async () => ({ judgments: unresolved.map((_, index) => ({ index, ...inScope })) }))
+    const noEvidence = [sora, { ...sora, caption: '  SORA!  ' }, ...editions, empty]
+    expect(await judgeScopeBatch([...noEvidence, ...unresolved], request))
+      .toEqual([...noEvidence.map(() => ticketOnly), ...unresolved.map(() => inScope)])
+    expect(request.mock.calls).toEqual([[unresolved]])
   })
 
   it('rejects partial, extra, duplicate, mislabeled, or unreasoned output', () => {
