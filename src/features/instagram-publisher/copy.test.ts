@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { load } from 'cheerio'
 import { describe, expect, it } from 'vitest'
 import { caption, cardKicker, cover, eventLine, footerHandle, heldText, skipText, slackPreview, tooFewText } from './copy.ts'
@@ -60,17 +61,20 @@ describe('Gratis esta semana', () => {
 
 it('renders the approved closing copy on the last carousel and Hoy frames', () => {
   const assets = { fontsDir: '/fonts', heroPhoto: '/hero.jpg' }
-  const carousel = load(framesHtml('finde', runWindow('finde', '2026-11-20'), weekend, assets))('body').children().last().text()
-  expect(carousel).toContain('Encontrá más planes')
-  expect(carousel).toContain('Buscá por día, barrio o presupuesto. Gratis y sin registrarte.')
-  expect(carousel).toContain('baeventos.com')
-  expect(carousel).toContain('Link en la bio')
-
-  const hoy = load(framesHtml('hoy', runWindow('hoy', '2026-11-22'), weekend.slice(-3), assets))('body').children().last().text()
-  expect(hoy).toContain('Más planes para hoy')
-  expect(hoy).toContain('Buscá por día, barrio o presupuesto en baeventos.com. Gratis y sin registrarte.')
-  expect(hoy.trim().endsWith('baeventos.com')).toBe(true)
-  expect(hoy).not.toContain('Link en la bio')
+  const approved = readFileSync(new URL('./copy.md', import.meta.url), 'utf8')
+  for (const { format, day, events, heading, fields } of [
+    { format: 'finde', day: '2026-11-20', events: weekend, heading: '- **Closing slide** (carousels):', fields: 4 },
+    { format: 'hoy', day: '2026-11-22', events: weekend.slice(-3), heading: '**Closing frame**', fields: 3 },
+  ] as const) {
+    const section = approved.split(`${heading}\n`)[1]?.split('\n\n')[0] ?? ''
+    const lines = Array.from(section.matchAll(/^\s*- \w+: "(.+)"$/gm), ([, text]) => text)
+    expect(lines, heading).toHaveLength(fields)
+    const $ = load(framesHtml(format, runWindow(format, day), events, assets))
+    const closing = $('body').children().last()
+    const rendered = closing.find('.serif, .serif + div, .btn, .foot span')
+      .map((_, node) => $(node).text().trim()).get().filter(Boolean)
+    expect(rendered, format).toEqual(lines)
+  }
 })
 
 describe('a handle that is the posting account, not the venue', () => {
