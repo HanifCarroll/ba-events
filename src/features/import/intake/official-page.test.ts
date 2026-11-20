@@ -85,6 +85,8 @@ describe('official-page evidence', () => {
     ['20/11/2026 entradas', '2026-11-20', '20:00', 'time 20:00'],
     ['21:23 hs', '2026-11-23', '21:23', 'day 23'],
     ['Viernes, 20 de Noviembre 21:00 - 23:30 hs', '2026-11-20', '23:30', 'time 23:30'],
+    ['viernes 20 de noviembre de 21:00 a las 23:30 hs', '2026-11-20', '23:30', 'time 23:30'],
+    ['viernes 20 de noviembre de 21 a 23 hs', '2026-11-20', '23:00', 'time 23:00'],
     ['24 MAR 21:00 hs', '2026-11-24', '21:00', 'month 11'],
   ])('does not use %s as evidence for %s at %s', async (excerpt, date, time, missing) => {
     expect(await Effect.runPromise(verifyOfficialPagesEffect([evidence(officialUrl, excerpt)], { ...facts, date, time },
@@ -104,6 +106,8 @@ describe('official-page evidence', () => {
     ['Noviembre: viernes 20 a las 21', '2026-11-20', '21:00'],
     ['viernes 20/11, 2026 - 21:00', '2026-11-20', '21:00'],
     ['Viernes, 20 de Noviembre\n21:00 - 23:30 hs', '2026-11-20', '21:00'],
+    ['viernes 20 de noviembre de 21:00 a las 23:30 hs', '2026-11-20', '21:00'],
+    ['viernes 20 de noviembre de 21 a 23 hs', '2026-11-20', '21:00'],
     ['viernes 20.11 21:00 hs', '2026-11-20', '21:00'],
     ['Lunes 02/11 12 a.m.', '2026-11-02', '00:00'],
   ])('accepts %s for %s at %s', async (excerpt, date, time) => {

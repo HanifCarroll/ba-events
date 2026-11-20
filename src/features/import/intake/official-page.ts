@@ -266,6 +266,7 @@ const MONTH_PREFIXES = MONTHS.map(pattern => pattern.slice(0, 3))
 const MONTH_NAME = new RegExp(String.raw`\b(?:${MONTHS.join('|')})\b`, 'g')
 const monthNumber = (name: string) => MONTH_PREFIXES.indexOf(name.slice(0, 3).replace('set', 'sep')) + 1
 const DATE = new RegExp(String.raw`\b(?<!\d[./-])(?:(?<isoYear>\d{4})-(?<isoMonth>\d{2})-(?<isoDay>\d{2})|(?<day>\d{1,2})(?:(?<sep>[./-])(?<month>\d{1,2})(?:\k<sep>(?<numericYear>\d{4}|\d{2}))?| (?:de )?(?<monthName>${MONTHS.join('|')})(?:[.,]? (?:del? )?(?<year>\d{4}))?))\b(?![./-]\d)`, 'g')
+const HOUR_RANGE = /\bde (\d{1,2}) (?:a|hasta) (?:las? )?\d{1,2} ?(?:hs?|horas)\b/g
 const CLOCK = /\b(?<!\d[./-])(?:(a las?) )?(\d{1,2})(?:([:.])(\d{2}))?(?: ?(?:([ap])\.? ?m\b\.?|(hs?|horas)\b\.?))?(?![\w:]|\.\d)/g
 const DAY_ONLY = /(?:^|\b(?:el|lun(?:es)?|mar(?:tes)?|mie(?:rcoles)?|jue(?:ves)?|vie(?:rnes)?|sab(?:ado)?|dom(?:ingo)?)[.,]? )(\d{1,2})\b(?![./-]\d)/
 
@@ -276,12 +277,17 @@ export function excerptFactsReason(excerpt: string, fields: readonly string[], f
   const [hour, minute] = facts.time?.split(':').map(Number) ?? []
   let matchesTime = false
   let previousClockEnd: number | undefined
+  const afterHourRanges = excerpt.replace(HOUR_RANGE, (_, start: string) => {
+    matchesTime ||= Number(start) === hour && minute === 0
+    return ' '
+  })
   // Remove clock tokens before reading the calendar so hours and minutes cannot stand in for dates.
-  const calendar = excerpt.replace(CLOCK, (token, prefix: string, h: string, separator: string, m: string, period: string, unit: string, offset: number) => {
+  const calendar = afterHourRanges.replace(CLOCK, (token, prefix: string, h: string, separator: string, m: string, period: string, unit: string, offset: number) => {
     if (separator !== ':' && !prefix && !period && !unit) return token // A bare dotted pair is a date, not a clock.
     const hours = Number(h)
     const localHour = period && hours >= 1 && hours <= 12 ? hours % 12 + (period === 'p' ? 12 : 0) : period ? -1 : hours
-    const rangeEnd = previousClockEnd !== undefined && /^(?:\s*[-–—]\s*| (?:a|hasta) )$/.test(excerpt.slice(previousClockEnd, offset))
+    const betweenClocks = previousClockEnd === undefined ? null : afterHourRanges.slice(previousClockEnd, offset)
+    const rangeEnd = betweenClocks !== null && (/^(?:\s*[-–—]\s*| (?:a|hasta)(?: las?)? )$/.test(betweenClocks) || !!prefix && betweenClocks === ' ')
     previousClockEnd = offset + token.length
     matchesTime ||= !rangeEnd && localHour === hour && Number(m ?? 0) === minute
     return ' '

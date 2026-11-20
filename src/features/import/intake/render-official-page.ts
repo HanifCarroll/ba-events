@@ -30,7 +30,7 @@ const visibleBody = `
   };
 `
 
-/** One disposable anonymous browser; share the result, not its cookies or its page, within a verification. */
+/** A fresh context starts without credentials; site cookies stay inside this render. */
 export function officialPageRenderer(open: OpenBrowser): RenderPage {
   return async (url, sites, excerpts) => {
     requireOfficialPageUrl(url, sites, false)
@@ -45,15 +45,15 @@ export function officialPageRenderer(open: OpenBrowser): RenderPage {
         if (expired) throw new Error('browser rendering timed out')
         const page = await owned.browser.newPage({ locale: 'es-AR', timezoneId: 'America/Argentina/Buenos_Aires',
           serviceWorkers: 'block', acceptDownloads: false })
-        const cdp = await page.context().newCDPSession(page)
+        const context = page.context()
+        // Only the original page has the per-hop CDP guard. Reject popup traffic before its first request.
+        await context.route('**/*', (route, request) => {
+          try { if (request.frame().page() === page) return route.continue() } catch {} // The first popup request can precede its frame.
+          return route.abort('blockedbyclient')
+        })
+        const cdp = await context.newCDPSession(page)
         const { frameTree } = await cdp.send('Page.getFrameTree')
         let blocked: Error | undefined
-        await cdp.send('Network.enable')
-        cdp.on('Network.requestWillBeSentExtraInfo', ({ headers }) => {
-          if (Object.entries(headers).some(([name, value]) => /^cookie$/i.test(name) && value.trim())) {
-            blocked = new Error('browser could not keep the official page read anonymous')
-          }
-        })
         // Playwright routes see only the first hop. Pause every Chromium request before it can follow a redirect.
         cdp.on('Fetch.requestPaused', ({ requestId, request, resourceType, frameId }) => {
           const mainNavigation = resourceType === 'Document' && frameId === frameTree.frame.id
@@ -66,12 +66,8 @@ export function officialPageRenderer(open: OpenBrowser): RenderPage {
               catch (error) { blocked = error as Error; allow = false }
             }
           }
-          const refuse = () => cdp.send('Fetch.failRequest', { requestId, errorReason: 'BlockedByClient' })
-          // Chrome attaches cookies after Fetch's request event. Clear this disposable browser's jar before proceeding.
-          const release = allow && !blocked ? cdp.send('Network.clearBrowserCookies').then(
-            () => blocked ? refuse() : cdp.send('Fetch.continueRequest', { requestId }),
-            () => { blocked = new Error('browser could not clear cookies before reading the official page'); return refuse() },
-          ) : refuse()
+          const release = allow && !blocked ? cdp.send('Fetch.continueRequest', { requestId })
+            : cdp.send('Fetch.failRequest', { requestId, errorReason: 'BlockedByClient' })
           void release.catch(() => {}) // A request can disappear when the browser closes.
         })
         await cdp.send('Fetch.enable', { patterns: [{ urlPattern: '*', requestStage: 'Request' }] })
