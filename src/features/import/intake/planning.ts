@@ -90,7 +90,7 @@ export function validateEvidence(candidate: Candidate, observations: Observation
     } else if (!post.caption.includes(evidence.excerpt)) reasons.push('Caption evidence must be an exact excerpt')
     for (const field of evidence.fields) supported.add(field)
   }
-  const postEvidence = candidate.evidence.filter(item => !isOfficialPage(item))
+  const postEvidence = candidate.evidence.filter(item => 'observation_id' in item)
   for (const field of suppliedDetailFacts(candidate)) {
     if (!postEvidence.some(item => item.fields.some(value => value === field))) reasons.push(`Missing Instagram evidence for ${field}`)
   }

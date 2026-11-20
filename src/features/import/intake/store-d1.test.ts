@@ -441,14 +441,17 @@ describe.skipIf(bun)('the operator flow on D1', () => {
   it('publishes credited people, then adds next-day doors to an existing event without inventing a start', async () => {
     await source()
     const venueId = await venue()
-    const excerpt = 'Synthetic Jazz — organiza Nube, toca Trío Sol. Entradas a la venta desde el 20/11 a las 15:00. Puerta: 00.30 hs.'
-    const post = await observation((await run(store.reserveCollection())).id, excerpt)
+    const ticket = 'https://tickets.example/first'
+    const excerpt = `Synthetic Jazz — organiza Nube, toca Trío Sol. Entradas a la venta desde el 20/11 a las 15:00: ${ticket}. Puerta: 00.30 hs.`
+    const runId = (await run(store.reserveCollection())).id
+    const post = await observation(runId, excerpt)
     const candidate = id(), day = shiftDay(baToday(), 5), doorsDate = shiftDay(day, 1)
     const evidence = (fields: string[]) => [{ observation_id: post, fields: ['name', 'date', 'venue', ...fields], excerpt, media_id: null }]
     const base = { date: day, time: null }
     const validFrom = '2026-11-20T18:00:00.000Z'
     await run(submitCandidateEffect(store, candidateInput(candidate, post, venueId, { ...base, organizer: { name: 'Nube' },
-      performers: [{ name: 'Trío Sol' }], offers_valid_from: validFrom, evidence: evidence(['organizer', 'performers', 'offers_valid_from']) })))
+      performers: [{ name: 'Trío Sol' }], offers_valid_from: validFrom, ticket_url: ticket,
+      evidence: evidence(['organizer', 'performers', 'offers_valid_from', 'ticket']) })))
     const create = await run(previewCandidateEffect(store, candidate))
     expect(create).toMatchObject({ action: 'create', reasons: [] })
     await run(commitPlanEffect(store, create.id, publishers))
@@ -462,6 +465,18 @@ describe.skipIf(bun)('the operator flow on D1', () => {
     expect(await db.prepare('SELECT starts_at, time_tba, doors_at, organizer_name, performers, offers_valid_from FROM events WHERE id = ?').bind(create.event_id).first())
       .toEqual({ starts_at: `${day}T03:00:00.000Z`, time_tba: 1, doors_at: `${doorsDate}T03:30:00.000Z`, organizer_name: 'Nube',
         performers: JSON.stringify([{ name: 'Trío Sol' }]), offers_valid_from: validFrom })
+
+    const newDate = shiftDay(day, 7), newTicket = 'https://tickets.example/replacement'
+    const updateExcerpt = `Synthetic Jazz, reprogramado al ${newDate}. Nueva reserva: ${newTicket}`
+    const updatePost = await observation(runId, updateExcerpt, 'synthetic-reschedule')
+    await run(submitCandidateEffect(store, candidateInput(candidate, updatePost, venueId, { ...base, date: newDate, expected_revision: 2,
+      intent: 'update', target_event_id: create.event_id, ticket_url: newTicket,
+      evidence: [{ observation_id: updatePost, fields: ['name', 'date', 'venue', 'ticket'], excerpt: updateExcerpt, media_id: null }] })))
+    const reschedule = await run(previewCandidateEffect(store, candidate))
+    expect(reschedule).toMatchObject({ action: 'update', reasons: [] })
+    await run(commitPlanEffect(store, reschedule.id, publishers))
+    expect(await db.prepare('SELECT starts_at, ticket_url, offers_valid_from, doors_at, organizer_name FROM events WHERE id = ?').bind(create.event_id).first())
+      .toEqual({ starts_at: `${newDate}T03:00:00.000Z`, ticket_url: newTicket, offers_valid_from: null, doors_at: null, organizer_name: 'Nube' })
   })
 
   it('refuses a candidate whose venue_id or target_event_id is not in the catalog, naming the ID, and stores nothing', async () => {

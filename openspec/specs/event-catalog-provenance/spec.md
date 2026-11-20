@@ -81,7 +81,7 @@ Event detail JSON-LD SHALL use recorded times, status, admission facts, and visi
 
 #### Scenario: A source states credits or door times
 - **WHEN** event details include a stored organizer, performer lineup, or door time
-- **THEN** the event page shows the credited people and identifies doors separately from the performance start
+- **THEN** the event page shows the credited people and identifies doors separately from the performance start, including the local door date when it differs from the event date
 - **AND** JSON-LD uses `doorTime` without treating it as the performance start, and includes a sale opening time only on an offer with a usable ticket or registration link
 
 ### Requirement: Source presentation preserves provenance
@@ -110,7 +110,7 @@ The homepage SHALL load scheduled events with `events.scope = 'in'`, from the st
 
 #### Scenario: An agenda event has doors but no known start
 - **WHEN** an upcoming occurrence has a door time and its start is time TBA
-- **THEN** the row shows localized door time instead of time TBA, and uses the door timestamp for ordering within the event's advertised Buenos Aires date
+- **THEN** the row shows localized door time instead of time TBA, including the local door date if different, and uses the door timestamp for ordering within the advertised Buenos Aires date
 - **AND** these choices do not change the stored start date or publish a guessed start
 
 #### Scenario: An agenda card has linked evidence

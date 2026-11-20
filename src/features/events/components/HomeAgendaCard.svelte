@@ -93,7 +93,7 @@
 				{#if event.slotStarts}
 					{#each event.slotStarts as slot, i (slot)}{#if i}{' · '}{/if}<time datetime={slot}>{formatTime(slot)}</time>{/each}
 				{:else if event.time_tba}
-					{#if event.doors_at}<time datetime={event.doors_at}>{formatDoorsTime(event.doors_at)}</time>{:else}{m.concierge_time_tba()}{/if}
+					{#if event.doors_at}<time datetime={event.doors_at}>{formatDoorsTime(event.doors_at, event.starts_at)}</time>{:else}{m.concierge_time_tba()}{/if}
 				{:else if hasTime}<time datetime={event.starts_at}>{formatTime(event.starts_at)}</time>{/if}
 			</div>
 			<div class="relative">

@@ -37,8 +37,10 @@ describe('homepage agenda views', () => {
     const agenda = { window: monday, asOf, events: [unknown, middle, known, tomorrow] }
     expect(selectHomeView(agenda, null).events).toEqual([middle, known, unknown, tomorrow])
     expect(selectHomeView(agenda, null, Date.parse(monday.tomorrow)).events).toContain(unknown)
-    expect(formatDoorsTime('2026-11-24T02:59:00.000Z', 'es')).toBe('Puerta 23:59')
-    expect(formatDoorsTime('2026-11-24T02:59:00.000Z', 'en')).toBe('Doors 11:59 PM')
+    expect(formatDoorsTime('2026-11-24T02:59:00.000Z', monday.start, 'es')).toBe('Puerta 23:59')
+    expect(formatDoorsTime('2026-11-24T02:59:00.000Z', monday.start, 'en')).toBe('Doors 11:59 PM')
+    expect(formatDoorsTime('2026-11-21T03:30:00.000Z', '2026-11-20T03:00:00.000Z', 'es')).toMatch(/^Puerta 00:30 · sáb/i)
+    expect(formatDoorsTime('2026-11-21T02:30:00.000Z', '2026-11-21T04:00:00.000Z', 'en')).toMatch(/^Doors 11:30 PM · Fri/)
   })
 
   it('shows a Thursday-to-Saturday exhibition in Finde on Wednesday', () => {
