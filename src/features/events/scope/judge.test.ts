@@ -34,6 +34,20 @@ describe('scope judgment', () => {
     ])
   })
 
+  it('strips the Passline opening even when the embedded title uses HTML entities', async () => {
+    const name = 'Ciclo JamSweetHome | Bandas & JAMs'
+    const opening = 'Consigue tus entradas para Ciclo JamSweetHome | Bandas &amp; JAMs en Passline.'
+    const listing = { ...passlineListing(name.replace('&', '&amp;')), name }
+    const lineup = 'En vivo: Trío Nube &amp; Cuarteto Sur.'
+    const mixed = { ...listing, descriptionEs: `${listing.descriptionEs}\n${lineup}`, caption: `Abre el trío.\n${opening}\nCierra el cuarteto.` }
+    const request = vi.fn(async () => ({ judgments: [{ index: 0, ...inScope }, { index: 1, ...inScope }] }))
+    await judgeScopeBatch([listing, mixed], request)
+    expect(request).toHaveBeenCalledWith([
+      { ...listing, descriptionEs: '' },
+      { ...mixed, descriptionEs: lineup, caption: 'Abre el trío.\nCierra el cuarteto.' },
+    ])
+  })
+
   it('bypasses the model only for Passline sales titles with no remaining evidence or facets', async () => {
     const sales = passlineListing('Venta de entradas')
     const caption = { ...sales, caption: 'Venta de entradas 🎸🎤' }
