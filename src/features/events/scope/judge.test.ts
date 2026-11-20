@@ -1,22 +1,52 @@
 import { describe, expect, it, vi } from 'vitest'
 import { runJsonFixture } from '../../../../tests/support/run-fixture.ts'
-import { decodeScopeJudgments, judgeScopeBatch, precheckScope, SCOPE_MODEL } from './judge.ts'
+import { decodeScopeJudgments, judgeScopeBatch, SCOPE_MODEL } from './judge.ts'
 
 const inScope = { scope: 'in', reason: 'It is a small-room live show.' }
 const unclear = { scope: 'out', reason: 'unclear: The listing does not say what takes place.' }
 
+const passlineListing = (name: string) => ({
+  name, source: 'passline',
+  descriptionEs: `Consigue tus entradas para ${name} en Passline. Encuentra detalles, asegura tu asistencia y prepárate para disfrutar de una experiencia inolvidable.`,
+})
+
 describe('scope judgment', () => {
-  it('pre-checks only unqualified club titles, not genres, venues, or ambiguous party words', async () => {
-    const request = vi.fn(async () => ({ judgments: [{ index: 1, ...unclear }, { index: 0, ...inScope }] }))
-    expect(precheckScope({ name: '   NOCHE DE BOLÍCHE ' })).toMatchObject({ scope: 'out' })
-    expect(precheckScope({ name: 'Fiesta del Libro' })).toBeUndefined()
-    expect(precheckScope({ name: 'After Office: sesión de jazz en vivo' })).toBeUndefined()
-    expect(precheckScope({ name: 'After Office', descriptionEs: 'Una obra de teatro de humor.' })).toBeUndefined()
-    const live = { name: 'Trap y Metal en Sala Chica', source: 'passline' }
-    const ambiguous = { name: 'Encuentro', source: 'instagram-intake' }
-    expect(await judgeScopeBatch([{ name: 'Club Night' }, live, ambiguous], request))
-      .toEqual([expect.objectContaining({ scope: 'out' }), inScope, unclear])
-    expect(request).toHaveBeenCalledWith([live, ambiguous])
+  it('skips the model only for exact Passline template copy with no facets', async () => {
+    const sora = passlineListing('Sora')
+    const name = 'Ciclo JamSweetHome | Bandas & JAMs'
+    const encoded = { ...passlineListing(name.replace('&', '&amp;')), name }
+    const captionOnly = { name: sora.name, source: sora.source, descriptionEs: '&nbsp;',
+      caption: `\n${sora.descriptionEs.toUpperCase().replaceAll(' ', '  ')}\n` }
+    const listings = [sora, encoded, captionOnly]
+    const request = vi.fn(() => Promise.reject(new Error('Template-only listings should not reach the model')))
+    expect(await judgeScopeBatch(listings, request)).toEqual(listings.map(() => ({
+      scope: 'out', reason: 'unclear: The listing has only ticket-sale text, with no program or event type.',
+    })))
+    expect(request).not.toHaveBeenCalled()
+  })
+
+  it('sends every other listing to the model unchanged, even when the template is present', async () => {
+    const sora = passlineListing('Sora')
+    const trap = passlineListing('Hard Trap Fest 3')
+    const lineup = '-Show de Dagger por primera vez en la Hard Trap Fest -Show Co-estelar Flakka Flakka Artistas Emergentes:'
+    const cases = [
+      [{ ...sora, caption: 'Consigue tus entradas para Sora. En vivo: Pez y Fin del Mundo. Más info en Passline.' }, inScope],
+      [{ ...trap, descriptionEs: lineup }, inScope],
+      [{ ...trap, descriptionEs: `${trap.descriptionEs}\n${lineup}` }, inScope],
+      [{ name: 'Concierto de Jazz en vivo', source: 'passline', descriptionEs: '', descriptionEn: null, caption: '  ' }, inScope],
+      [{ ...sora, facets: { activities: ['live-music'] } }, inScope],
+      [{ ...sora, caption: 'Sora 🎸🎤' }, inScope],
+      [{ ...sora, source: 'instagram' }, unclear],
+      [{ ...sora, name: 'Sora Edición 2' }, unclear],
+      [{ ...sora, descriptionEs: 'Consigue tus entradas para Sora en Passline.' }, unclear],
+      [{ ...passlineListing('Venta de entradas'), descriptionEs: '' }, unclear],
+    ] as const
+    const inputs = cases.map(([input]) => input)
+    const outcomes = cases.map(([, result]) => result)
+    const request = vi.fn(async () => ({ judgments: outcomes.map((result, index) => ({ index, ...result })) }))
+    expect(await judgeScopeBatch(inputs, request)).toEqual(outcomes)
+    expect(request).toHaveBeenCalledTimes(1)
+    expect(request).toHaveBeenCalledWith(inputs)
   })
 
   it('rejects partial, extra, duplicate, mislabeled, or unreasoned output', () => {

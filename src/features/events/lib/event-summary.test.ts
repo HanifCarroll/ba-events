@@ -10,7 +10,7 @@ import { EMPTY_FACETS } from '#shared/lib/search-facets.ts';
 function makeEvent(overrides: Partial<EventWithVenue> = {}): EventWithVenue {
 	return {
 		id: 'evt-1',
-		name: 'Jazz Night at Niceto',
+		name: 'Jazz Night at Sala Nube',
 		description_es: null,
 		description_en: null,
 		description_display_es: null,
@@ -21,7 +21,7 @@ function makeEvent(overrides: Partial<EventWithVenue> = {}): EventWithVenue {
 		ends_at: null,
 		is_all_day: false,
 		time_tba: false,
-		venue_id: null,
+		venue_id: 'venue-1',
 		categories: ['music'],
 		price: null,
 		is_free: true,
@@ -41,9 +41,10 @@ function makeEvent(overrides: Partial<EventWithVenue> = {}): EventWithVenue {
 		facets: EMPTY_FACETS,
 		created_at: '2026-08-01T00:00:00Z',
 		updated_at: '2026-08-01T00:00:00Z',
-		venue_name: 'Niceto Club',
+		venue_name: 'Sala Nube',
 		venue_neighborhood: 'Palermo',
-		venue_address: 'Av. Cnel. Niceto Vega 5510',
+		venue_address: 'Calle Falsa 123',
+		venue_website: 'https://salanube.example',
 		...overrides
 	};
 }
@@ -85,34 +86,77 @@ describe('buildEventSummary', () => {
 	});
 });
 
-describe('buildEventJsonLd', () => {
-	it('emits Event structured data with a free offer and venue address', () => {
-		const jsonLd = buildEventJsonLd(makeEvent(), 'https://baeventos.com/events/evt-1', '/og-image.png');
+const jsonLdFor = (overrides: Partial<EventWithVenue> = {}) =>
+	buildEventJsonLd(makeEvent(overrides), 'https://baeventos.com/events/evt-1', 'https://baeventos.com/flyer.jpg');
 
-		expect(jsonLd['@type']).toBe('Event');
-		expect(jsonLd.name).toBe('Jazz Night at Niceto');
-		expect(jsonLd.url).toBe('https://baeventos.com/events/evt-1');
-		expect(jsonLd.location).toEqual({
-			'@type': 'Place',
-			name: 'Niceto Club',
-			address: {
-				'@type': 'PostalAddress',
-				addressLocality: 'Buenos Aires',
-				addressCountry: 'AR',
-				streetAddress: 'Av. Cnel. Niceto Vega 5510'
+describe('buildEventJsonLd', () => {
+	it('uses the recorded end, venue organizer, and known ticket price', () => {
+		const jsonLd = jsonLdFor({ ends_at: '2026-08-15T21:00:00-03:00', is_free: false, price: 9000 });
+		expect(jsonLd).toMatchObject({
+			'@type': 'Event',
+			name: 'Jazz Night at Sala Nube',
+			url: 'https://baeventos.com/events/evt-1',
+			startDate: '2026-08-15T19:00:00-03:00',
+			endDate: '2026-08-15T21:00:00-03:00',
+			eventStatus: 'https://schema.org/EventScheduled',
+			organizer: { '@type': 'Organization', name: 'Sala Nube', url: 'https://salanube.example' },
+			location: {
+				'@type': 'Place', name: 'Sala Nube',
+				address: { '@type': 'PostalAddress', addressLocality: 'Buenos Aires', addressCountry: 'AR', streetAddress: 'Calle Falsa 123' }
 			}
 		});
-		expect(jsonLd.offers.price).toBe('0');
-		expect(jsonLd.offers.priceCurrency).toBe('ARS');
+		expect(jsonLd.offers).toEqual({ '@type': 'Offer', url: 'https://example.com/jazz', price: 9000, priceCurrency: 'ARS' });
+		expect(jsonLd).not.toHaveProperty('performer');
 	});
 
-	it('omits the street address when the location is hidden', () => {
-		const jsonLd = buildEventJsonLd(
-			makeEvent({ location_hidden: true }),
-			'https://baeventos.com/events/evt-1',
-			'/og-image.png'
-		);
+	it('does not invent an end time, price, or organizer URL', () => {
+		const jsonLd = jsonLdFor({ is_free: false, venue_website: null });
+		expect(jsonLd.endDate).toBeUndefined();
+		expect(jsonLd.organizer).toMatchObject({ '@type': 'Organization', name: 'Sala Nube' });
+		expect(jsonLd.organizer?.url).toBeUndefined();
+		expect(jsonLd.offers).toEqual({ '@type': 'Offer', url: 'https://example.com/jazz' });
+	});
 
-		expect(jsonLd.location.address.streetAddress).toBeUndefined();
+	it('uses Buenos Aires dates when no hours are known and makes no offer without an admission URL', () => {
+		const jsonLd = jsonLdFor({ time_tba: true, starts_at: '2026-08-16T01:00:00Z', ticket_url: null });
+		expect(jsonLd).toMatchObject({ startDate: '2026-08-15', endDate: '2026-08-15', isAccessibleForFree: true });
+		expect(jsonLd.offers).toBeUndefined();
+		expect(jsonLdFor({ source: 'ba-tourism' }).offers).toBeUndefined();
+		expect(jsonLdFor().offers?.price).toBe(0);
+		expect(jsonLdFor({ source: 'ba-tourism', is_all_day: true, starts_at: '2026-08-15T03:00:00Z', ends_at: '2026-08-16T03:00:00Z' }))
+			.toMatchObject({ startDate: '2026-08-15', endDate: '2026-08-16' });
+	});
+
+	it('preserves explicit hours on Luma events spanning multiple days', () => {
+		const start = '2026-08-15T03:00:00.000Z', end = '2026-08-16T17:30:00.000Z';
+		expect(jsonLdFor({ source: 'luma', is_all_day: true, starts_at: start, ends_at: end }))
+			.toMatchObject({ startDate: start, endDate: end });
+	});
+
+	it('keeps the ticket URL without claiming a contribution is free or fixed-price', () => {
+		const jsonLd = jsonLdFor({ description_es: 'Entrada a la go\u0301rra.', is_free: true, price: 0 });
+		expect(jsonLd.isAccessibleForFree).toBeUndefined();
+		expect(jsonLd.offers).toEqual({ '@type': 'Offer', url: 'https://example.com/jazz' });
+	});
+
+	it('omits a hidden, unconfirmed, or absent venue from location and organizer markup', () => {
+		for (const fields of [{ location_hidden: true }, { location_tba: true }, { venue_id: null, venue_name: null, venue_address: null }]) {
+			const jsonLd = jsonLdFor(fields);
+			const encoded = JSON.stringify(jsonLd);
+			const location = JSON.stringify(jsonLd.location);
+			expect(location).not.toContain('"name":');
+			expect(location).not.toContain('"streetAddress":');
+			expect(encoded).not.toContain('"organizer":');
+			expect(encoded).not.toContain('salanube.example');
+		}
+	});
+
+	it('preserves the original date and location when an event is canceled or postponed', () => {
+		for (const [status, schemaStatus] of [['canceled', 'EventCancelled'], ['postponed', 'EventPostponed']] as const) {
+			const jsonLd = jsonLdFor({ status });
+			expect(jsonLd.eventStatus).toBe(`https://schema.org/${schemaStatus}`);
+			expect(jsonLd.startDate).toBe(jsonLdFor().startDate);
+			expect(jsonLd.location).toEqual(jsonLdFor().location);
+		}
 	});
 });

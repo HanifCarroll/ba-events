@@ -399,7 +399,16 @@
 		outline-color: #171a0c;
 	}
 
-	.home :global(form :focus-visible) {
+	form:focus-within {
+		outline: 2px solid #d0ff36;
+		outline-offset: 3px;
+	}
+
+	.home textarea:focus-visible {
+		outline: none;
+	}
+
+	.home form button:focus-visible {
 		outline-color: #171a0c;
 	}
 </style>

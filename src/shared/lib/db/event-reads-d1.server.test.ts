@@ -17,6 +17,8 @@ import {
 } from './client.server.ts'
 import { createWorkerHandler } from '../../../mcp-worker/index.ts'
 import { homeWindow, selectHomeView } from '#features/events/lib/home-feed.ts'
+import { getEventDetailDataEffect } from '#features/events/api/detail.server.ts'
+import { Effect } from 'effect'
 
 let db: D1Database
 let dispose: () => Promise<void>
@@ -42,18 +44,18 @@ async function venue(name: string, fields: { neighborhood?: string; address?: st
 
 type EventFields = Partial<{ starts_at: string; ends_at: string; status: string; venue_id: string | null; image_url: string | null;
   description_es: string; description_summary_es: string | null; location_tba: boolean; location_hidden: boolean; categories: string[];
-  price: number | null; is_free: boolean; facets: Record<string, unknown>; scope: 'in' | 'out' | null }>
+  price: number | null; is_free: boolean; ticket_url: string; facets: Record<string, unknown>; scope: 'in' | 'out' | null }>
 async function event(name: string, fields: EventFields = {}) {
   const eventId = id()
   await db.prepare(`INSERT INTO events (id, name, starts_at, status, venue_id, image_url, image_width, image_height,
-      description_es, description_summary_es, location_tba, location_hidden, categories, is_free, price, facets, source, search_document, scope, ends_at)
-    VALUES (?, ?, ?, ?, ?, ?, 800, 600, ?, ?, ?, ?, ?, ?, ?, ?, 'luma', 'secreto', ?, ?)`).bind(
+      description_es, description_summary_es, location_tba, location_hidden, categories, is_free, price, facets, source, search_document, scope, ends_at, ticket_url)
+    VALUES (?, ?, ?, ?, ?, ?, 800, 600, ?, ?, ?, ?, ?, ?, ?, ?, 'luma', 'secreto', ?, ?, ?)`).bind(
     eventId, name, fields.starts_at ?? inDays(2), fields.status ?? 'scheduled', fields.venue_id ?? null,
     fields.image_url === undefined ? 'https://images.lumacdn.com/uploads/a.png' : fields.image_url,
     fields.description_es ?? null,
     fields.description_summary_es === undefined ? 'Una noche de jazz' : fields.description_summary_es,
     fields.location_tba ? 1 : 0, fields.location_hidden ? 1 : 0, JSON.stringify(fields.categories ?? ['music']),
-    fields.is_free === false ? 0 : 1, fields.price ?? null, JSON.stringify(fields.facets ?? { genres: ['jazz'] }), fields.scope ?? null, fields.ends_at ?? null).run()
+    fields.is_free === false ? 0 : 1, fields.price ?? null, JSON.stringify(fields.facets ?? { genres: ['jazz'] }), fields.scope ?? null, fields.ends_at ?? null, fields.ticket_url ?? null).run()
   return eventId
 }
 
@@ -117,7 +119,8 @@ describe('public event reads on D1', () => {
   it('keeps pay-what-you-can events out of Gratis when D1 also marks them free', async () => {
     const window = homeWindow(new Date('2026-11-19T08:00:00.000Z'))
     const fields = { starts_at: window.start, scope: 'in', is_free: true } as const
-    const fromNote = await event('Dúo de cuerdas', { ...fields, price: 0 })
+    const ticketUrl = 'https://tickets.example/cuerdas'
+    const fromNote = await event('Dúo de cuerdas', { ...fields, price: 0, ticket_url: ticketUrl })
     const fromTitle = await event('Cuarteto — Á LA GÓRRA', fields)
     const fromDescription = await event('Taller de grabado', { ...fields, description_es: 'Entrada a la go\u0301rra.' })
     const free = await event('Muestra gratuita', fields)
@@ -130,6 +133,10 @@ describe('public event reads on D1', () => {
     ])
     expect(events[2]).not.toHaveProperty('description_es')
     expect(selectHomeView({ window, events, asOf: Date.parse(window.start) }, 'gratis').events.map(({ id }) => id)).toEqual([free])
+    const detail = await Effect.runPromise(getEventDetailDataEffect(fromNote))
+    expect(detail.meta.jsonLd.isAccessibleForFree).toBeUndefined()
+    expect(detail.meta.jsonLd.offers).toEqual({ '@type': 'Offer', url: ticketUrl })
+    expect(detail.event).not.toHaveProperty('priceNote')
   })
 
   it('event page and chat tools: any status, decoded like events_with_venues, missing ids throw', async () => {
@@ -142,6 +149,17 @@ describe('public event reads on D1', () => {
     const pending = await event('En revisión', { status: 'pending_review' })
     expect((await getEventWithVenue(pending)).status).toBe('pending_review')
     await expect(getEventWithVenue(id())).rejects.toThrow('not found')
+  })
+
+  it('uses the stored venue website in public event markup only when its location is public', async () => {
+    const bar = await venue('Bar Sintético', { address: 'Calle Falsa 123' })
+    const website = 'https://barsintetico.example'
+    await db.prepare('UPDATE venues SET website = ? WHERE id = ?').bind(website, bar).run()
+    const visible = await event('Concierto', { venue_id: bar })
+    const hidden = await event('Lugar privado', { venue_id: bar, location_hidden: true })
+    const detail = await Effect.runPromise(getEventDetailDataEffect(visible))
+    expect(detail.meta.jsonLd.organizer).toMatchObject({ name: 'Bar Sintético', url: website })
+    expect(JSON.stringify(await Effect.runPromise(getEventDetailDataEffect(hidden)))).not.toContain(website)
   })
 
   it('MCP get_event: displayable events only, with the public columns', async () => {
