@@ -1,7 +1,9 @@
+import { load } from 'cheerio'
 import { describe, expect, it } from 'vitest'
 import { caption, cardKicker, cover, eventLine, footerHandle, heldText, skipText, slackPreview, tooFewText } from './copy.ts'
 import { baInstant } from './format.ts'
 import { runWindow } from './formats.ts'
+import { framesHtml } from './html.ts'
 import type { PostEvent } from './select.ts'
 
 const post = (date: string, time: string, title: string, handle: string | null, barrio: string, price: string | null, venue = 'Sala', via = false): PostEvent =>
@@ -11,42 +13,64 @@ const weekend: PostEvent[] = [
   post('2026-11-20', '21:00', 'Trío del Patio', 'patio_ejemplo', 'San Cristóbal', '$15.000'),
   post('2026-11-21', '11:00 a 16:30', 'Cine en el Patio', 'cine_ejemplo', 'Saavedra', 'Gratis'),
   post('2026-11-21', '21:30', 'Canciones en el Taller', 'taller_ejemplo', 'Villa General Mitre', 'A la gorra'),
+  post('2026-11-22', '14:00', 'Feria del Andén', null, 'Parque Patricios', 'Gratis', 'Sala del Andén'),
+  post('2026-11-22', '17:00', 'Taller de Papel', 'papel_ejemplo', 'Almagro', 'Gratis'),
   post('2026-11-22', '20:00', 'Dúo de la Plaza', null, 'Parque Patricios', null, 'Sala del Andén'),
 ]
 
 describe('Este finde', () => {
   it('lists each event in order with its ticket terms and closes in both languages', () => {
     const lines = caption('finde', weekend)?.split('\n\n')
-    expect(lines?.[0]).toBe('Cuatro planes independientes para este finde en Buenos Aires:')
+    expect(lines?.[0]).toBe('Seis planes independientes para este finde en Buenos Aires:')
     expect(lines?.slice(1, -2)).toEqual([
       'Viernes 20, 21:00. Trío del Patio en @patio_ejemplo, San Cristóbal. $15.000.',
       'Sábado 21, 11:00 a 16:30. Cine en el Patio en @cine_ejemplo, Saavedra. Gratis.',
       'Sábado 21, 21:30. Canciones en el Taller en @taller_ejemplo, Villa General Mitre. A la gorra.',
+      'Domingo 22, 14:00. Feria del Andén en Sala del Andén, Parque Patricios. Gratis.',
+      'Domingo 22, 17:00. Taller de Papel en @papel_ejemplo, Almagro. Gratis.',
       'Domingo 22, 20:00. Dúo de la Plaza en Sala del Andén, Parque Patricios.',
     ])
     expect(lines?.slice(-2)).toEqual([
       'Más planes en baeventos.com (link en la bio).',
-      'Four independent events this weekend in Buenos Aires. More at baeventos.com.',
+      'Six independent events this weekend in Buenos Aires. More at baeventos.com.',
     ])
   })
 
   it('formats the dates and pick count on the cover and cards', () => {
     const window = runWindow('finde', '2026-11-20')
-    expect(cover('finde', window, weekend.length)).toEqual({ kicker: '20 al 22 de noviembre', headline: ['Este finde', 'en Buenos Aires'], body: 'Cuatro planes independientes para elegir.' })
+    expect(cover('finde', window, weekend.length)).toEqual({ kicker: '20 al 22 de noviembre', headline: ['Este finde', 'en Buenos Aires'], body: 'Seis planes independientes para elegir.' })
     expect(cardKicker('finde', weekend[1]!)).toBe('Sábado 21 · 11:00 a 16:30')
   })
 })
 
 describe('Gratis esta semana', () => {
-  it('leaves the price out of each line', () => {
-    const free = weekend.map(event => ({ ...event, price: 'Gratis' }))
-    const text = caption('gratis', free)!
-    expect(text.split('\n')[0]).toBe('Cuatro planes gratis esta semana en Buenos Aires:')
-    expect(text).toContain('\nViernes 20, 21:00. Trío del Patio en @patio_ejemplo, San Cristóbal.\n')
-    expect(text.endsWith('Four free events this week in Buenos Aires. More at baeventos.com.')).toBe(true)
+  it('counts five free picks in both languages and leaves prices out of the event lines', () => {
+    const free = weekend.slice(0, 5).map(event => ({ ...event, price: 'Gratis' }))
+    const sections = caption('gratis', free)!.split('\n\n')
+    expect(sections[0]).toBe('Cinco planes gratis esta semana en Buenos Aires:')
+    const events = sections.slice(1, -2)
+    expect(events).toHaveLength(5)
+    expect(events[0]).toBe('Viernes 20, 21:00. Trío del Patio en @patio_ejemplo, San Cristóbal.')
+    expect(events.join('\n')).not.toContain('Gratis')
+    expect(sections.at(-1)).toBe('Five free events this week in Buenos Aires. More at baeventos.com.')
     const window = runWindow('gratis', '2026-11-30')
-    expect(cover('gratis', window, free.length)).toEqual({ kicker: '30 de noviembre al 6 de diciembre', headline: ['Gratis', 'esta semana'], body: 'Cuatro planes gratis en Buenos Aires para elegir.' })
+    expect(cover('gratis', window, free.length)).toEqual({ kicker: '30 de noviembre al 6 de diciembre', headline: ['Gratis', 'esta semana'], body: 'Cinco planes gratis en Buenos Aires para elegir.' })
   })
+})
+
+it('renders the approved closing copy on the last carousel and Hoy frames', () => {
+  const assets = { fontsDir: '/fonts', heroPhoto: '/hero.jpg' }
+  const carousel = load(framesHtml('finde', runWindow('finde', '2026-11-20'), weekend, assets))('body').children().last().text()
+  expect(carousel).toContain('Encontrá más planes')
+  expect(carousel).toContain('Buscá por día, barrio o presupuesto. Gratis y sin registrarte.')
+  expect(carousel).toContain('baeventos.com')
+  expect(carousel).toContain('Link en la bio')
+
+  const hoy = load(framesHtml('hoy', runWindow('hoy', '2026-11-22'), weekend.slice(-3), assets))('body').children().last().text()
+  expect(hoy).toContain('Más planes para hoy')
+  expect(hoy).toContain('Buscá por día, barrio o presupuesto en baeventos.com. Gratis y sin registrarte.')
+  expect(hoy.trim().endsWith('baeventos.com')).toBe(true)
+  expect(hoy).not.toContain('Link en la bio')
 })
 
 describe('a handle that is the posting account, not the venue', () => {
@@ -62,7 +86,7 @@ describe('a handle that is the posting account, not the venue', () => {
   it('writes "Vía @handle" in the footer, and "@handle" for the venue\'s own account', () => {
     expect(footerHandle(festival)).toBe('Vía @agenda_ejemplo')
     expect(footerHandle(weekend[0]!)).toBe('@patio_ejemplo')
-    expect(footerHandle(weekend[3]!)).toBe('')
+    expect(footerHandle(weekend[5]!)).toBe('')
   })
 })
 
