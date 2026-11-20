@@ -57,9 +57,14 @@ Event detail JSON-LD SHALL use recorded times, status, admission facts, and visi
 - **AND** the Place uses the stored name and address without placeholder text; a hidden or unconfirmed location exposes neither its venue details nor its organizer
 - **AND** an offer uses an actual ticket or registration link and omits the price when it is unknown
 
+#### Scenario: Admission is a variable contribution
+- **WHEN** the agenda's contribution rules recognize pay-what-you-can admission from the listing or the retained price note
+- **THEN** JSON-LD omits a price and does not claim free admission, even with a zero price or free flag, and keeps any ticket URL
+
 #### Scenario: The event has no precise start time or a changed status
 - **WHEN** the event is date-only or time TBA
 - **THEN** its start and end are Buenos Aires calendar dates, with the start date also serving as the end when no end is recorded
+- **AND** a Luma event with known hours keeps its times even if flagged all-day because of its duration
 - **AND** cancellation and postponement map to their corresponding schema statuses without changing the date or location
 
 ### Requirement: Source presentation preserves provenance
@@ -148,9 +153,9 @@ The D1 catalog SHALL judge events individually for an independent and public cul
 - **AND** the operator backfill retains its stable start-time and ID order
 
 #### Scenario: A ticket listing provides no program
-- **WHEN** a listing provides only an opaque single-word title (optionally followed by an edition number) and empty text, a repeated title, or known generic ticket-sale copy
+- **WHEN** a Passline listing matches the known ticket-sale template and has no other details or stored facets
 - **THEN** the catalog judges it out with an `unclear:` reason without asking the model
-- **AND** longer titles, recognized event-type words, and additional evidence in a description or caption still reach the model when no other precheck decides the listing
+- **AND** a bare title without the template, meaningful caption symbols, descriptive text beyond the template, or nonempty facets still reach the model when no other precheck decides the listing
 
 #### Scenario: An operator rehearses the backfill
 - **WHEN** the operator requests a dry run for scheduled events starting today or later in Buenos Aires

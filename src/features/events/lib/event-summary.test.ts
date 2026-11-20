@@ -123,7 +123,20 @@ describe('buildEventJsonLd', () => {
 		expect(jsonLd.offers).toBeUndefined();
 		expect(jsonLdFor({ source: 'ba-tourism' }).offers).toBeUndefined();
 		expect(jsonLdFor().offers?.price).toBe(0);
-		expect(jsonLdFor({ is_all_day: true, ends_at: '2026-08-17T02:00:00Z' }).endDate).toBe('2026-08-16');
+		expect(jsonLdFor({ source: 'ba-tourism', is_all_day: true, starts_at: '2026-08-15T03:00:00Z', ends_at: '2026-08-16T03:00:00Z' }))
+			.toMatchObject({ startDate: '2026-08-15', endDate: '2026-08-16' });
+	});
+
+	it('preserves explicit hours on Luma events spanning multiple days', () => {
+		const start = '2026-08-15T03:00:00.000Z', end = '2026-08-16T17:30:00.000Z';
+		expect(jsonLdFor({ source: 'luma', is_all_day: true, starts_at: start, ends_at: end }))
+			.toMatchObject({ startDate: start, endDate: end });
+	});
+
+	it('keeps the ticket URL without claiming a contribution is free or fixed-price', () => {
+		const jsonLd = jsonLdFor({ description_es: 'Entrada a la go\u0301rra.', is_free: true, price: 0 });
+		expect(jsonLd.isAccessibleForFree).toBeUndefined();
+		expect(jsonLd.offers).toEqual({ '@type': 'Offer', url: 'https://example.com/jazz' });
 	});
 
 	it('omits a hidden, unconfirmed, or absent venue from location and organizer markup', () => {

@@ -19,7 +19,7 @@ describe('scope judgment', () => {
     expect(request).toHaveBeenCalledWith([live, ambiguous])
   })
 
-  it('judges bare titles and Passline boilerplate out without sending them to the model', async () => {
+  it('rejects the stated Passline template but sends bare titles and other evidence to the model', async () => {
     const sora = {
       name: 'Sora', source: 'passline',
       descriptionEs: 'Consigue tus entradas para Sora en Passline. Encuentra detalles, asegura tu asistencia y prepárate para disfrutar de una experiencia inolvidable.',
@@ -30,15 +30,18 @@ describe('scope judgment', () => {
       name: 'Hard Trap Fest 3', source: 'passline',
       descriptionEs: '-Show de Dagger por primera vez en la Hard Trap Fest -Show Co-estelar Flakka Flakka Artistas Emergentes:',
     }
-    const unresolved = [lineup, { name: 'Concierto de cámara' }, { name: 'Conciertos de cámara' },
-      { name: 'Ballet', descriptionEs: '' }, { name: 'Visitas guiadas al museo' },
-      { name: 'Función de títeres: Caperucita Roja' }, { name: 'Monólogo', descriptionEs: '' }, { name: 'Standup', descriptionEs: '' },
+    const pez = { name: 'Pez', source: 'instagram' }
+    const unresolved = [lineup, empty, { name: 'Poesía', descriptionEs: '' },
+      { ...pez, caption: 'Pez 🎸🎤' }, { ...pez, facets: { activities: ['live-music'] } },
+      { name: 'Hamlet', descriptionEs: 'Versión del clásico a cargo del elenco local.' },
+      { ...sora, caption: 'Sora 🎸🎤' }, { ...sora, facets: { activities: ['live-music'] } },
       { ...sora, descriptionEs: `${sora.descriptionEs}\nTres bandas en vivo.` },
       { ...sora, descriptionEn: 'A staged reading by a local theatre group.' },
       { ...sora, caption: 'Esta fecha reúne a un trío de jazz.' }]
     const ticketOnly = { scope: 'out', reason: 'unclear: The listing has only ticket-sale text, with no program or event type.' }
     const request = vi.fn(async () => ({ judgments: unresolved.map((_, index) => ({ index, ...inScope })) }))
-    const noEvidence = [sora, { ...sora, caption: '  SORA!  ' }, ...editions, empty]
+    const noEvidence = [sora, { ...sora, caption: '  SORA!  ' }, ...editions,
+      { ...sora, descriptionEs: '', caption: sora.descriptionEs }]
     expect(await judgeScopeBatch([...noEvidence, ...unresolved], request))
       .toEqual([...noEvidence.map(() => ticketOnly), ...unresolved.map(() => inScope)])
     expect(request.mock.calls).toEqual([[unresolved]])

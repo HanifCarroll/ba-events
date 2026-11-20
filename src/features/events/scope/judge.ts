@@ -1,7 +1,7 @@
 import { generateObject } from 'ai'
 import { z } from 'zod'
 import { openai } from '#shared/lib/ai/providers.ts'
-import { normalizeText } from '#shared/lib/utils/normalize-text.ts'
+import { isEmptyFacets } from '#shared/lib/search-facets.ts'
 
 export const SCOPE_MODEL = 'gpt-6-luna'
 export const SCOPE_VERSION = 'independent-culture-v4'
@@ -30,13 +30,15 @@ Judge the actual program. A tango or folk concert is not a social dance. A showc
 
 Return a JSON object with judgments. Give exactly one judgment for each input index, with scope "in" or "out" and one short English sentence as reason, at most 160 characters and ending in punctuation. Explain the decisive type of event in plain English without repeating titles, proper names, or links.`
 
-type ScopeInput = { name: string; descriptionEs?: string | null; descriptionEn?: string | null; caption?: string | null }
+type ScopeInput = { name: string; source?: string; descriptionEs?: string | null; descriptionEn?: string | null; caption?: string | null; facets?: unknown }
 
-const TITLE_EVIDENCE = /^(?:musica|musical|jazz|blues|tango|rock|punk|metal|trap|rap|folk|folklore|cumbia|techno|reggaeton|concierto|concert|recital|show|trio|cuarteto|orquesta|ensamble|teatro|theatre|theater|obra|monologo|monologue|impro|improvisacion|variete|performance|standup|comedia|comedy|danza|ballet|opera|circo|titere|proyeccion|screening|cine|exposicion|muestra|exhibition|feria|fair|lectura|taller|workshop|charla|debate|festival|fest|pena|milonga|fiesta)(?:s|es)?$/
+// Unlike token normalization, preserve musical and other symbols that can carry program evidence.
+const normalizeListing = (text: string) => text.toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '').replace(/[\p{P}\s]+/gu, ' ').trim()
 const PASSLINE_PITCH = 'encuentra detalles asegura tu asistencia y preparate para disfrutar de una experiencia inolvidable'
 
 /** Only precheck clear patterns; other text goes to the model. */
 export function precheckScope(input: ScopeInput): ScopeDecision | undefined {
+  if (!isEmptyFacets(input.facets)) return
   const title = input.name.normalize('NFD').replace(/\p{Diacritic}/gu, '').trim().toLowerCase()
   const details = [input.descriptionEs, input.descriptionEn, input.caption]
   if (/^(?:club night|noche de boliche|after[ -]office)$/.test(title)
@@ -44,16 +46,12 @@ export function precheckScope(input: ScopeInput): ScopeDecision | undefined {
     return { scope: 'out', reason: 'The event is advertised as a club or after-office party.' }
   }
 
-  const name = normalizeText(input.name)
-  // Longer titles can name a program without using familiar event-type words; an edition number does not add evidence.
-  const bareTitle = name.replace(/ (?:edicion )?\d+$/, '')
-  if (!/^[a-z]+$/.test(bareTitle) || TITLE_EVIDENCE.test(bareTitle)) return
+  const name = normalizeListing(input.name)
   const passlineLead = `consigue tus entradas para ${name} en passline`
-  if (details.every(value => {
-    if (!value?.trim()) return true
-    const text = normalizeText(value)
-    return text === name || text === passlineLead || text === `${passlineLead} ${PASSLINE_PITCH}`
-  })) {
+  const isTemplate = (text: string) => text === passlineLead || text === `${passlineLead} ${PASSLINE_PITCH}`
+  const texts = details.map(value => normalizeListing(value ?? ''))
+  // Missing details alone do not prove a listing is boilerplate.
+  if (input.source === 'passline' && texts.some(isTemplate) && texts.every(text => !text || text === name || isTemplate(text))) {
     return { scope: 'out', reason: 'unclear: The listing has only ticket-sale text, with no program or event type.' }
   }
 }
