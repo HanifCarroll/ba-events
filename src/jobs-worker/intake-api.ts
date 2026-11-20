@@ -17,6 +17,7 @@ import { isReadOnly } from '#shared/lib/db/read-only.ts'
 import { ImportOperationError } from '#features/import/core/effect-utils.ts'
 import { describeImage } from '#features/import/intake/collection.ts'
 import { decodeId, decodeReview, decodeSource, lookupEffect, pendingEffect, preflightEffect, publicReceipt } from '#features/import/intake/operations.ts'
+import type { RenderPage } from '#features/import/intake/official-page.ts'
 import { commitPlanEffect, previewCandidateEffect, submitCandidateEffect } from '#features/import/intake/service.ts'
 import { d1Intake, importSourcesEffect } from '#features/import/intake/store-d1.ts'
 import { decodeVenueRequest, heldBacklogEffect, resolveIntakeVenueEffect } from '#features/import/intake/venues.ts'
@@ -83,7 +84,7 @@ const SourceImport = Schema.Struct({ sources: Schema.Array(Schema.Struct({
   qualification: Schema.String.pipe(Schema.check(Schema.isMinLength(1), Schema.isMaxLength(2000))),
 })).pipe(Schema.check(Schema.isMinLength(1), Schema.isMaxLength(1000))) })
 
-type Handler = (store: IntakeStore, body: unknown, env: IntakeApiEnv, db: D1Database) => Effect.Effect<unknown, ImportOperationError>
+type Handler = (store: IntakeStore, body: unknown, env: IntakeApiEnv, db: D1Database, renderPage?: RenderPage) => Effect.Effect<unknown, ImportOperationError>
 /** Runs a decoder; a BadRequest it throws becomes an `intake.input` failure (a 400). */
 const fromBadRequest = <A>(run: () => A) => Effect.try({ try: run, catch: error => new ImportOperationError({ operation: 'intake.input',
   message: error instanceof Error ? error.message : 'Invalid input' }) })
@@ -114,14 +115,17 @@ const OPERATIONS: Record<string, Handler> = {
     }
   }).pipe(Effect.flatMap(request => resolveIntakeVenueEffect(store, request))),
   submit: (store, body) => submitCandidateEffect(store, body),
-  preview: (store, body) => fromBadRequest(() => strict(ById, body)).pipe(Effect.flatMap(({ id }) => previewCandidateEffect(store, id))),
-  commit: (store, body) => fromBadRequest(() => strict(ById, body)).pipe(Effect.flatMap(({ id }) => commitPlanEffect(store, id)), Effect.map(publicReceipt)),
+  preview: (store, body, _env, _db, renderPage) => fromBadRequest(() => strict(ById, body)).pipe(
+    Effect.flatMap(({ id }) => previewCandidateEffect(store, id, undefined, undefined, renderPage))),
+  commit: (store, body, _env, _db, renderPage) => fromBadRequest(() => strict(ById, body)).pipe(
+    Effect.flatMap(({ id }) => commitPlanEffect(store, id, undefined, renderPage)), Effect.map(publicReceipt)),
   review: (store, body) => decodeReview(body).pipe(Effect.flatMap(review => store.reviewObservation(review.observation_id, review.note))),
 
   // `collect` runs Apify and downloads images on the operator's Mac; these are the store calls it makes.
   'collection/policy': (store, body) => fromBadRequest(() => strict(Empty, body)).pipe(Effect.andThen(() => store.policy())),
   'collection/reserve': (store, body) => fromBadRequest(() => strict(Empty, body)).pipe(Effect.andThen(() => store.reserveCollection())),
-  'collection/run': (store, body) => fromBadRequest(() => strict(RunPatch, body)).pipe(Effect.flatMap(({ id, patch }) => store.updateRun(id, patch)), Effect.as({ ok: true })),
+  'collection/run': (store, body) => fromBadRequest(() => strict(RunPatch, body)).pipe(
+    Effect.flatMap(({ id, patch }) => store.updateRun(id, patch)), Effect.map(month => ({ ok: true, ...(month ? { month } : {}) }))),
   'collection/latest': (store, body) => fromBadRequest(() => strict(Schema.Struct({ post_id: Text(100) }), body))
     .pipe(Effect.flatMap(({ post_id }) => store.latestObservation(post_id))),
   'collection/seen': (store, body) => fromBadRequest(() => strict(ById, body)).pipe(Effect.flatMap(({ id }) => store.touchObservation(id)), Effect.as({ ok: true })),
@@ -140,7 +144,7 @@ async function run(effect: Effect.Effect<unknown, ImportOperationError>): Promis
 }
 
 /** `/intake/*` on the jobs Worker; any other path, or any env without D1, is a 404 as before. */
-export async function handleIntakeRequest(request: Request, env: IntakeApiEnv): Promise<Response> {
+export async function handleIntakeRequest(request: Request, env: IntakeApiEnv, renderPage?: RenderPage): Promise<Response> {
   const url = new URL(request.url)
   const db = boundD1Database(env)
   if (!db || !url.pathname.startsWith('/intake/')) return notFound()
@@ -173,7 +177,7 @@ export async function handleIntakeRequest(request: Request, env: IntakeApiEnv): 
     const operation = OPERATIONS[path]
     if (!operation || request.method !== 'POST') return json({ error: 'Unknown intake operation' }, 404)
     const body = await readJson(request)
-    return await run(operation(store, body, env, db))
+    return await run(operation(store, body, env, db, renderPage))
   } catch (error) {
     if (error instanceof BadRequest) return json({ error: error.message }, 400)
     console.error('intake api', path, error instanceof Error ? error.message : error)

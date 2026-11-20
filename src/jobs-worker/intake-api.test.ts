@@ -93,8 +93,12 @@ describe('collect through the CLI client', () => {
   it('reserves, retains posts and evidence images in R2, and resumes without a second paid run', async () => {
     await db.prepare("INSERT INTO instagram_sources (username, authority, enabled, qualification) VALUES ('synthetic_venue', 'venue', 1, 'Synthetic')").run()
     const flyer = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 9, 9, 9])
+    let limitsReads = 0
     const apify: ApifyRequest = async (method, path) => {
-      if (path === 'users/me/limits') return { data: { limits: { maxMonthlyUsageUsd: 19 }, current: { monthlyUsageUsd: 1 } } }
+      if (path === 'users/me/limits') {
+        if (++limitsReads === 3) throw new Error('Synthetic limits outage on the resumed run')
+        return { data: { limits: { maxMonthlyUsageUsd: 19 }, current: { monthlyUsageUsd: limitsReads === 1 ? 1 : 1.4 } } }
+      }
       if (method === 'POST') return { data: { id: 'synthetic-run', status: 'READY', defaultDatasetId: 'synthetic-dataset' } }
       if (path === 'actor-runs/synthetic-run') return { data: { id: 'synthetic-run', status: 'SUCCEEDED', defaultDatasetId: 'synthetic-dataset', usageTotalUsd: 0.4 } }
       if (path === 'datasets/synthetic-dataset/items') return [{ id: 'p1', shortCode: 'sc1', ownerUsername: 'synthetic_venue', caption: 'Synthetic Jazz',
@@ -104,13 +108,16 @@ describe('collect through the CLI client', () => {
     const store = remoteCollection(client())
     const fetcher = async () => describeImage(flyer)
     const result = await Effect.runPromise(collectInstagramEffect(store, apify, fetcher))
-    expect(result).toMatchObject({ state: 'succeeded', run_id: 'synthetic-run', posts: 1, changed: 1, failures: [] })
+    expect(result).toMatchObject({ state: 'succeeded', run_id: 'synthetic-run', posts: 1, changed: 1, failures: [], charged_usd: 0.4,
+      month: { charged_usd: 0.4, unmeasured_runs: 0, cap_usd: 18 }, apify_cycle: { usage_usd: 1.4, limit_usd: 19 } })
     const media = await db.prepare('SELECT object_key, content_type FROM intake_media').all<{ object_key: string }>()
     expect(media.results).toHaveLength(1)
     expect(env.INTAKE_EVIDENCE.objects.has(media.results[0].object_key)).toBe(true)
     expect(await db.prepare('SELECT state, apify_run_id, charged_usd FROM intake_runs').first()).toEqual({ state: 'succeeded', apify_run_id: 'synthetic-run', charged_usd: 0.4 })
     const again = await Effect.runPromise(collectInstagramEffect(store, apify, fetcher))
-    expect(again).toMatchObject({ state: 'succeeded', changed: 0, unchanged: 1 })
+    expect(again).toMatchObject({ state: 'succeeded', changed: 0, unchanged: 1, charged_usd: 0.4,
+      month: { charged_usd: 0.4, unmeasured_runs: 0 }, apify_cycle: null })
+    expect(limitsReads).toBe(3) // Before and after the paid run; after only when resumed.
     expect(await (client().getMedia(media.results[0].object_key))).toEqual(flyer)
   })
 

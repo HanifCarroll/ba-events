@@ -26,20 +26,38 @@ const HELP = `Instagram event intake
 
 Read docs/instagram-intake.md before operating. No schema, deployment or budget-changing commands are exposed.`
 
-// CLI authentication stays in the existing Apify keychain. No token is put on the command line.
-const apify: ApifyRequest = async (method, path, params, body) => {
-  const args = [process.env.APIFY_CLI_PATH ?? 'apify', 'api', method, path]
-  if (params) args.push('-p', JSON.stringify(params))
-  if (body) args.push('-d', '-')
-  const stdout = await new Promise<string>((resolve, reject) => {
-    const child = execFile(args[0], args.slice(1), { env: { ...process.env, APIFY_CLI_DISABLE_TELEMETRY: '1' },
-      timeout: 55000, maxBuffer: 50 * 1024 * 1024, encoding: 'utf8' }, (error, stdout) => {
-      if (error) reject(new Error(`Apify ${method} request failed; check CLI login and run history without displaying credentials`))
-      else resolve(stdout)
+const APIFY_CLI = ['bunx', '--package', 'apify-cli@1.10.0', 'apify']
+type CliResult = { ok: true; stdout: string } | { ok: false; stderr: string }
+
+// CLI authentication stays in the existing Apify login. No token or Actor input is put on the command line.
+function runApify([command, ...args]: string[], body?: string): Promise<CliResult> {
+  return new Promise(resolve => {
+    const child = execFile(command, args, { env: { ...process.env, APIFY_CLI_DISABLE_TELEMETRY: '1' },
+      timeout: 55000, maxBuffer: 50 * 1024 * 1024, encoding: 'utf8' }, (error, stdout, stderr) => {
+      resolve(error ? { ok: false, stderr } : { ok: true, stdout })
     })
-    child.stdin?.end(body ? JSON.stringify(body) : undefined)
+    child.stdin?.on('error', () => {}) // execFile reports the result if the child exits without reading stdin.
+    child.stdin?.end(body)
   })
-  return JSON.parse(stdout)
+}
+
+export function apifyRequest(cli = process.env.APIFY_CLI_PATH, run = runApify): ApifyRequest {
+  let command = cli ? [cli] : APIFY_CLI
+  return async (method, path, params, body) => {
+    const args = ['api', method, path]
+    if (params) args.push('-p', JSON.stringify(params))
+    if (body) args.push('-d', '-')
+    let result = await run([...command, ...args], body ? JSON.stringify(body) : undefined)
+    // Bare `bunx apify-cli@…` wrappers can select the package's Actor runtime binary instead of `apify`.
+    // Collection checks limits or reads run status before any POST; never replay an Actor start.
+    if (method === 'GET' && command !== APIFY_CLI && !result.ok && /^Error: Command api not found\s*$/m.test(result.stderr)) {
+      command = APIFY_CLI
+      result = await run([...command, ...args])
+    }
+    const failure = () => new Error(`Apify ${method} request failed; check CLI login and run history without displaying credentials`)
+    if (!result.ok) throw failure()
+    try { return JSON.parse(result.stdout) } catch { throw failure() }
+  }
 }
 
 function api(): IntakeApi {
@@ -78,7 +96,7 @@ async function viaApi(remote: IntakeApi, command: string, input: string | undefi
     case 'preflight': case 'candidates': case 'held': case 'pending': return remote.call(command)
     case 'sources': return remote.call('sources/list')
     case 'source': return remote.call('source', await Effect.runPromise(decodeSource(await readJson(input!))))
-    case 'collect': return Effect.runPromise(collectInstagramEffect(remoteCollection(remote), apify))
+    case 'collect': return Effect.runPromise(collectInstagramEffect(remoteCollection(remote), apifyRequest()))
     case 'export': return exportPending(await remote.call('pending'), key => remote.getMedia(key))
     case 'venue': {
       let request

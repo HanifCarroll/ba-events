@@ -22,6 +22,8 @@ import { dispatchCron } from './schedule.ts'
 import { EMBEDDING_TASK_LIMIT, runCatalogTask, runEmbeddingTask } from './catalog-maintenance.ts'
 import { isReadOnly } from '#shared/lib/db/read-only.ts'
 import { importSource, readSourceCatalog } from './sources.ts'
+import { officialPageRenderer } from '#features/import/intake/render-official-page.ts'
+import { cloudflareBrowser } from './browser.ts'
 import { handleIntakeRequest, type IntakeApiEnv } from './intake-api.ts'
 
 interface WorkflowBinding { create(options: { id: string; params?: unknown }): Promise<unknown> }
@@ -153,6 +155,7 @@ export class CatalogTaskWorkflow extends WorkflowEntrypoint<JobsEnv, unknown> {
 
 export default {
   // `/intake/*` answers only where the env binds DB (intake-api.ts); everything else stays a 404.
-  fetch: (request: Request, env: JobsEnv) => handleIntakeRequest(request, env),
+  fetch: (request: Request, env: JobsEnv) => handleIntakeRequest(request, env,
+    env.BROWSER && officialPageRenderer(cloudflareBrowser(env.BROWSER, 'intake', 20_000))),
   scheduled: (controller: { cron: string; scheduledTime: number }, env: JobsEnv) => dispatchCron(controller, env, runCatalogTask),
 }

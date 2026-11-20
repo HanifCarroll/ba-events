@@ -242,20 +242,21 @@ const retryPositionsEffect = Effect.fn('intake.retryMissingMedia')(function*(sto
   }
 })
 
-/**
- * The Apify account's monthly usage limit is the spending cap. At the plan's included credit (the default) no run can
- * cause overage; raising the limit above it is how Hanif approves overage for a cycle.
- */
-const checkCreditEffect = Effect.fn('intake.checkCredit')(function*(api: ApifyRequest, cap: number) {
+const limitsSchema = Schema.Struct({ data: Schema.Struct({
+  limits: Schema.Struct({ maxMonthlyUsageUsd: Schema.Number }), current: Schema.Struct({ monthlyUsageUsd: Schema.Number }),
+}) })
+const apifyCycleEffect = Effect.fn('intake.apifyCycle')(function*(api: ApifyRequest) {
   const limits = yield* importTry('apify.limits', () => api('GET', 'users/me/limits'))
-  const limitsSchema = Schema.Struct({ data: Schema.Struct({
-    limits: Schema.Struct({ maxMonthlyUsageUsd: Schema.Number }), current: Schema.Struct({ monthlyUsageUsd: Schema.Number }),
-  }) })
-  const headroom = yield* Effect.try({ try: () => {
+  return yield* Effect.try({ try: () => {
     const { limits: limit, current } = Schema.decodeUnknownSync(limitsSchema)(limits).data
-    return limit.maxMonthlyUsageUsd - current.monthlyUsageUsd
+    return { limit_usd: limit.maxMonthlyUsageUsd, usage_usd: current.monthlyUsageUsd }
   }, catch: () => fail('Could not verify the Apify monthly usage limit') })
-  if (headroom < cap + 0.02) return yield* fail('Apify monthly usage limit reached; no run started')
+})
+
+/** The account usage limit caps new runs; the intake ledger separately caps its own calendar-month spend. */
+const checkCreditEffect = Effect.fn('intake.checkCredit')(function*(api: ApifyRequest, cap: number) {
+  const { limit_usd, usage_usd } = yield* apifyCycleEffect(api)
+  if (limit_usd - usage_usd < cap + 0.02) return yield* fail('Apify monthly usage limit reached; no run started')
 })
 
 export const collectInstagramEffect = Effect.fn('intake.collect')(function*(store: CollectionStore, api: ApifyRequest,
@@ -290,12 +291,17 @@ export const collectInstagramEffect = Effect.fn('intake.collect')(function*(stor
     items.push(...page); if (page.length < 500) break
   }
   const { observationIds, mediaFailed, ...result } = yield* retainPostsEffect(store, reservation.id, items, reservation.input.username, Number(reservation.input.resultsLimit), fetcher)
-  yield* store.updateRun(reservation.id, { state: 'succeeded', charged_usd: run.usageTotalUsd ?? null, completed_at: new Date().toISOString() })
+  const charged_usd = run.usageTotalUsd ?? null
+  const month = yield* store.updateRun(reservation.id, { state: 'succeeded', charged_usd, completed_at: new Date().toISOString() })
   // After the run is recorded, so a failed retry can't leave it unfinished. Posts in today's dataset were just tried with
   // fresh URLs; every other unreviewed observation gets one retry per collect, including a resumed or repeated one.
   const retry = yield* retryMissingMediaEffect(store, { skip: observationIds, fetcher })
   if (retry.error) result.failures.push(retry.error)
-  return { state: 'succeeded', run_id: runId, scope: 'posts since 2 hours before the last successful run started (7 days with none, at most 30), capped per source; stories and video audio excluded', ...result,
+  // This read is for reporting only; an unavailable account snapshot cannot undo completed collection.
+  const cycle = yield* Effect.result(apifyCycleEffect(api))
+  return { state: 'succeeded', run_id: runId, charged_usd, month: month ? { ...month, cap_usd: policy.monthly_cap_usd } : null,
+    apify_cycle: cycle._tag === 'Success' ? cycle.success : null,
+    scope: 'posts since 2 hours before the last successful run started (7 days with none, at most 30), capped per source; stories and video audio excluded', ...result,
     media: {
       first_attempt_failed: mediaFailed, // today's posts; the next collect retries them, so not a fix yet
       retry: { attempted: retry.attempted, retained: retry.retained, ...(retry.error ? { error: retry.error } : {}) },
