@@ -253,7 +253,8 @@ export const verifyOfficialPagesEffect = (evidence: readonly Evidence[], facts: 
       reasons.push(`Official page date or time evidence must quote the selected future performance: ${page.url}`)
     } else if (!quoted.test(normalizePageText(visible))) {
       reasons.push(`Official page evidence must be an excerpt of the page's visible text: ${page.url}`)
-    } else if (!name || (nameText(title ?? '') !== name && nameText(h1 ?? '') !== name)) {
+    } else if (!name || (h1 ? nameText(h1) !== name : nameText(title ?? '') !== name)) {
+      // The first H1 is the page's identity when it has one; the <title> only stands in for a page without one.
       const headings = [
         title && `page title: ${JSON.stringify(title.slice(0, 255))}`,
         h1 && `H1: ${JSON.stringify(h1.slice(0, 255))}`,

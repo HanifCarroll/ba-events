@@ -105,6 +105,13 @@ describe('official-page evidence', () => {
     ])
   })
 
+  it('holds a page whose H1 names another show even when its title names this one', async () => {
+    const html = `<head><title>Sol y Luna</title></head><body><h1>Otra Obra</h1><p>${officialQuote}</p></body>`
+    expect(await verifyShow('Sol + Luna', html)).toEqual([
+      `Official page does not name "Sol + Luna" (page title: "Sol y Luna"; H1: "Otra Obra"): ${officialUrl}`,
+    ])
+  })
+
   it('holds a calendar whose primary heading identifies the calendar rather than either show', async () => {
     const html = `<head><title>Teatro Flores | Cartelera</title></head><body><h1>Agenda de noviembre</h1>
       <section><h2>Sol y Luna</h2><p>MARTES 24 NOVIEMBRE 21:00</p></section>
