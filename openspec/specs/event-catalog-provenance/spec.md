@@ -153,9 +153,9 @@ The D1 catalog SHALL judge events individually for an independent and public cul
 - **AND** the operator backfill retains its stable start-time and ID order
 
 #### Scenario: A ticket listing provides no program
-- **WHEN** a Passline listing matches the known ticket-sale template and has no other details or stored facets
+- **WHEN** a Passline title is only a ticket-sale phrase, or the reported Sora listing matches the known template, and the listing has no other details or stored facets
 - **THEN** the catalog judges it out with an `unclear:` reason without asking the model
-- **AND** a bare title without the template, meaningful caption symbols, descriptive text beyond the template, or nonempty facets still reach the model when no other precheck decides the listing
+- **AND** other titles, meaningful caption symbols, descriptive text beyond the template, and nonempty facets still reach the model when no other precheck decides the listing
 
 #### Scenario: An operator rehearses the backfill
 - **WHEN** the operator requests a dry run for scheduled events starting today or later in Buenos Aires
