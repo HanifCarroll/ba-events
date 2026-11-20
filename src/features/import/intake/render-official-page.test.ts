@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
 import type { Browser, BrowserContext, Request, Route } from '@cloudflare/playwright'
 import { officialPageRenderer } from './render-official-page.ts'
 
@@ -63,4 +63,22 @@ it('isolates site cookies between renders and blocks unauthorized requests', asy
     expect(actions).toContainEqual(['Fetch.failRequest', { requestId, errorReason: 'BlockedByClient' }])
   }
   expect(closed).toBe(2)
+})
+
+it('reports the upstream refusal rather than rejecting Chromium’s internal error URL as a redirect', async () => {
+  const url = 'https://tickets.example.org/event'
+  const evaluate = vi.fn(async () => ({ url: 'chrome-error://chromewebdata/', challenge: true }))
+  const page = {
+    context: () => ({ route: async () => {}, newCDPSession: async () => ({
+      on: () => {}, send: async () => ({ frameTree: { frame: { id: 'main' } } }),
+    }) }),
+    goto: async () => ({ ok: () => false, status: () => 403, request: () => ({ url: () => url, redirectedFrom: () => null }) }),
+    evaluate,
+  }
+  const close = vi.fn(async () => {})
+  const render = officialPageRenderer(async () => ({ browser: { newPage: async () => page } as unknown as Browser,
+    close, openedAt: 0, pagesUsed: 0 }))
+  await expect(render(url, new Set(['example.org']), [/fecha sintetica/u])).rejects.toThrow('browser received HTTP 403; cite another official page')
+  expect(evaluate).not.toHaveBeenCalled()
+  expect(close).toHaveBeenCalledOnce()
 })

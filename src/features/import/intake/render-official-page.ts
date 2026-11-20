@@ -73,11 +73,15 @@ export function officialPageRenderer(open: OpenBrowser): RenderPage {
         await cdp.send('Fetch.enable', { patterns: [{ urlPattern: '*', requestStage: 'Request' }] })
         const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: Math.min(6_000, remaining()) })
           .catch(() => { throw blocked ?? new Error('browser could not load the official page') })
+        if (blocked) throw blocked
         for (let request = response?.request(); request; request = request.redirectedFrom() ?? undefined) {
           requireOfficialPageUrl(request.url(), sites, request.url() !== url)
         }
+        if (!response) throw new Error('browser did not receive an HTTP response; cite another official page')
+        // Chromium can replace a failed navigation with chrome-error://chromewebdata/. Report the upstream response instead.
+        if (!response.ok()) throw new Error(`browser received HTTP ${response.status()}; cite another official page`)
         // Wait briefly for hydration, but still read the page if a particular excerpt never appears.
-        if (response?.ok()) await page.waitForFunction(`(() => {
+        await page.waitForFunction(`(() => {
           ${visibleBody}
           return readVisible(visible => {
             const text = visible.normalize('NFD').replace(/\\p{M}/gu, '').toLowerCase().replace(/\\s+/g, ' ').trim();
@@ -98,7 +102,7 @@ export function officialPageRenderer(open: OpenBrowser): RenderPage {
               fanzLinks: [...document.querySelectorAll('a[href*="fanz.com.ar"]')].map(el => el.getAttribute('href')),
               fanzJson: document.querySelector('script#__NEXT_DATA__[type="application/json"]:not([src])')?.textContent?.slice(0, ${READ_LIMIT}) ?? '',
               singleDate: cards.length === 1 ? cards[0].innerText : '',
-              challenge: ${!response?.ok()} || [...document.querySelectorAll('#challenge-form, iframe[src*="_Incapsula_Resource"]')].some(shown) ||
+              challenge: [...document.querySelectorAll('#challenge-form, iframe[src*="_Incapsula_Resource"]')].some(shown) ||
                 (visible.length < 500 && /incapsula incident id|please enable javascript and cookies to continue/i.test(visible)),
             };
           });
