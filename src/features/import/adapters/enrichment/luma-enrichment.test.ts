@@ -15,9 +15,20 @@ describe('Luma enrichment through the JSON API', () => {
     try {
       expect(await lumaEnrichmentAdapter.serverEnrich!('https://luma.com/synthetic', { extractVenue: true }))
         .toMatchObject({ description_en: 'Synthetic live jazz.', description_es: null, venue_name: 'Synthetic Venue', location_hidden: false, sourceObservedAt: expect.any(String),
-          organizer: { name: 'Colectivo Nube', url: 'https://luma.com/user/colectivo_nube' } })
+          organizer: { name: 'Colectivo Nube', url: 'https://luma.com/user/usr-synthetic' } })
       expect(fetchSpy).toHaveBeenCalledTimes(1)
       expect(String(fetchSpy.mock.calls[0]![0])).toBe('https://api2.luma.com/event/get?event_api_id=synthetic')
+    } finally { fetchSpy.mockRestore() }
+  })
+
+  it('returns the public host link even when the named host has no username', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      ...detail, hosts: [detail.hosts[1]],
+    })))
+    try {
+      expect(await lumaEnrichmentAdapter.serverEnrich!('https://luma.com/synthetic')).toMatchObject({
+        organizer: { name: 'Segundo anfitrión', url: 'https://luma.com/user/usr-synthetic2' },
+      })
     } finally { fetchSpy.mockRestore() }
   })
 

@@ -55,8 +55,10 @@ export function parseLumaEventDetail(body: unknown): LumaEventDetail | null {
     for (const host of data.hosts) {
       const name = typeof host?.name === 'string' && host.name.trim()
       if (!name) continue
-      const username = host.username
-      organizer = { name, ...(typeof username === 'string' && /^[a-z0-9_]{3,15}$/i.test(username) ? { url: `https://luma.com/user/${username}` } : {}) }
+      const { api_id: id, username } = host
+      const profile = typeof id === 'string' && /^usr-[a-z0-9]+$/i.test(id) ? id
+        : typeof username === 'string' && /^[a-z0-9_]{3,15}$/i.test(username) ? username : null
+      organizer = { name, ...(profile ? { url: `https://luma.com/user/${profile}` } : {}) }
       break // The catalog has a single organizer slot; keep the first named host in source order.
     }
   }
