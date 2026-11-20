@@ -9,6 +9,7 @@ export const load = (async ({ platform, depends, url }) => {
   try {
     const agenda = await readHomeFeed(homeFeedOptions(platform))
     return { homeAgenda: {
+      day: agenda.window.day,
       view: pageHomeView(selectHomeView(agenda, filter), requested),
       flyers: selectHomeCollage(agenda),
       refreshInMs: nextHomeViewChange(agenda, agenda.asOf) - agenda.asOf,

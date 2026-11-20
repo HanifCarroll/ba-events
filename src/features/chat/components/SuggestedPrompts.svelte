@@ -1,7 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte'
-	import { gsap } from 'gsap'
-	import { ArrowUp, CalendarDays, Camera, LogIn, Mic, Search, Sparkles, Ticket, User, Send } from 'lucide-svelte'
+	import { ArrowUp, CalendarDays, Camera, LogIn, Mic, Search, Ticket, User, Send } from 'lucide-svelte'
 	import * as m from '#paraglide/messages.js'
 	import { toast } from 'svelte-sonner'
 	import { getLocale } from '#paraglide/runtime.js'
@@ -38,6 +36,7 @@
 	let promptedEvent: { id: string; prompt: string } | null = null
 	const url = $derived(new URL(page.url.href))
 	const filter = $derived(parseHomeFilter(url.searchParams.get('f')))
+	const placeholder = $derived(m.home_chat_placeholder())
 	const view: HomeViewPage = $derived(homeAgenda?.view ?? { events: [], empty: 'feed', total: 0 })
 	const flyers = $derived(homeAgenda?.flyers ?? [])
 	let refreshPending = false
@@ -45,6 +44,8 @@
 	let scroller = $state<HTMLDivElement>()
 	let headline = $state<HTMLHeadingElement>()
 	let showBackToTop = $state(false)
+	let backToTopButton = $state<HTMLButtonElement>()
+	let composer = $state<HTMLFormElement>()
 	const instagram = 'https://www.instagram.com/baeventos.app/'
 	let landingInput = $state<HTMLTextAreaElement | null>(null)
 	let isSigningOut = $state(false)
@@ -105,7 +106,18 @@
 	})
 
 	function updateBackToTop() {
-		if (scroller) showBackToTop = scroller.scrollTop > 2 * scroller.clientHeight
+		if (!scroller) return
+		const pastThreshold = scroller.scrollTop > 2 * scroller.clientHeight
+		const atEnd = scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 1
+		if (!composer || !backToTopButton || !pastThreshold || atEnd) {
+			showBackToTop = pastThreshold || (atEnd && scroller.scrollTop > 0)
+			return
+		}
+		const button = backToTopButton.getBoundingClientRect()
+		const form = composer.getBoundingClientRect()
+		const gap = 8
+		showBackToTop = form.right + gap <= button.left || form.left >= button.right + gap
+			|| form.bottom + gap <= button.top || form.top >= button.bottom + gap
 	}
 
 	async function revealAgendaPage(href: string) {
@@ -150,6 +162,7 @@
 		if (!landingInput || window.matchMedia('(min-width: 640px)').matches) return
 		landingInput.style.height = 'auto'
 		landingInput.style.height = `${landingInput.scrollHeight}px`
+		updateBackToTop()
 	}
 
 	function askAbout(event: HomeAgendaEvent) {
@@ -162,36 +175,18 @@
 		requestAnimationFrame(resizeLandingInput)
 	}
 
-	onMount(() => {
-		const input = landingInput
-		if (!input || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
-		const prompts = [m.landing_placeholder(), m.landing_placeholder_2(), m.landing_placeholder_3(),
-			m.landing_placeholder_4(), m.landing_placeholder_5()]
-		const progress = { value: 0 }
-		const typewriter = gsap.timeline({ repeat: -1, defaults: { ease: 'none' } })
-		for (const prompt of prompts) {
-			const setPlaceholder = () => {
-				input.setAttribute('placeholder', prompt.slice(0, Math.round(progress.value * prompt.length)))
-			}
-			typewriter.to({}, { duration: 2 })
-			typewriter.to(progress, { value: 1, duration: prompt.length * 0.045, onUpdate: setPlaceholder })
-			typewriter.to({}, { duration: 3 })
-			typewriter.to(progress, { value: 0, duration: prompt.length * 0.045, onUpdate: setPlaceholder })
-		}
-		return () => { typewriter.kill() }
-	})
 </script>
 
-<svelte:window onfocus={refreshAgendaIfDue} />
+<svelte:window onfocus={refreshAgendaIfDue} onresize={updateBackToTop} />
 <svelte:document onvisibilitychange={refreshAgendaIfDue} />
 
 <div bind:this={scroller} onscroll={updateBackToTop} class="home h-full overflow-y-auto bg-[#101012] text-[#f6f6f7]">
-	<header class="mx-auto max-w-[90rem] px-4 pt-3 pb-5 sm:px-8 sm:pt-4 sm:pb-7 lg:px-12">
+	<header data-section="intro" class="mx-auto max-w-[90rem] px-4 pt-3 pb-4 sm:px-8 sm:pt-4 sm:pb-7 lg:px-12">
 		<nav class="flex items-center max-md:-mx-1 md:flex-wrap md:gap-x-4 md:gap-y-2" aria-label={m.landing_nav_label()}>
 			<a href="/" class="inline-flex min-h-10 min-w-0 items-center max-md:mr-2 max-md:[&_img]:h-auto max-md:[&_img]:w-32">
 				<BrandLogo />
 			</a>
-			<div class="ml-auto shrink-0 md:contents">
+			<div class="home-languages ml-auto shrink-0 md:contents">
 				<LanguageSwitcher compact />
 			</div>
 			<div class="flex items-center text-xs font-medium max-md:shrink-0 md:ml-auto md:flex-wrap md:gap-4 md:text-sm">
@@ -200,12 +195,12 @@
 					target="_blank"
 					rel="noopener noreferrer"
 					aria-label={m.landing_instagram_aria()}
-					class="rounded hover:text-indigo-200 focus-visible:ring-2 focus-visible:ring-white max-md:grid max-md:size-[40px] max-md:place-items-center md:px-1 md:py-2"
+					class="home-control rounded-lg max-md:grid max-md:size-[40px] max-md:place-items-center md:px-1 md:py-2"
 				>
 					<Camera class="size-4 md:hidden" aria-hidden="true" />
 					<span class="max-md:sr-only">{m.landing_instagram()}</span>
 				</a>
-				<InstallApp compact class="border border-white/60 text-white hover:bg-white/10 max-md:size-[40px] max-md:p-0 max-md:has-[>svg]:px-0 md:px-3" />
+				<InstallApp compact class="home-control max-md:size-[40px] max-md:p-0 max-md:has-[>svg]:px-0 md:px-3" />
 				{#if auth.user}
 					<DropdownMenu>
 						<DropdownMenuTrigger>
@@ -213,7 +208,7 @@
 								<button
 									{...props}
 									type="button"
-									class="flex min-h-[40px] items-center gap-1 rounded-lg border border-white/60 hover:bg-white/10 max-md:w-[40px] max-md:justify-center md:min-h-10 md:px-3 md:py-2"
+									class="home-control flex items-center gap-1 rounded-lg max-md:w-[40px] max-md:justify-center md:px-3 md:py-2"
 								>
 									<User class="size-4" aria-hidden="true" />
 									<span class="max-md:sr-only">{m.nav_account()}</span>
@@ -246,7 +241,7 @@
 				{:else}
 					<a
 						href="/login"
-						class="rounded-lg border border-white/60 hover:bg-white/10 max-md:grid max-md:size-[40px] max-md:place-items-center md:px-4 md:py-2"
+						class="home-control rounded-lg max-md:grid max-md:size-[40px] max-md:place-items-center md:px-4 md:py-2"
 					>
 						<LogIn class="size-4 md:hidden" aria-hidden="true" />
 						<span class="max-md:sr-only">{m.auth_sign_in()}</span>
@@ -257,66 +252,64 @@
 
 		<div class={['mt-3 grid items-stretch gap-8', flyers.length && 'md:grid-cols-[minmax(0,1fr)_minmax(9rem,21%)]']}>
 			<div class="min-w-0">
-				<h1 bind:this={headline} tabindex="-1" class={['max-w-[28ch] font-display text-4xl leading-[1.02] font-semibold tracking-tight md:text-5xl lg:text-6xl', !flyers.length && 'md:max-w-none']}>
+				<h1 bind:this={headline} tabindex="-1" class={['max-w-[28ch] font-display text-[clamp(1.875rem,8.2vw,2.25rem)] leading-[1.02] font-semibold tracking-tight max-md:text-balance md:text-5xl lg:text-6xl', !flyers.length && 'md:max-w-none']}>
 					{m.landing_title()}
 				</h1>
-				<p class="mt-2 max-w-3xl text-sm text-[#d5d5db] sm:text-base">{m.landing_subtitle()}</p>
-				<p class="mt-1 max-w-3xl text-sm text-[#d5d5db] sm:text-base">{m.landing_subtitle_second()}</p>
+				<p class="mt-2 max-w-3xl text-sm text-[#d5d5db] max-md:text-pretty sm:text-base">{m.home_intro_subtitle()}</p>
 			</div>
 			{#if flyers.length}<HomeFlyerCollage {flyers} />{/if}
 		</div>
 	</header>
 
-	<HomeAgenda {view} {filter} {url} onAsk={askAbout} onMore={revealAgendaPage} />
+	<HomeAgenda {view} {filter} {url} day={homeAgenda?.day} chat={chatBlock} onAsk={askAbout} onMore={revealAgendaPage} />
 
-	<section class="home-chat border-y border-[#3b3b42] bg-[#19191d] px-4 py-12 text-center sm:px-8 sm:py-16" aria-labelledby="home-chat-heading">
-		<div class="mx-auto flex max-w-3xl flex-col items-center">
-			<h2 id="home-chat-heading" class="font-display text-3xl font-semibold sm:text-4xl">{m.home_chat_heading()}</h2>
-			<p class="mt-3 max-w-lg text-[#d5d5db]">{m.home_chat_body()}</p>
+	{#snippet chatBlock()}
+	<section data-section="chat" class="rounded-2xl border border-[#3b3b42] bg-[#19191d] px-3 py-5 text-center sm:p-8" aria-labelledby="home-chat-heading">
+		<div data-chat-body class="mx-auto flex max-w-3xl flex-col items-center">
+			<h2 id="home-chat-heading" class="text-lg leading-tight font-semibold sm:text-2xl">{m.home_chat_heading()}</h2>
 			<form
+				bind:this={composer}
 				onsubmit={(event) => {
 					event.preventDefault()
 					submitQuery()
 				}}
-				class="mt-8 flex w-full max-w-3xl flex-col gap-0 rounded-2xl bg-white p-3 text-foreground shadow-2xl sm:flex-row sm:items-center sm:gap-2 sm:p-1.5 sm:pl-4"
+				class="mt-3 flex w-full max-w-3xl items-center gap-1 rounded-2xl bg-white p-1.5 pl-2 text-foreground sm:gap-2 sm:pl-4"
 			>
 				<Search class="hidden size-5 shrink-0 text-muted-foreground sm:block" aria-hidden="true" />
-				<label for="landing-composer" class="sr-only">{m.landing_placeholder()}</label>
+				<label for="landing-composer" class="sr-only">{m.home_composer_label()}</label>
 				<textarea
 					bind:this={landingInput}
 					bind:value={landingQuery}
 					id="landing-composer"
-					placeholder={m.landing_placeholder()}
+					{placeholder}
 					autocomplete="off"
 					onkeydown={handleComposerKeydown}
 					oninput={resizeLandingInput}
 					rows="1"
-					class="min-h-11 w-full min-w-0 resize-none overflow-x-hidden bg-transparent px-1 py-2 text-base leading-6 outline-none placeholder:text-muted-foreground sm:!h-11 sm:min-h-11 sm:flex-1 sm:overflow-hidden sm:py-3 sm:text-sm"
+					class="min-h-11 w-full min-w-0 flex-1 resize-none overflow-x-hidden bg-transparent px-1 py-2 text-base leading-6 outline-none placeholder:text-muted-foreground sm:!h-11 sm:overflow-hidden sm:py-3 sm:text-sm"
 				></textarea>
-				<div class="flex items-center justify-between gap-2 sm:contents">
-					<button
-						type="button"
-						onclick={handleMicClick}
-						disabled={!isSupported}
-						aria-label={isListening ? m.chat_stop_dictating() : m.chat_dictate()}
-						aria-pressed={isListening}
-						title={!isSupported ? m.chat_dictate_unsupported() : undefined}
-						class="flex min-h-11 min-w-11 items-center justify-center rounded-xl transition-colors {isListening
-							? 'bg-red-500/15 text-red-500'
-							: 'text-muted-foreground hover:bg-primary/10 hover:text-primary'} disabled:cursor-not-allowed disabled:text-muted-foreground/40"
-					>
-						<Mic class="size-5" aria-hidden="true" />
-						<span class="sr-only">{isListening ? m.chat_stop_dictating() : m.chat_dictate()}</span>
-					</button>
-					<button
-						type="submit"
-						class="min-h-11 shrink-0 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 sm:px-6"
-					>
-						{m.landing_submit()}
-					</button>
-				</div>
+				<button
+					type="button"
+					onclick={handleMicClick}
+					disabled={!isSupported}
+					aria-label={isListening ? m.chat_stop_dictating() : m.chat_dictate()}
+					aria-pressed={isListening}
+					title={!isSupported ? m.chat_dictate_unsupported() : undefined}
+					class="flex min-h-11 min-w-11 items-center justify-center rounded-xl transition-colors {isListening
+						? 'bg-red-500/15 text-red-500'
+						: 'text-muted-foreground hover:bg-primary/10 hover:text-primary'} disabled:cursor-not-allowed disabled:text-muted-foreground/40"
+				>
+					<Mic class="size-5" aria-hidden="true" />
+				</button>
+				<button
+					type="submit"
+					class="min-h-11 shrink-0 rounded-xl border border-[#171a0c] bg-[#d0ff36] text-sm font-semibold text-[#171a0c] transition-colors hover:bg-[#bde62f] max-sm:grid max-sm:min-w-11 max-sm:place-items-center sm:px-6"
+				>
+					<Send class="size-4 sm:hidden" aria-hidden="true" />
+					<span class="max-sm:sr-only">{m.landing_submit()}</span>
+				</button>
 			</form>
-			<div class="mt-6 flex flex-wrap justify-center gap-3">
+			<div class="mt-3 flex flex-wrap justify-center gap-2">
 				<button
 					type="button"
 					onclick={() => sendPrompt(m.landing_prompt_today())}
@@ -331,20 +324,13 @@
 				>
 					<Ticket class="size-4" aria-hidden="true" />{m.landing_free_weekend()}
 				</button>
-				<button
-					type="button"
-					onclick={() => sendPrompt(m.context_prompt_surprise())}
-					class="flex min-h-11 items-center gap-2 rounded-full border border-white/70 px-4 py-2 text-sm font-medium hover:bg-white/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
-				>
-					<Sparkles class="size-4" aria-hidden="true" />{m.home_surprise_label()}
-				</button>
 			</div>
-			<p class="mt-6 text-sm text-[#d5d5db]">{m.landing_reassurance()}</p>
 		</div>
 	</section>
+	{/snippet}
 
-	<section class="mx-auto max-w-[90rem] px-4 py-10 sm:px-8 lg:px-12" aria-labelledby="home-follow-heading">
-		<h2 id="home-follow-heading" class="font-display text-3xl font-semibold">{m.home_follow_heading()}</h2>
+	<section data-section="follow" class="mx-auto max-w-[90rem] px-4 py-10 sm:px-8 lg:px-12" aria-labelledby="home-follow-heading">
+		<h2 id="home-follow-heading" class="text-3xl font-semibold">{m.home_follow_heading()}</h2>
 		<div class="mt-3 flex flex-wrap gap-x-8 gap-y-2">
 			<a
 				href={instagram}
@@ -373,7 +359,7 @@
 		</div>
 	</section>
 
-	<footer class="mx-auto max-w-[90rem] border-t border-[#3b3b42] px-4 py-4 sm:px-8 lg:px-12">
+	<footer data-section="footer" class="mx-auto max-w-[90rem] border-t border-[#3b3b42] px-4 py-4 sm:px-8 lg:px-12">
 		<a
 			href="/mcp"
 			onclick={() => track('mcp:signpost_clicked', { source: 'homepage' })}
@@ -381,16 +367,15 @@
 		>{m.mcp_signpost()}</a>
 	</footer>
 
-	{#if showBackToTop}
-		<button
-			type="button"
-			aria-label={m.home_back_to_top()}
-			onclick={backToTop}
-			class="back-to-top fixed z-30 grid place-items-center rounded-full border border-[#d0ff36] bg-[#19191d] text-[#d0ff36] shadow-lg hover:bg-[#29320c]"
-		>
-			<ArrowUp class="size-5" aria-hidden="true" />
-		</button>
-	{/if}
+	<button
+		bind:this={backToTopButton}
+		type="button"
+		aria-label={m.home_back_to_top()}
+		onclick={backToTop}
+		class={['back-to-top fixed z-30 grid place-items-center rounded-full border border-[#d0ff36] bg-[#19191d] text-[#d0ff36] shadow-lg hover:bg-[#29320c]', !showBackToTop && 'invisible']}
+	>
+		<ArrowUp class="size-5" aria-hidden="true" />
+	</button>
 </div>
 
 <style>
@@ -406,10 +391,20 @@
 		bottom: calc(3.5rem + env(safe-area-inset-bottom, 0px));
 	}
 
-	@media (width < 64rem) {
-		.home-chat {
-			padding-right: calc(var(--back-to-top-right) + var(--back-to-top-size) + 0.5rem);
-		}
+	.home :global(.home-control), .home-languages :global(button) {
+		height: 40px;
+		min-width: 40px;
+		border: 0;
+		border-radius: 0.5rem;
+		color: inherit;
+	}
+
+	.home-languages :global(button:not([aria-current])) {
+		color: rgb(255 255 255 / 68%);
+	}
+
+	.home :global(.home-control:hover), .home-languages :global(button:not([aria-current]):hover) {
+		background-color: rgb(255 255 255 / 10%);
 	}
 
 	.home :global(:focus-visible) {
@@ -417,7 +412,16 @@
 		outline-offset: 3px;
 	}
 
+	.home :global([data-section='filters'] a:focus-visible) {
+		outline-color: white;
+		outline-offset: -4px;
+	}
+
+	.home :global([data-section='filters'] a[aria-current]:focus-visible) {
+		outline-color: #171a0c;
+	}
+
 	.home :global(form :focus-visible) {
-		outline-color: #4b35a3;
+		outline-color: #171a0c;
 	}
 </style>

@@ -1,5 +1,5 @@
 export const ARTWORK_WIDTHS = [320, 640, 1280] as const
-export const HOME_ARTWORK_SIZES = '(min-width: 1440px) 243.2px, (min-width: 1024px) calc((100vw - 192px) / 4), (min-width: 640px) calc((100vw - 104px) / 3), calc((100vw - 44px) / 2)'
+export const HOME_ARTWORK_SIZES = '(width < 768px) 96px, (min-width: 1440px) 243.2px, (min-width: 1024px) calc((100vw - 192px) / 4), calc((100vw - 104px) / 3)'
 
 // Exact CDN hosts and media paths; no wildcard suffixes, arbitrary hosts or redirects.
 const IMAGE_PATHS: Record<string, RegExp> = {

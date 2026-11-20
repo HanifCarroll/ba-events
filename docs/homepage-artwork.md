@@ -1,21 +1,27 @@
 # Homepage cards and artwork
 
-The homepage reads a shared, compact four-card feed from the Workers Cache API.
+The homepage reads the shared weekly agenda from the Workers Cache API. The
+server renders up to 24 cards per requested page, plus any eligible header
+collage flyers. Below 768 CSS pixels, the agenda uses 96-pixel thumbnails in
+rows grouped by Buenos Aires start date. Wider screens use a grid. One composer
+follows six phone rows, two grid rows, or the last visible event if fewer match.
+
 Fresh entries (60 seconds) render in server HTML. Entries up to another 300
-seconds old render immediately while `waitUntil` refreshes them. A cold read is
-a nested SvelteKit loader promise: the hero renders while the row streams, with
-a skeleton reserving its space. There is no hydration-triggered events fetch.
+seconds old render immediately while `waitUntil` refreshes them. A cold read also
+renders the agenda in server HTML; there is no hydration-triggered events fetch.
 Database failures are not cached as successful empty feeds.
 
-The public feed uses `Cache-Control: no-cache` for browsers and explicit
+The legacy four-card `/api/events/happening-soon` feed uses `Cache-Control: no-cache` for browsers and explicit
 `CDN-Cache-Control` / `Cloudflare-CDN-Cache-Control` directives for 60 seconds
 plus 300 seconds of stale-while-revalidate. The separate browser directive
 prevents the zone's observed four-hour minimum browser TTL from extending
 the feed's freshness. HTML remains locale/session dependent and is not shared.
 
 `EventArtwork` selects WebP variants through a `<picture>` and accurate `sizes`.
-Homepage cards 1–2 are eager; only card 1 has high priority. Remaining cards are
-lazy. Event details and chat artwork use the same delivery path.
+Homepage cards 1–4 are eager; only card 1 has high priority. Remaining cards are
+lazy. Event details and chat artwork use the same delivery path. The agenda puts
+a blurred, darkened copy of the same responsive source behind the contained
+artwork, so non-filling images don't leave solid bars.
 Reserved frames give the image an explicit box with `object-contain`, so switching
 to a cached candidate cannot shrink it through density-corrected natural sizing.
 Known source dimensions cap both the rendered maximum and candidate descriptors;
@@ -62,7 +68,8 @@ all-source transforms, format/dimension policy, and proxy/fallback boundaries.
 The native Bun runner skips only the SSR component fixture because it lacks a
 Svelte compiler; the authoritative Vitest server project executes that fixture.
 
-After release, verify warm HTML includes four picture sources, the feed has
-four compact records and the explicit CDN TTL, and real catalog image requests
+After release, verify warm homepage HTML includes responsive artwork and the
+expected page of cards, the legacy feed has up to four compact records and the
+explicit CDN TTL, and real catalog image requests
 from each image provider return WebP at bounded dimensions and cache on repeat.
 Do not describe HTTP completion as browser paint or LCP.

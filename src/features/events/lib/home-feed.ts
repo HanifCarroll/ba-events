@@ -38,10 +38,10 @@ export function parseHomeFilter(value: string | null): HomeFilter | null {
   return HOME_FILTERS.find((filter) => filter === value) ?? null
 }
 
-const localDay = (time: Date | string) => formatInTimeZone(time, BA_TIMEZONE, 'yyyy-MM-dd')
+export const homeDay = (time: Date | string) => formatInTimeZone(time, BA_TIMEZONE, 'yyyy-MM-dd')
 
 export function homeWindow(now: Date) {
-  const day = localDay(now)
+  const day = homeDay(now)
   const date = new Date(`${day}T00:00:00Z`)
   const friday = date.getUTCDay() === 0 ? -2 : 5 - date.getUTCDay()
   const midnight = (offset: number) => {
@@ -57,7 +57,7 @@ export type HomeAgenda = { window: HomeWindow; events: HomeAgendaEvent[]; asOf: 
 export type HomeAgendaCardEvent = HomeAgendaEvent & { slotStarts?: string[] }
 export type HomeView = { events: HomeAgendaCardEvent[]; empty: HomeFilter | 'feed' | null }
 export type HomeViewPage = HomeView & { total: number }
-export type HomeAgendaPage = { view: HomeViewPage; flyers: HomeAgendaCardEvent[]; refreshInMs: number }
+export type HomeAgendaPage = { view: HomeViewPage; flyers: HomeAgendaCardEvent[]; refreshInMs: number; day: string }
 
 export function pageHomeView(view: HomeView, requested: string | null): HomeViewPage {
   const n = requested && /^\d+$/.test(requested) ? Number(requested) : 0
@@ -101,7 +101,7 @@ function groupOccurrences(events: HomeAgendaEvent[], now: number): HomeAgendaCar
   for (const event of events) {
     const title = normalizeText(event.name)
     const key = event.venue_id && title && !event.time_tba && !event.is_all_day
-      ? JSON.stringify([event.venue_id, title, localDay(event.starts_at)])
+      ? JSON.stringify([event.venue_id, title, homeDay(event.starts_at)])
       : event.id
     const existing = groups.get(key)
     if (existing) existing.push(event)
