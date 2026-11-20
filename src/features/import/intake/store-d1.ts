@@ -385,7 +385,7 @@ export function d1Intake({ db, evidence, artwork, vectors }: IntakeBindings, sit
 
       const performers = e.performers ?? previous?.performers
       const oldTicket = typeof previous?.ticket_url === 'string' ? previous.ticket_url : null
-      const replacedTicket = !!e.ticket_url && (canonicalTicket(e.ticket_url) ?? e.ticket_url) !== (canonicalTicket(oldTicket) ?? oldTicket)
+      const replacedTicket = !!oldTicket && !!e.ticket_url && (canonicalTicket(e.ticket_url) ?? e.ticket_url) !== (canonicalTicket(oldTicket) ?? oldTicket)
       const sameDay = typeof previous?.starts_at === 'string' && baDate(previous.starts_at) === baDate(startsAt)
       const retainedDoors = sameDay && typeof previous?.doors_at === 'string' && (e.time_tba || previous.doors_at <= startsAt) ? previous.doors_at : null
       const details = [e.organizer_name ?? previous?.organizer_name ?? null,
