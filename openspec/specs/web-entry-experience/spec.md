@@ -45,7 +45,7 @@ The homepage SHALL lead with the current agenda and render exactly one centered 
 
 #### Scenario: A visitor reaches the homepage composer
 - **WHEN** the homepage renders the default or a filtered agenda
-- **THEN** the composer follows the first six phone rows or the first two desktop grid rows, or the last visible card if there are fewer
+- **THEN** the composer follows the first six phone rows or the first two desktop grid rows, or the last visible card if there are fewer, even before hydration or without JavaScript
 - **AND** it follows the agenda status when no cards are visible, and contains a short heading, an input, and at most two suggestion chips
 
 #### Scenario: A visitor browses more of the agenda
@@ -59,7 +59,7 @@ The homepage SHALL lead with the current agenda and render exactly one centered 
 - **WHEN** the agenda shows flyer cards
 - **THEN** the first four images load eagerly, the first has high fetch priority, and the remaining images load lazily in reserved 4:5 frames
 - **WHEN** the visitor scrolls more than approximately two viewport heights
-- **THEN** a localized back-to-top button with a target at least 44 pixels square appears clear of page controls and safe-area insets, and hides while the composer overlaps the bottom 30% of the viewport
+- **THEN** a localized back-to-top button with a target at least 44 pixels square appears clear of page controls and safe-area insets, and hides when its measured footprint is within 8 CSS pixels of the composer form
 - **AND** the button is available at the bottom of any scrollable agenda, even when the visitor has not scrolled two viewport heights
 - **AND** activating it returns the visitor to the top without smooth scrolling when reduced motion is requested
 

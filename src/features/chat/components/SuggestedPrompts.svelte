@@ -44,6 +44,7 @@
 	let scroller = $state<HTMLDivElement>()
 	let headline = $state<HTMLHeadingElement>()
 	let showBackToTop = $state(false)
+	let backToTopButton = $state<HTMLButtonElement>()
 	let composer = $state<HTMLFormElement>()
 	const instagram = 'https://www.instagram.com/baeventos.app/'
 	let landingInput = $state<HTMLTextAreaElement | null>(null)
@@ -108,13 +109,15 @@
 		if (!scroller) return
 		const pastThreshold = scroller.scrollTop > 2 * scroller.clientHeight
 		const atEnd = scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 1
-		if (!composer || !pastThreshold || atEnd) {
+		if (!composer || !backToTopButton || !pastThreshold || atEnd) {
 			showBackToTop = pastThreshold || (atEnd && scroller.scrollTop > 0)
 			return
 		}
-		const bottom = scroller.getBoundingClientRect().bottom
+		const button = backToTopButton.getBoundingClientRect()
 		const form = composer.getBoundingClientRect()
-		showBackToTop = form.top >= bottom || form.bottom <= bottom - scroller.clientHeight * 0.3
+		const gap = 8
+		showBackToTop = form.right + gap <= button.left || form.left >= button.right + gap
+			|| form.bottom + gap <= button.top || form.top >= button.bottom + gap
 	}
 
 	async function revealAgendaPage(href: string) {
@@ -159,6 +162,7 @@
 		if (!landingInput || window.matchMedia('(min-width: 640px)').matches) return
 		landingInput.style.height = 'auto'
 		landingInput.style.height = `${landingInput.scrollHeight}px`
+		updateBackToTop()
 	}
 
 	function askAbout(event: HomeAgendaEvent) {
@@ -272,7 +276,7 @@
 				class="mt-3 flex w-full max-w-3xl items-center gap-1 rounded-2xl bg-white p-1.5 pl-2 text-foreground sm:gap-2 sm:pl-4"
 			>
 				<Search class="hidden size-5 shrink-0 text-muted-foreground sm:block" aria-hidden="true" />
-				<label for="landing-composer" class="sr-only">{placeholder}</label>
+				<label for="landing-composer" class="sr-only">{m.home_composer_label()}</label>
 				<textarea
 					bind:this={landingInput}
 					bind:value={landingQuery}
@@ -363,16 +367,15 @@
 		>{m.mcp_signpost()}</a>
 	</footer>
 
-	{#if showBackToTop}
-		<button
-			type="button"
-			aria-label={m.home_back_to_top()}
-			onclick={backToTop}
-			class="back-to-top fixed z-30 grid place-items-center rounded-full border border-[#d0ff36] bg-[#19191d] text-[#d0ff36] shadow-lg hover:bg-[#29320c]"
-		>
-			<ArrowUp class="size-5" aria-hidden="true" />
-		</button>
-	{/if}
+	<button
+		bind:this={backToTopButton}
+		type="button"
+		aria-label={m.home_back_to_top()}
+		onclick={backToTop}
+		class={['back-to-top fixed z-30 grid place-items-center rounded-full border border-[#d0ff36] bg-[#19191d] text-[#d0ff36] shadow-lg hover:bg-[#29320c]', !showBackToTop && 'invisible']}
+	>
+		<ArrowUp class="size-5" aria-hidden="true" />
+	</button>
 </div>
 
 <style>

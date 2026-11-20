@@ -50,14 +50,14 @@
 			onerror={() => { failedUrl = imageUrl }}
 			style:max-width={!decorative && !crop && ratio && imageWidth ? `min(100%, ${imageWidth}px)` : undefined}
 			style:max-height={!decorative && !crop && ratio && imageHeight ? `min(100%, ${imageHeight}px)` : undefined}
-			class={['block', decorative ? 'pointer-events-none absolute inset-0 size-full scale-110 object-cover blur-xl brightness-50' : [
-				blurFill && 'relative', ratio ? 'h-full w-full' : 'max-h-full max-w-full', crop ? 'object-cover' : 'object-contain'
+			class={['block', decorative ? 'pointer-events-none absolute inset-0 -z-10 size-full scale-110 object-cover blur-xl brightness-50' : [
+				ratio ? 'h-full w-full' : 'max-h-full max-w-full', crop ? 'object-cover' : 'object-contain'
 			]]}
 		/>
 	</picture>
 {/snippet}
 
-<div class={`flex items-center justify-center overflow-hidden rounded-xl bg-muted/40 ${blurFill ? 'relative' : ''} ${className}`} style:aspect-ratio={ratio}>
-	{#if blurFill}{@render artwork(true)}{/if}
+<div class={`flex items-center justify-center overflow-hidden rounded-xl bg-muted/40 ${blurFill ? 'relative isolate' : ''} ${className}`} style:aspect-ratio={ratio}>
 	{@render artwork(false)}
+	{#if blurFill}{@render artwork(true)}{/if}
 </div>

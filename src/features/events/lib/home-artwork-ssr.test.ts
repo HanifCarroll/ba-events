@@ -44,6 +44,9 @@ describe.skipIf('Bun' in globalThis)('homepage server-rendered agenda', () => {
     expect(body).toMatch(/Sala sintética · Almagro.*\$5\.000 ARS/s)
     expect(body.match(/<img\b[^>]*alt="[^"]+"[^>]*loading="eager"/g)).toHaveLength(4)
     expect(body.match(/fetchpriority="high"/g)).toHaveLength(1)
+    const firstImage = body.match(/<img\b[^>]*>/)?.[0]
+    expect(firstImage).toContain('alt="Jam sintética"')
+    expect(firstImage).toContain('fetchpriority="high"')
   })
 
   it('renders a plain paging link, resets paging in filter links, and keeps later flyers lazy', () => {
@@ -113,7 +116,7 @@ describe.skipIf('Bun' in globalThis)('homepage server-rendered agenda', () => {
     { href: '/?f=gratis', count: 10, before: 3, after: 0 },
     { href: '/?f=musica', count: 10, before: 6, after: 2 },
     { href: '/?f=hoy', count: 0, before: 0, after: 0 },
-  ])('renders one composer in $href with $count source events and $before visible before it', ({ href, count, before, after }) => {
+  ])('renders one composer in $href with $count source events and $before before it in source order', ({ href, count, before, after }) => {
     const sample = Array.from({ length: count }, (_, i) => agendaEvent(`sample-${i}`,
       events[0].starts_at, { is_free: i < 3, music: i >= 2 }))
     const html = renderAgenda(href, sample)

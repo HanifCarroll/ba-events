@@ -16,8 +16,8 @@
 	} = $props()
 	let loadingMore = false
 	let grid = $state<HTMLDivElement>()
-	let width = $state<number>()
-	const chatAfter = $derived((width ?? 0) >= 1440 ? 10 : (width ?? 0) >= 1024 ? 8 : 6)
+	// Source order stays usable when the browser does not support CSS reading-flow.
+	const chatAfter = 6
 	const beforeChat = $derived(view.events.slice(0, chatAfter))
 	const afterChat = $derived(view.events.slice(chatAfter))
 	const dayKeys = $derived(view.events.map((event) => homeDay(event.starts_at)))
@@ -61,8 +61,6 @@
 	}
 </script>
 
-<svelte:window bind:innerWidth={width} />
-
 {#snippet card(event: HomeAgendaCardEvent, index: number)}
 	{@const key = dayKeys[index]}
 	{#if key !== dayKeys[index - 1]}
@@ -86,11 +84,11 @@
 	<p aria-live="polite" class={view.empty ? 'mb-6 border-l-2 border-[#d0ff36] py-2 pl-4 text-[#eeeeef]' : 'sr-only'}>
 		{view.empty ? emptyCopy[view.empty]() : ''}
 	</p>
-	<div bind:this={grid} class="grid grid-cols-1 gap-y-3 sm:gap-x-5 md:grid-cols-3 md:gap-y-7 lg:grid-cols-4 lg:gap-x-8 lg:gap-y-10 min-[90rem]:grid-cols-5">
+	<div bind:this={grid} class="grid grid-cols-1 gap-y-3 [reading-flow:grid-rows] sm:gap-x-5 md:grid-cols-3 md:gap-y-7 lg:grid-cols-4 lg:gap-x-8 lg:gap-y-10 min-[90rem]:grid-cols-5">
 		{#each beforeChat as event, index (event.id)}
 			{@render card(event, index)}
 		{/each}
-		<div class="col-span-full min-w-0 py-2">{@render chat()}</div>
+		<div class="agenda-composer col-span-full min-w-0 py-2">{@render chat()}</div>
 		{#each afterChat as event, index (event.id)}
 			{@render card(event, chatAfter + index)}
 		{/each}
@@ -109,3 +107,16 @@
 		</div>
 	{/if}
 </section>
+
+<style>
+	.agenda-composer { order: 1; }
+	.agenda-composer ~ h2, .agenda-composer ~ :global(article) { order: 2; }
+
+	@media (width >= 64rem) {
+		.agenda-composer ~ :global(article:nth-child(-n + 8 of article)) { order: 0; }
+	}
+
+	@media (width >= 90rem) {
+		.agenda-composer ~ :global(article:nth-child(-n + 10 of article)) { order: 0; }
+	}
+</style>
