@@ -35,6 +35,7 @@ type ScopeInput = { name: string; source?: string; descriptionEs?: string | null
 // Unlike token normalization, preserve musical and other symbols that can carry program evidence.
 const normalizeListing = (text: string) => text.toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '').replace(/[\p{P}\s]+/gu, ' ').trim()
 const PASSLINE_PITCH = 'encuentra detalles asegura tu asistencia y preparate para disfrutar de una experiencia inolvidable'
+const SALES_ONLY_TITLE = /^(?:(?:(?:venta|compra) de )?(?:entradas|tickets)|consigue tus entradas)$/
 
 /** Only precheck clear patterns; other text goes to the model. */
 export function precheckScope(input: ScopeInput): ScopeDecision | undefined {
@@ -46,12 +47,14 @@ export function precheckScope(input: ScopeInput): ScopeDecision | undefined {
     return { scope: 'out', reason: 'The event is advertised as a club or after-office party.' }
   }
 
+  if (input.source !== 'passline') return
   const name = normalizeListing(input.name)
-  const passlineLead = `consigue tus entradas para ${name} en passline`
-  const isTemplate = (text: string) => text === passlineLead || text === `${passlineLead} ${PASSLINE_PITCH}`
+  const lead = `consigue tus entradas para ${name} en passline`
+  const isTemplate = (text: string) => text === lead || text === `${lead} ${PASSLINE_PITCH}`
   const texts = details.map(value => normalizeListing(value ?? ''))
-  // Missing details alone do not prove a listing is boilerplate.
-  if (input.source === 'passline' && texts.some(isTemplate) && texts.every(text => !text || text === name || isTemplate(text))) {
+  // shortcut: only the reported Sora copy and titles that literally state ticket sales bypass title interpretation.
+  const salesOnly = SALES_ONLY_TITLE.test(name) || (name === 'sora' && texts.some(isTemplate))
+  if (salesOnly && texts.every(text => !text || text === name || isTemplate(text))) {
     return { scope: 'out', reason: 'unclear: The listing has only ticket-sale text, with no program or event type.' }
   }
 }
