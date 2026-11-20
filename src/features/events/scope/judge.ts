@@ -34,27 +34,31 @@ type ScopeInput = { name: string; source?: string; descriptionEs?: string | null
 
 // Unlike token normalization, preserve musical and other symbols that can carry program evidence.
 const normalizeListing = (text: string) => text.toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '').replace(/[\p{P}\s]+/gu, ' ').trim()
-const PASSLINE_PITCH = 'encuentra detalles asegura tu asistencia y preparate para disfrutar de una experiencia inolvidable'
+const PASSLINE_PITCH = /encuentra\s+detalles,?\s+asegura\s+tu\s+asistencia\s+y\s+prep(?:a\u0301?|á)rate\s+para\s+disfrutar\s+de\s+una\s+experiencia\s+inolvidable/
 const SALES_ONLY_TITLE = /^(?:(?:(?:venta|compra) de )?(?:entradas|tickets)|consigue tus entradas)$/
+const LISTING_FIELDS = ['descriptionEs', 'descriptionEn', 'caption'] as const
 
-/** Only precheck clear patterns; other text goes to the model. */
-export function precheckScope(input: ScopeInput): ScopeDecision | undefined {
-  if (!isEmptyFacets(input.facets)) return
-  const title = input.name.normalize('NFD').replace(/\p{Diacritic}/gu, '').trim().toLowerCase()
-  const details = [input.descriptionEs, input.descriptionEn, input.caption]
-  if (/^(?:club night|noche de boliche|after[ -]office)$/.test(title)
-    && !/\b(?:concierto|concert|en vivo|live|teatro|theatre|theater|obra|proyecci[oó]n|screening|performance)\b/i.test(details.join(' '))) {
-    return { scope: 'out', reason: 'The event is advertised as a club or after-office party.' }
-  }
-
-  if (input.source !== 'passline') return
+function stripPasslineSalesCopy(input: ScopeInput): ScopeInput {
+  if (input.source !== 'passline') return input
   const name = normalizeListing(input.name)
-  const lead = `consigue tus entradas para ${name} en passline`
-  const isTemplate = (text: string) => text === lead || text === `${lead} ${PASSLINE_PITCH}`
-  const texts = details.map(value => normalizeListing(value ?? ''))
-  // shortcut: only the reported Sora copy and titles that literally state ticket sales bypass title interpretation.
-  const salesOnly = SALES_ONLY_TITLE.test(name) || (name === 'sora' && texts.some(isTemplate))
-  if (salesOnly && texts.every(text => !text || text === name || isTemplate(text))) {
+  const title = input.name.trim().split(/\s+/).map(word => RegExp.escape(word)).join('\\s+')
+  const lead = String.raw`consigue\s+tus\s+entradas\s+para\s+${title}\s+en\s+passline`
+  const template = new RegExp(String.raw`\b(?:${lead}[.!?]?\s+)?${PASSLINE_PITCH.source}\b[.!?]?(?:[ \t]*\r?\n)?`, 'giu')
+  const leadOnly = `consigue tus entradas para ${name} en passline`
+  const cleaned = { ...input }
+  for (const field of LISTING_FIELDS) {
+    const value = input[field]
+    if (typeof value !== 'string') continue
+    const remaining = value.replace(template, '').trim()
+    const normalized = normalizeListing(remaining)
+    cleaned[field] = !normalized || normalized === name || normalized === leadOnly ? '' : remaining
+  }
+  return cleaned
+}
+
+function precheckScope(input: ScopeInput): ScopeDecision | undefined {
+  if (input.source === 'passline' && SALES_ONLY_TITLE.test(normalizeListing(input.name))
+    && isEmptyFacets(input.facets) && LISTING_FIELDS.every(field => !input[field])) {
     return { scope: 'out', reason: 'unclear: The listing has only ticket-sale text, with no program or event type.' }
   }
 }
@@ -80,8 +84,9 @@ export function requestScopeJudgments(model = openai.chat(SCOPE_MODEL)): Request
 }
 
 export async function judgeScopeBatch(inputs: ScopeInput[], request: RequestJudgments): Promise<ScopeDecision[]> {
-  const prechecked = inputs.map(precheckScope)
-  const unresolved = inputs.filter((_, index) => !prechecked[index])
+  const cleaned = inputs.map(stripPasslineSalesCopy)
+  const prechecked = cleaned.map(precheckScope)
+  const unresolved = cleaned.filter((_, index) => !prechecked[index])
   const judged = unresolved.length ? decodeScopeJudgments(await request(unresolved), unresolved.length) : []
   let next = 0
   return prechecked.map(row => row ?? judged[next++]!)
