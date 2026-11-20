@@ -68,6 +68,9 @@ if (mode === 'events') {
       return Effect.succeed({ id: 'stored-assistant', canonical: saved })
     },
   }))
+  mock.module('#features/chat/api/agent/persist.ts', () => ({
+    persistAssistantMessageV4Effect: () => { effects.push('persist assistant'); throw new Error('Must not persist an assistant reply') },
+  }))
   mock.module('#features/chat/api/agent/shared-turn.server.ts', () => ({
     normalizeChatTurn: () => { throw new Error('Authenticated text must be authoritative') },
     runSharedChatTurnEffect: () => { effects.push('model'); throw new Error('Must not start the model on replay or without history') },
