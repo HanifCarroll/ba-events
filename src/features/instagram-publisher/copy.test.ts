@@ -7,6 +7,21 @@ import { runWindow } from './formats.ts'
 import { framesHtml } from './html.ts'
 import type { PostEvent } from './select.ts'
 
+const approved = readFileSync(new URL('./copy.md', import.meta.url), 'utf8')
+const section = (heading: string) => approved.split(/^## /m).find(block => block.startsWith(heading))!
+const fill = (template: string, values: Record<string, string>) =>
+  template.replace(/\{([^{}]+)\}/g, (placeholder, key: string) => values[key] ?? placeholder)
+const captionSections = (heading: string, spanish: string, english: string) =>
+  fill(section(heading).split('\n```\n')[1]!, { N: spanish, N_en: english }).split('\n\n')
+const slackSection = section('Slack preview message')
+const [, draftTemplate, , musicTemplate] = slackSection.split('\n```\n')
+const slackDraft = (name: string, dates: string, publish: string, body: string) => {
+  expect(slackSection).toContain(`"${name}"`)
+  return fill(draftTemplate!.replace('{Weekday} at {HH:MM}', publish), {
+    'Format name': name, dates, 'caption, or "Stories have no caption." for Hoy': body,
+  })
+}
+
 const post = (date: string, time: string, title: string, handle: string | null, barrio: string, price: string | null, venue = 'Sala', via = false): PostEvent =>
   ({ id: title, date, startsAt: '', title, time, description: null, venue, barrio, price, handle, via })
 
@@ -22,7 +37,8 @@ const weekend: PostEvent[] = [
 describe('Este finde', () => {
   it('lists each event in order with its ticket terms and closes in both languages', () => {
     const lines = caption('finde', weekend)?.split('\n\n')
-    expect(lines?.[0]).toBe('Seis planes independientes para este finde en Buenos Aires:')
+    const [intro, , ...closing] = captionSections('2. Este finde', 'Seis', 'Six')
+    expect(lines?.[0]).toBe(intro)
     expect(lines?.slice(1, -2)).toEqual([
       'Viernes 20, 21:00. Trío del Patio en @patio_ejemplo, San Cristóbal. $15.000.',
       'Sábado 21, 11:00 a 16:30. Cine en el Patio en @cine_ejemplo, Saavedra. Gratis.',
@@ -31,10 +47,7 @@ describe('Este finde', () => {
       'Domingo 22, 17:00. Taller de Papel en @papel_ejemplo, Almagro. Gratis.',
       'Domingo 22, 20:00. Dúo de la Plaza en Sala del Andén, Parque Patricios.',
     ])
-    expect(lines?.slice(-2)).toEqual([
-      'Más planes en baeventos.com (link en la bio).',
-      'Six independent events this weekend in Buenos Aires. More at baeventos.com.',
-    ])
+    expect(lines?.slice(-2)).toEqual(closing)
   })
 
   it('formats the dates and pick count on the cover and cards', () => {
@@ -48,12 +61,13 @@ describe('Gratis esta semana', () => {
   it('counts five free picks in both languages and leaves prices out of the event lines', () => {
     const free = weekend.slice(0, 5).map(event => ({ ...event, price: 'Gratis' }))
     const sections = caption('gratis', free)!.split('\n\n')
-    expect(sections[0]).toBe('Cinco planes gratis esta semana en Buenos Aires:')
+    const [intro, , ...closing] = captionSections('3. Gratis esta semana', 'Cinco', 'Five')
+    expect(sections[0]).toBe(intro)
     const events = sections.slice(1, -2)
     expect(events).toHaveLength(5)
     expect(events[0]).toBe('Viernes 20, 21:00. Trío del Patio en @patio_ejemplo, San Cristóbal.')
     expect(events.join('\n')).not.toContain('Gratis')
-    expect(sections.at(-1)).toBe('Five free events this week in Buenos Aires. More at baeventos.com.')
+    expect(sections.slice(-2)).toEqual(closing)
     const window = runWindow('gratis', '2026-11-30')
     expect(cover('gratis', window, free.length)).toEqual({ kicker: '30 de noviembre al 6 de diciembre', headline: ['Gratis', 'esta semana'], body: 'Cinco planes gratis en Buenos Aires para elegir.' })
   })
@@ -61,7 +75,6 @@ describe('Gratis esta semana', () => {
 
 it('renders the approved closing copy on the last carousel and Hoy frames', () => {
   const assets = { fontsDir: '/fonts', heroPhoto: '/hero.jpg' }
-  const approved = readFileSync(new URL('./copy.md', import.meta.url), 'utf8')
   for (const { format, day, events, heading, fields } of [
     { format: 'finde', day: '2026-11-20', events: weekend, heading: '- **Closing slide** (carousels):', fields: 4 },
     { format: 'hoy', day: '2026-11-22', events: weekend.slice(-3), heading: '**Closing frame**', fields: 3 },
@@ -110,8 +123,8 @@ describe('Hoy', () => {
 describe('Slack', () => {
   it('tells operators when the post goes out and how to approve or skip it', () => {
     const window = runWindow('finde', '2026-11-20')
-    expect(slackPreview('finde', window, 'CAPTION', false)).toBe('Instagram draft: Este finde carousel for November 20 to 22. It goes out Thursday at 12:00 once you react ✅. React ❌ to skip it.\n\nCAPTION')
-    expect(slackPreview('hoy', runWindow('hoy', '2026-11-18'), null, false)).toBe('Instagram draft: Hoy story for November 18. It goes out Wednesday at 17:00 once you react ✅. React ❌ to skip it.\n\nStories have no caption.')
+    expect(slackPreview('finde', window, 'CAPTION', false)).toBe(slackDraft('Este finde carousel', 'November 20 to 22', 'Thursday at 12:00', 'CAPTION'))
+    expect(slackPreview('hoy', runWindow('hoy', '2026-11-18'), null, false)).toBe(slackDraft('Hoy story', 'November 18', 'Wednesday at 17:00', 'Stories have no caption.'))
     expect(slackPreview('finde', window, 'C', true)).toContain('It goes out Thursday at 12:00 unless you react ❌.')
   })
 
@@ -122,6 +135,9 @@ describe('Slack', () => {
     expect(skipText({ kind: 'late', by: baInstant('2026-11-18', 19) })).toBe('Skipped: not published by 19:00')
     expect(heldText('Cine en el Patio')).toBe('Held: Cine en el Patio was cancelled. Ask Hermes to regenerate it.')
     expect(heldText('Cine en el Patio', 'over')).toBe('Held: Cine en el Patio has already happened. Ask Hermes to regenerate it.')
+    expect(slackSection).toContain(`"${heldText('{title}')}"`)
+    expect(slackSection).toContain(`"${heldText('{title}', 'over')}"`)
+    expect(slackSection).toContain('"not published by {HH:MM}"')
     expect(tooFewText('gratis', runWindow('gratis', '2026-11-23'), 3)).toBe('Instagram draft: Gratis esta semana carousel for November 23 to 29. Skipped: only 3 events qualified')
   })
 })
@@ -137,7 +153,8 @@ describe('Este finde Reel', () => {
   })
 
   it('previews with the Reel name, Friday 12:00, and the track line last', () => {
+    const music = fill(musicTemplate!, { title: 'Intención', artist: 'Sapajou' })
     expect(slackPreview('reel', window, 'CAPTION', false, { title: 'Intención', artist: 'Sapajou' })).toBe(
-      'Instagram draft: Este finde Reel for November 20 to 22. It goes out Friday at 12:00 once you react ✅. React ❌ to skip it.\n\nCAPTION\n\nMusic: "Intención" by Sapajou.')
+      `${slackDraft('Este finde Reel', 'November 20 to 22', 'Friday at 12:00', 'CAPTION')}\n\n${music}`)
   })
 })

@@ -354,7 +354,7 @@ The operator MUST explicitly select staging or production. Both manual commands 
 - `src/features/import/core/venue-identity.test.ts`
 - `src/features/import/core/venue-settlement.test.ts`
 - `src/features/import/core/venue-duplicates.test.ts`
-- `src/features/import/api/duplicate-detection.test.ts`
+- `src/features/import/core/scraper-update.test.ts`
 - `src/features/import/core/catalog-store-d1.test.ts` and `importers-d1.test.ts` (Miniflare D1)
 - `src/jobs-worker/catalog-maintenance.test.ts` (Miniflare D1)
 - `src/jobs-worker/daily-scrape-outcome.test.ts`
@@ -372,7 +372,7 @@ The operator MUST explicitly select staging or production. Both manual commands 
 
 ### Verification command
 ```sh
-bunx vitest run src/features/import/core/event-enrichment.test.ts src/features/import/api/duplicate-detection.test.ts src/jobs-worker/daily-scrape-outcome.test.ts src/jobs-worker/enrichment.test.ts src/features/import/acquisition/run.test.ts
+bunx vitest run src/features/import/core/event-enrichment.test.ts src/features/import/core/scraper-update.test.ts src/jobs-worker/daily-scrape-outcome.test.ts src/jobs-worker/enrichment.test.ts src/features/import/acquisition/run.test.ts
 ```
 
 ### Advisory conformance review
