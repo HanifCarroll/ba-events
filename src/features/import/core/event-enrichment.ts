@@ -5,7 +5,7 @@
  * for automated scraping jobs. Uses existing AI functions from shared lib.
  */
 import { Data, Effect } from 'effect'
-import type { Neighborhood } from '#shared/lib/types.ts'
+import type { EventCredit, EventSourceDetails, Neighborhood } from '#shared/lib/types.ts'
 import {
   enrichEventFull,
   extractVenueFromUrl,
@@ -20,7 +20,7 @@ import {
   embedEventWithDocument,
   CURRENT_EMBEDDING_VERSION,
 } from '#shared/lib/ai/embeddings.ts'
-import { extractEventFacets } from '#shared/lib/ai/extract-facets.ts'
+import { extractEventFacets, type EventFacetExtraction } from '#shared/lib/ai/extract-facets.ts'
 import { isEmptyFacets, type EventFacets } from '#shared/lib/search-facets.ts'
 import { buildDescriptionPresentationFields } from '#features/events/lib/description-presentation.server.ts'
 import { type VenueSettlementResult, settleVenueEffect } from './venue-settlement.ts'
@@ -45,7 +45,7 @@ export function enrichmentStartsAtFloor(now: Date = new Date()): string {
 // TYPES
 // ============================================================================
 
-export interface EventEnrichmentInput {
+export interface EventEnrichmentInput extends EventSourceDetails {
   enrichment_provenance?: EnrichmentProvenance | null
   id: string
   name: string
@@ -113,7 +113,7 @@ function getVenueNameAndNeighborhoodEffect(
 function updateEventEnrichmentEffect(
   catalog: CatalogStore,
   eventId: string,
-  data: {
+  data: EventSourceDetails & {
     description_es?: string | null
     description_en?: string | null
     description_display_es?: string | null
@@ -155,7 +155,14 @@ export type ExtractFacetsFn = (
     description_en?: string | null
     categories?: string[] | null
   }
-) => Promise<import('#shared/lib/search-facets.ts').EventFacets>
+) => Promise<EventFacetExtraction>
+
+function missingCredits(input: EventSourceDetails, organizer?: EventCredit, performers?: readonly EventCredit[]): EventSourceDetails {
+  return {
+    ...(!input.organizer_name && organizer ? { organizer_name: organizer.name, organizer_url: organizer.url ?? null } : {}),
+    ...(!input.performers?.length && performers?.length ? { performers } : {}),
+  }
+}
 
 export interface EnrichSingleEventOptions {
   extractFacets?: ExtractFacetsFn
@@ -169,6 +176,7 @@ interface EnrichmentPayload {
   description_es: string | null
   description_en: string | null
   venue_name: string | null
+  organizer?: EventCredit
   location_hidden?: boolean
 }
 
@@ -216,16 +224,18 @@ export function enrichSingleEventEffect(
     // stored description and writes `completed`, so they leave the queue.
     if (input.description_es && input.enrichment_status === 'completed') {
       console.log(`[event-enrichment] Backfilling facets only for: ${name}`)
-      const facets = yield* enrichmentTry('event-enrichment.extract-facets', () => extractFacets({
+      const { organizer, performers, ...facets } = yield* enrichmentTry('event-enrichment.extract-facets', () => extractFacets({
         name,
         description_es: input.description_es!,
         description_en: input.description_en,
         categories,
       }))
+      const credits = missingCredits(input, organizer, performers)
 
       if (isEmptyFacets(facets)) {
         yield* updateEventEnrichmentEffect(catalog, id, {
           facets,
+          ...credits,
           enrichment_provenance: {
             ...input.enrichment_provenance,
             facets: enrichmentStageRecord('stored_description', {}, false),
@@ -259,6 +269,7 @@ export function enrichSingleEventEffect(
           embedding,
           search_document: searchDocument,
           embedding_version: CURRENT_EMBEDDING_VERSION,
+          ...credits,
           enrichment_provenance: {
             ...input.enrichment_provenance,
             facets: enrichmentStageRecord('stored_description', {}, true),
@@ -293,7 +304,11 @@ export function enrichSingleEventEffect(
 
     if (input.description_es) {
       console.log(`[event-enrichment] Reusing stored Spanish description for ${name}`)
+      const organizer = (source === 'luma' || source === 'ba-tourism') && !input.organizer_name && adapter?.serverEnrich
+        ? (yield* enrichmentTry('event-enrichment.detail-organizer', () => adapter.serverEnrich!(link, { organizerOnly: true })))?.organizer
+        : undefined
       enrichmentResult = {
+        organizer,
         // A stored description may have changed since a prior full pass.
         // Without an acquisition receipt for these exact inputs, age is unknown.
         sourceObservedAt: null,
@@ -346,6 +361,12 @@ export function enrichSingleEventEffect(
       }))
     }
 
+    if (enrichmentResult?.organizer && !input.organizer_name) {
+      const { name: organizerName, url } = enrichmentResult.organizer
+      yield* updateEventEnrichmentEffect(catalog, id, { organizer_name: organizerName,
+        organizer_url: url ?? null })
+    }
+
     if (!enrichmentResult || !enrichmentResult.description_es) {
       yield* updateEventEnrichmentEffect(catalog, id, {
         enrichment_status: 'failed',
@@ -390,7 +411,7 @@ export function enrichSingleEventEffect(
       console.log(`[event-enrichment] Venue settled: ${venueSettlement.action} (${venueSettlement.venueId})`)
     }
 
-    const facets = yield* enrichmentTry('event-enrichment.extract-facets', () => extractFacets({
+    const { organizer, performers, ...facets } = yield* enrichmentTry('event-enrichment.extract-facets', () => extractFacets({
       name,
       description_es: enrichmentResult!.description_es,
       description_en: enrichmentResult!.description_en,
@@ -441,10 +462,11 @@ export function enrichSingleEventEffect(
       search_document: searchDocument,
       embedding_version: CURRENT_EMBEDDING_VERSION,
       facets,
+      ...missingCredits(input, enrichmentResult.organizer ? undefined : organizer, performers),
       enrichment_status: 'completed',
       enrichment_error: null,
       enriched_at: provenance.processedAt,
-      enrichment_provenance: { full: provenance },
+      enrichment_provenance: { ...input.enrichment_provenance, full: provenance },
     }
     if (settledVenueId) updateData.venue_id = settledVenueId
 

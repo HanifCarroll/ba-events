@@ -11,6 +11,7 @@
  * - Declarative config for routing decisions
  */
 
+import type { EventCredit } from '#shared/lib/types.ts'
 import type { ImportSource } from './types.ts'
 
 /**
@@ -108,6 +109,8 @@ export interface EnrichmentConfig {
 export interface ServerEnrichmentOptions {
   /** Whether to also extract venue information */
   extractVenue?: boolean
+  /** The stored description is adequate; read source credits without translating it again. */
+  organizerOnly?: boolean
 }
 
 /**
@@ -119,6 +122,7 @@ export interface ServerEnrichmentResult {
   description_es: string | null
   description_en: string | null
   venue_name: string | null
+  organizer?: EventCredit
   /** Set when the source says whether the address is hidden until registration; omitted when it can't tell. */
   location_hidden?: boolean
 }

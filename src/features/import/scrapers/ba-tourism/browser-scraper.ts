@@ -13,6 +13,7 @@ import type { Browser } from '@cloudflare/playwright'
 import { withOwnedBrowser, type OpenBrowser } from '../../acquisition/run.ts'
 import type { BATourismEvent, WeekContext } from './types.ts'
 import { parseWeekContext } from './date-parser.ts'
+import { baTourismOrganizerNames } from './organizers.ts'
 import { logger } from '#shared/lib/logger.ts'
 
 const BA_TOURISM_URL = 'https://turismo.buenosaires.gob.ar/es/article/que-hacer-esta-semana'
@@ -32,6 +33,7 @@ interface ExtractionResult {
     moreInfoUrl: string
   }>
   weekContextText: string
+  schema: string
 }
 
 /**
@@ -120,14 +122,9 @@ const extractionScript = `(() => {
     const coordinates = extractCoordinates(mapsHref)
     const address = parsedAddress || mapsAddress
 
-    let moreInfoUrl = ''
-    const links = card.querySelectorAll('a')
-    for (const link of links) {
-      if (link.textContent?.toLowerCase().includes('más información')) {
-        moreInfoUrl = link.href || ''
-        break
-      }
-    }
+    const detailLink = card.querySelector('.card-footer-landing-qhs a[href]') ||
+      [...card.querySelectorAll('a[href]')].find(link => link.textContent?.toLowerCase().includes('más información'))
+    const moreInfoUrl = detailLink?.href || ''
 
     let description = ''
     let foundDonde = false
@@ -175,7 +172,7 @@ const extractionScript = `(() => {
     }
   }
 
-  return { events, weekContextText }
+  return { events, weekContextText, schema: document.querySelector('script.schema-masivo-ia')?.textContent || '' }
 })()`
 
 async function scrapeWithBrowser(browser: Browser): Promise<{
@@ -219,8 +216,9 @@ async function scrapeWithBrowser(browser: Browser): Promise<{
 
     const weekContext = parseWeekContext(result.weekContextText)
 
+    const organizers = baTourismOrganizerNames(result.schema)
     return {
-      events: result.events as BATourismEvent[],
+      events: result.events.map(event => ({ ...event, organizerName: organizers.get(event.name) })),
       weekContext,
     }
   } finally {

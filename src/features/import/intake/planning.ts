@@ -34,11 +34,26 @@ export const searchInputsChanged = (before: Record<string, unknown>, after: Even
 
 export const baDate = (iso: string) => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' }).format(new Date(iso))
 
+function localTimestamp(date: string, time: string): string {
+  const parsed = new Date(`${date}T${time}:00-03:00`)
+  if (Number.isNaN(parsed.getTime()) || baDate(parsed.toISOString()) !== date) throw new Error('Invalid calendar date')
+  return parsed.toISOString()
+}
+
 /** The timezone is explicit even when the catalog uses a time-TBA placeholder. */
 export function candidateStart(candidate: Candidate): string {
-  const parsed = new Date(`${candidate.date}T${candidate.time ?? '00:00'}:00-03:00`)
-  if (Number.isNaN(parsed.getTime()) || baDate(parsed.toISOString()) !== candidate.date) throw new Error('Invalid calendar date')
-  return parsed.toISOString()
+  return localTimestamp(candidate.date, candidate.time ?? '00:00')
+}
+
+export function candidateDoors(candidate: Candidate): string | undefined {
+  if (!candidate.doors_time) return
+  return localTimestamp(candidate.doors_date ?? candidate.date, candidate.doors_time)
+}
+
+export function suppliedDetailFacts(candidate: Candidate): string[] {
+  return Object.entries({ organizer: candidate.organizer, performers: candidate.performers,
+    offers_valid_from: candidate.offers_valid_from, doors_time: candidate.doors_time })
+    .filter(([, value]) => value !== undefined).map(([field]) => field)
 }
 
 export function validateEvidence(candidate: Candidate, observations: Observation[], media: Media[], now: Date): string[] {
@@ -48,6 +63,15 @@ export function validateEvidence(candidate: Candidate, observations: Observation
     if (candidate.intent === 'create' && baDate(start) < baDate(now.toISOString())) reasons.push('Event date is in the past')
     if (new Date(start).getTime() > now.getTime() + 370 * 86400000) reasons.push('Event is outside the supported discovery horizon')
   } catch { reasons.push('Invalid calendar date') }
+  if (candidate.doors_date && !candidate.doors_time) reasons.push('A separate doors date needs a door time')
+  try {
+    const doors = candidateDoors(candidate)
+    if (doors) {
+      const dateDistance = Date.parse(`${baDate(doors)}T00:00Z`) - Date.parse(`${candidate.date}T00:00Z`)
+      if (Math.abs(dateDistance) > 86_400_000) reasons.push('Door time must be on the event date or an adjacent day')
+      if (candidate.time && doors > candidateStart(candidate)) reasons.push('Doors cannot follow the known start time')
+    }
+  } catch { reasons.push('Invalid doors date') }
   if (!candidate.venue_id) reasons.push('Venue must be resolved before publishing')
   if (candidate.price_kind === 'fixed' && (!candidate.price_ars || candidate.price_ars < 0)) reasons.push('Fixed price must be positive')
   if (candidate.price_kind !== 'fixed' && candidate.price_ars !== null) reasons.push('Only a fixed price may set price_ars')
@@ -65,6 +89,26 @@ export function validateEvidence(candidate: Candidate, observations: Observation
       if (!media.some(item => item.id === evidence.media_id && item.observation_id === post.id)) reasons.push('Flyer evidence is not attached to this observation')
     } else if (!post.caption.includes(evidence.excerpt)) reasons.push('Caption evidence must be an exact excerpt')
     for (const field of evidence.fields) supported.add(field)
+  }
+  const postEvidence = candidate.evidence.filter(item => 'observation_id' in item)
+  for (const field of suppliedDetailFacts(candidate)) {
+    if (!postEvidence.some(item => item.fields.some(value => value === field))) reasons.push(`Missing Instagram evidence for ${field}`)
+  }
+  for (const [field, credits] of [['organizer', candidate.organizer ? [candidate.organizer] : []], ['performers', candidate.performers ?? []]] as const) {
+    for (const credit of credits) {
+      const name = normalizeTitle(credit.name)
+      if (!name || !postEvidence.some(item => item.fields.includes(field) && (
+        ` ${normalizeTitle(item.excerpt)} `.includes(` ${name} `) || field === 'organizer' && observations.some(post =>
+          post.id === item.observation_id && post.authority === 'organizer' && normalizeTitle(post.source_username) === name)
+      ))) reasons.push(`Instagram evidence must name ${field}: ${credit.name}`)
+      if (credit.url && (!validPublicUrl(credit.url) || !postEvidence.some(item => item.fields.includes(field) && item.excerpt.includes(credit.url!)))) {
+        reasons.push(`Instagram evidence must explicitly give the HTTPS URL for ${credit.name}`)
+      }
+    }
+  }
+  if (candidate.offers_valid_from) {
+    const sales = new Date(candidate.offers_valid_from)
+    if (!Number.isFinite(sales.getTime()) || sales.toISOString() !== candidate.offers_valid_from) reasons.push('Invalid ticket-sale opening timestamp')
   }
   const required = ['name', 'date', 'venue', ...(candidate.time ? ['time'] : []),
     ...(candidate.status !== 'scheduled' ? ['status'] : []), ...(candidate.price_kind !== 'unknown' ? ['price'] : []),

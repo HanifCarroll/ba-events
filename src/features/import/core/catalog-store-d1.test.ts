@@ -2,6 +2,7 @@ import type { D1Database } from '@cloudflare/workers-types'
 import { Effect } from 'effect'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { freshD1 } from '../../../../tests/support/d1.ts'
+import { intakeCommitBatch } from '#shared/lib/db/d1.server.ts'
 import { fakeVectorize } from '../../../../tests/support/vectorize.ts'
 import { closeScrapeRun, openScrapeRun } from '../../../jobs-worker/daily-scrape.ts'
 import { reconcileStaleScrapeRuns, recordEnrichmentAudit } from '../../../jobs-worker/daily-scrape-outcome.ts'
@@ -99,6 +100,35 @@ describe('events and their vectors', () => {
 		await catalog.updateEvent(id, { name: 'Scraped name', embedding: [0.9], search_document: 'Scraped text', embedding_version: 2 })
 		expect(await db.prepare('SELECT name, search_document FROM events WHERE id = ?').bind(id).first()).toEqual({ name: 'Jazz Sintético', search_document: 'Intake text' })
 		expect(vectors.get(id)!.values).toEqual([0.1])
+	})
+
+	it('validates, reads, and protects stated event credits and ticket sale times', async () => {
+		const { catalog } = store()
+		const credits = {
+			organizer_name: 'Colectivo Nube', organizer_url: 'https://nube.example/',
+			performers: [{ name: 'Trío Sintético', url: 'https://trio.example/' }],
+			offers_valid_from: '2026-08-01T20:00:00-03:00', doors_at: '2026-08-03T00:30:00.000Z',
+		}
+		const input = event({ ...credits, search_document: 'Synthetic source text' })
+		await catalog.insertEvent(input)
+		const id = await eventId(input.external_id)
+		await expect(db.prepare("UPDATE events SET performers = '{}' WHERE id = ?").bind(id).run()).rejects.toThrow('CHECK')
+		await expect(db.prepare("UPDATE events SET offers_valid_from = '2026-08-01' WHERE id = ?").bind(id).run()).rejects.toThrow('CHECK')
+		await expect(db.prepare("UPDATE events SET doors_at = '23:59' WHERE id = ?").bind(id).run()).rejects.toThrow('CHECK')
+		await db.batch([
+			db.prepare("UPDATE events SET scope = 'in' WHERE id = ?").bind(id),
+			db.prepare("INSERT INTO intake_candidates (id, revision, payload) VALUES ('c', 1, '{}')"),
+			db.prepare("INSERT INTO intake_plans (id, candidate_id, revision, action, event_id, payload, evidence, reasons) VALUES ('p', 'c', 1, 'update', ?, '{}', '[]', '[]')").bind(id),
+			db.prepare('INSERT INTO event_intake_protection (event_id, fields, plan_id, authority, observed_at) VALUES (?, ?, \'p\', 2, ?)')
+				.bind(id, JSON.stringify(Object.keys(credits)), new Date().toISOString()),
+		])
+		await catalog.updateEvent(id, { organizer_name: 'Unsupported edit', organizer_url: null, performers: [], offers_valid_from: null, doors_at: null })
+		expect((await catalog.existingEvents('meetup', [input.external_id]))[0])
+			.toMatchObject({ ...credits, offers_valid_from: '2026-08-01T23:00:00.000Z' })
+		expect(await db.prepare('SELECT scope, search_document FROM events WHERE id = ?').bind(id).first())
+			.toEqual({ scope: 'in', search_document: 'Synthetic source text' })
+		await db.batch(intakeCommitBatch(db, [db.prepare('UPDATE events SET organizer_name = ? WHERE id = ?').bind('New direct evidence', id)]))
+		expect(await db.prepare('SELECT organizer_name FROM events WHERE id = ?').bind(id).first('organizer_name')).toBe('New direct evidence')
 	})
 
 	it('deletes events and their vectors, more than one Vectorize call at a time', async () => {

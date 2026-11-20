@@ -1,5 +1,6 @@
 import { toZonedTime } from 'date-fns-tz'
 import { getLocale } from '#paraglide/runtime.js'
+import { event_doors } from '#paraglide/messages.js'
 import { BA_TIMEZONE } from '#shared/lib/constants.ts'
 
 /**
@@ -51,6 +52,18 @@ export function formatTime(date: Date | string): string {
     minute: '2-digit',
     timeZone: BA_TIMEZONE,
   })
+}
+
+export function formatDoorsTime(date: string, eventStartsAt: string, locale = getLocale()): string {
+  const doors = new Date(date)
+  const time = doors.toLocaleTimeString(locale, {
+    hour: locale === 'en' ? 'numeric' : '2-digit', minute: '2-digit',
+    hourCycle: locale === 'en' ? 'h12' : 'h23', timeZone: BA_TIMEZONE,
+  })
+  const label = event_doors({ time }, { locale })
+  const day = (value: Date) => value.toLocaleDateString('en-CA', { timeZone: BA_TIMEZONE })
+  if (day(doors) === day(new Date(eventStartsAt))) return label
+  return `${label} · ${doors.toLocaleDateString(locale, { weekday: 'short', month: 'short', day: 'numeric', timeZone: BA_TIMEZONE })}`
 }
 
 /**

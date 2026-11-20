@@ -1,5 +1,5 @@
 /** Catalog repository used by importers, venue settlement, enrichment, and scrape auditing. */
-import type { EventInsert, ImportBlocklistEntry, BlocklistSource, Venue } from '#shared/lib/types.ts'
+import type { EventInsert, EventSourceDetails, ImportBlocklistEntry, BlocklistSource, Venue } from '#shared/lib/types.ts'
 import type { ExistingEventData } from '../api/duplicate-detection.ts'
 import type { EnrichmentProvenance } from './enrichment-provenance.ts'
 
@@ -48,7 +48,7 @@ export interface EnrichmentQuery {
 }
 
 /** What enrichment reads for one event. */
-export interface EnrichmentRow {
+export interface EnrichmentRow extends EventSourceDetails {
   id: string
   name: string
   link: string | null

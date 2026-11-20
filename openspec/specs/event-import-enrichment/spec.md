@@ -36,6 +36,28 @@ Each source SHALL use its registered transformer and enrichment capabilities. So
 - **AND** a venue named only after a barrio is identified by its street address: the event must carry its own numbered address, a same-name venue is reused only at the same street and number, and otherwise a new venue is created; an event without its own numbered address gets no venue, and a catalog venue's address is never evidence for another event. Barrios named after a park ("Parque Chacabuco") are not area names
 - **AND** batch settlement keys every input by name plus normalized street and number, and importers send one input per event, so events in one import never share a venue by name alone
 
+### Requirement: The catalog stores source-backed people and ticket-sale dates
+The catalog SHALL keep source-stated organizer names and URLs, performer lineups, and ticket-sale opening times as separate event fields. Missing or unstated facts SHALL remain unknown. The scope classifier and search document SHALL NOT depend on these fields.
+
+#### Scenario: A source names the organizer
+- **WHEN** Luma identifies an event host, Meetup identifies its group, or BA Tourism explicitly identifies the organizer
+- **THEN** the catalog stores the source-backed identity and any source-provided organizer URL without treating the venue, promoter's social account, or ticket seller as evidence by itself
+
+#### Scenario: Intake sees a credit or a ticket-sale opening time
+- **WHEN** an Instagram intake candidate supplies an organizer, a lineup, or a ticket-sale opening time
+- **THEN** the fact needs a corresponding retained source excerpt or image, and accepted explicit intake facts are protected against later importer or enrichment writes
+- **AND** a correction needs direct organizer or venue evidence, and an omitted field leaves the prior fact untouched unless a door date or ticket destination has changed
+
+#### Scenario: An Instagram flyer gives only doors
+- **WHEN** the flyer explicitly states a door time but no performance start
+- **THEN** intake stores the evidenced Buenos Aires door timestamp, including its next-day calendar date when the doors open after midnight, and leaves the start time TBA
+- **AND** a later intake revision can add doors to the existing event without changing its identity or claiming a start; a reschedule to another date clears stale doors when the revision has no new door evidence
+
+#### Scenario: A scheduled event has descriptions but lacks people fields
+- **WHEN** facet enrichment reads the descriptions or an operator runs the bounded people backfill
+- **THEN** the extractor returns only people explicitly credited as organizing or performing, never names inferred from the venue or title, and a retry does not overwrite stored facts
+- **AND** the backfill defaults to a dry run, records successful apply decisions so empty results are not repeatedly billed, and never updates unscheduled rows
+
 ### Requirement: Venue settlement is deterministic and reviewable
 Venue matching SHALL prefer valid existing identities and SHALL leave ambiguous or invalid candidates for review rather than silently attach an unrelated venue.
 

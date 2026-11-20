@@ -48,10 +48,8 @@ export const lumaEnrichmentAdapter: EnrichmentAdapter = {
 
       const location_hidden = detail?.location_hidden ?? undefined
 
-      // No description: keep the privacy reading so it is still persisted.
-      if (!description) {
-        return location_hidden === undefined ? null : { sourceObservedAt, description_es: null, description_en: null, venue_name: null, location_hidden }
-      }
+      // Keep source privacy and organizer evidence even when the description is missing.
+      if (!description && location_hidden === undefined && !detail?.organizer) return null
 
       // For Luma, we don't know the language - let caller detect
       return {
@@ -59,6 +57,7 @@ export const lumaEnrichmentAdapter: EnrichmentAdapter = {
         description_es: null, // Language unknown, needs detection
         description_en: description, // Store in en temporarily, caller will detect and move if needed
         venue_name: venueName,
+        ...(detail?.organizer ? { organizer: detail.organizer } : {}),
         ...(location_hidden === undefined ? {} : { location_hidden }),
       }
     } catch (error) {

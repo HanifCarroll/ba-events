@@ -5,7 +5,11 @@ const text = (max: number) => Schema.String.pipe(Schema.check(Schema.isMaxLength
 const nonempty = (max: number) => text(max).pipe(Schema.check(Schema.isMinLength(1)))
 const uuid = Schema.String.pipe(Schema.check(Schema.isPattern(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)))
 const count = Schema.Number.pipe(Schema.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0)))
-const fields = Schema.Array(Schema.Literals(['name', 'date', 'time', 'venue', 'price', 'status', 'description', 'ticket'])).pipe(Schema.check(Schema.isMinLength(1)))
+const localDate = Schema.String.pipe(Schema.check(Schema.isPattern(/^\d{4}-\d{2}-\d{2}$/)))
+const localTime = Schema.String.pipe(Schema.check(Schema.isPattern(/^([01]\d|2[0-3]):[0-5]\d$/)))
+const fields = Schema.Array(Schema.Literals(['name', 'date', 'time', 'venue', 'price', 'status', 'description', 'ticket',
+  'organizer', 'performers', 'offers_valid_from', 'doors_time'])).pipe(Schema.check(Schema.isMinLength(1)))
+const CreditSchema = Schema.Struct({ name: nonempty(255), url: Schema.optional(nonempty(2048)) })
 /** A caption excerpt (`media_id` null) or a retained image of an Instagram observation. */
 const PostEvidenceSchema = Schema.Struct({
   observation_id: uuid,
@@ -32,8 +36,10 @@ export const CandidateSchema = Schema.Struct({
   intent: Schema.Literals(['create', 'update', 'link']),
   target_event_id: Schema.NullOr(uuid),
   name: nonempty(255),
-  date: Schema.String.pipe(Schema.check(Schema.isPattern(/^\d{4}-\d{2}-\d{2}$/))),
-  time: Schema.NullOr(Schema.String.pipe(Schema.check(Schema.isPattern(/^([01]\d|2[0-3]):[0-5]\d$/)))),
+  date: localDate,
+  time: Schema.NullOr(localTime),
+  doors_time: Schema.optional(localTime),
+  doors_date: Schema.optional(localDate),
   venue_name: Schema.NullOr(nonempty(200)),
   venue_id: Schema.NullOr(uuid),
   description_es: Schema.NullOr(text(12000)),
@@ -44,6 +50,9 @@ export const CandidateSchema = Schema.Struct({
   price_ars: Schema.NullOr(count),
   price_note: Schema.NullOr(text(1000)),
   ticket_url: Schema.NullOr(text(2048)),
+  organizer: Schema.optional(CreditSchema),
+  performers: Schema.optional(Schema.Array(CreditSchema).pipe(Schema.check(Schema.isMinLength(1), Schema.isMaxLength(30)))),
+  offers_valid_from: Schema.optional(Schema.String.pipe(Schema.check(Schema.isPattern(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/)))),
   artwork_media_id: Schema.NullOr(uuid),
   artwork_note: Schema.optional(text(300)),
   evidence: Schema.Array(EvidenceSchema).pipe(Schema.check(Schema.isMinLength(1), Schema.isMaxLength(50))),
