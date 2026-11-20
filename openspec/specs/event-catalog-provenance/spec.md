@@ -152,11 +152,10 @@ The D1 catalog SHALL judge events individually for an independent and public cul
 - **THEN** it judges those rows ahead of other pending judgments, newest clear first
 - **AND** the operator backfill retains its stable start-time and ID order
 
-#### Scenario: A Passline listing contains generic ticket-sale copy
-- **WHEN** a Passline description or caption contains the known sales template, even if it renders the title differently from the stored event name
-- **THEN** the catalog removes the template before judgment, preserving real details and stored facets
-- **AND** only a ticket-sale title with no other details or stored facets is judged out as `unclear:` without the model
-- **AND** the model judges all other listings from the title and any remaining evidence, including meaningful caption symbols
+#### Scenario: A Passline listing consists only of the fixed ticket-sale template
+- **WHEN** a Passline listing has no stored facets and at least one nonempty description or caption, and every nonempty field exactly matches the full template for the stored title after HTML entity, case, and whitespace normalization
+- **THEN** the catalog judges it out as `unclear:` without asking the model
+- **AND** the catalog sends every other listing, including empty descriptions and captions, to the model without changing its text
 
 #### Scenario: An operator rehearses the backfill
 - **WHEN** the operator requests a dry run for scheduled events starting today or later in Buenos Aires
