@@ -5,12 +5,14 @@
  */
 import type { D1Database, R2Bucket } from '@cloudflare/workers-types'
 import { Effect } from 'effect'
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { freshD1 } from '../../../../tests/support/d1.ts'
 import { fakeVectorize } from '../../../../tests/support/vectorize.ts'
 import { fakeR2 } from '../../../../tests/support/r2.ts'
+import { buildSearchDocument, CURRENT_EMBEDDING_VERSION } from '#shared/lib/ai/embeddings.ts'
+import { reconcileCatalog } from '../../../jobs-worker/catalog-maintenance.ts'
 import { describeImage } from './collection.ts'
-import { visibleText as visibleTextFor } from './official-page.ts'
+import { readOfficialPage } from './official-page.ts'
 import { commitPlanEffect, previewCandidateEffect, submitCandidateEffect } from './service.ts'
 import { d1Intake, importSourcesEffect } from './store-d1.ts'
 import { heldBacklogEffect, resolveIntakeVenueEffect, decodeVenueRequest } from './venues.ts'
@@ -154,10 +156,11 @@ describe.skipIf(bun)('commit_intake_plan on D1', () => {
     expect(vectors.vectors.get(event)).toMatchObject({ metadata: { status: 'scheduled', starts_at: Date.parse('2026-11-21T00:00:00Z') } })
 
     await run(store.submitCandidate(candidate, 1, { name: 'Rescheduled' } as never))
-    const revised = await plan(candidate, 2, 'update', event, body(venueId, { starts_at: '2026-12-02T00:00:00Z', status: 'canceled' }),
+    const revised = await plan(candidate, 2, 'update', event, body(venueId, { starts_at: '2026-12-02T00:00:00Z', status: 'canceled', embedding: undefined }),
       [{ observation_id: post, fields: ['date', 'time', 'status'] }])
     expect(await run(store.commitPlan(revised))).toMatchObject({ action: 'update', previous_event: { id: event, status: 'scheduled' } })
     expect(vectors.vectors.get(event)?.metadata).toEqual({ status: 'canceled', starts_at: Date.parse('2026-12-02T00:00:00Z') })
+    expect(vectors.vectors.get(event)?.values[0]).toBeCloseTo(0.1)
 
     await db.prepare("UPDATE events SET starts_at = '2026-11-21T00:00:00.000Z', status = 'scheduled', name = 'Stale platform name', search_document = 'Stale' WHERE id = ?").bind(event).run()
     expect(await db.prepare('SELECT name, status, starts_at, search_document FROM events WHERE id = ?').bind(event).first())
@@ -226,6 +229,56 @@ describe.skipIf(bun)('commit_intake_plan on D1', () => {
     expect(await db.prepare('SELECT count(*) AS n FROM vector_sync').first()).toEqual({ n: 0 })
   })
 
+  it.each([false, true])('queues a search repair after a reschedule reads stale vector values (earlier upsert succeeded: %s)', async succeeded => {
+    await source()
+    const venueId = await venue()
+    const post = await observation((await run(store.reserveCollection())).id)
+    const candidate = id(), event = id()
+    await run(store.submitCandidate(candidate, 0, { name: 'A' } as never))
+    await run(store.commitPlan(await plan(candidate, 1, 'create', event, body(venueId), [{ observation_id: post }])))
+
+    await run(store.submitCandidate(candidate, 1, { name: 'B' } as never))
+    const corrected = { name: 'New Title', search_document: 'New search document' }
+    const titlePlan = await plan(candidate, 2, 'update', event,
+      body(venueId, { ...corrected, embedding: Array(1536).fill(0.4) }), [{ observation_id: post }])
+    if (succeeded) {
+      const stale = await vectors.index.getByIds([event])
+      expect(await run(store.commitPlan(titlePlan))).toMatchObject({ action: 'update' })
+      expect(vectors.vectors.get(event)?.values[0]).toBeCloseTo(0.4)
+      expect(await db.prepare('SELECT event_id FROM vector_sync').first()).toBeNull()
+      vi.spyOn(vectors.index, 'getByIds').mockResolvedValueOnce(stale)
+    } else {
+      vectors.failUpserts(1)
+      expect(await fails(store.commitPlan(titlePlan))).toContain('Vectorize unavailable')
+    }
+
+    await run(store.submitCandidate(candidate, 2, { name: 'C' } as never))
+    const starts_at = '2026-12-02T00:00:00Z'
+    const reschedule = await plan(candidate, 3, 'update', event, body(venueId, { ...corrected, starts_at, embedding: undefined }),
+      [{ observation_id: post, fields: ['date', 'time'] }])
+    expect(await run(store.commitPlan(reschedule))).toMatchObject({ action: 'update' })
+    expect(vectors.vectors.get(event)).toMatchObject({ metadata: { status: 'scheduled', starts_at: Date.parse(starts_at) } })
+    expect(vectors.vectors.get(event)?.values[0]).toBeCloseTo(0.1)
+    expect(await db.prepare('SELECT event_id FROM vector_sync').first()).toEqual({ event_id: event })
+  })
+
+  it('does not replay a prepared vector superseded by nightly search repair', async () => {
+    await source()
+    const venueId = await venue()
+    const post = await observation((await run(store.reserveCollection())).id)
+    const candidate = id(), event = id()
+    await run(store.submitCandidate(candidate, 0, { name: 'A' } as never))
+    const created = await plan(candidate, 1, 'create', event, body(venueId, { embedding_version: 1 }), [{ observation_id: post }])
+    const receipt = await run(commitPlanEffect(store, created))
+    expect(await reconcileCatalog(db, vectors.index, { embed: async () => ({ embedding: [0.5], searchDocument: 'Rebuilt Jazz' }) }))
+      .toMatchObject({ reembedded: 1 })
+    // A later repair can still be pending even though the old plan is this event's latest accepted intake plan.
+    await db.prepare('INSERT INTO vector_sync (event_id) VALUES (?)').bind(event).run()
+    expect(await run(commitPlanEffect(store, created))).toEqual(receipt)
+    expect(vectors.vectors.get(event)?.values).toEqual([0.5])
+    expect(await db.prepare('SELECT event_id FROM vector_sync').first()).toEqual({ event_id: event })
+  })
+
   it('never replaces a later correction\'s vector when an older plan is committed again', async () => {
     await source()
     const runId = (await run(store.reserveCollection())).id
@@ -249,7 +302,7 @@ describe.skipIf(bun)('the operator flow on D1', () => {
   const candidateInput = (candidate: string, post: string, venueId: string | null, fields: Record<string, unknown> = {}) => ({
     id: candidate, expected_revision: 0, intent: 'create', target_event_id: null, name: 'Synthetic Jazz', date: shiftDay(baToday(), 5), time: '21:00',
     venue_name: 'Synthetic Venue', venue_id: venueId, description_es: null, description_en: null, categories: ['music'], status: 'scheduled',
-    price_kind: 'unknown', price_ars: null, price_note: null, ticket_url: null, artwork_media_id: null, issues: [], notes: '',
+    price_kind: 'unknown', price_ars: null, price_note: null, ticket_url: null, artwork_media_id: null, artwork_note: 'No suitable retained image', issues: [], notes: '',
     evidence: [{ observation_id: post, fields: ['name', 'date', 'time', 'venue'], excerpt: 'Synthetic Jazz', media_id: null }], ...fields })
   const publishers = {
     embed: async () => ({ embedding: Array(1536).fill(0.2), searchDocument: 'Synthetic Jazz | Synthetic Venue' }),
@@ -287,6 +340,102 @@ describe.skipIf(bun)('the operator flow on D1', () => {
     expect(held.reasons).toContain('Venue must be resolved before publishing')
     const backlog = await run(heldBacklogEffect(store))
     expect(backlog).toMatchObject({ held: 1, groups: [{ venue_name: 'Synthetic Venue Club', candidates: [{ id: other }] }] })
+  })
+
+  it('holds an undecided artwork choice and persists the reason with a publishable plan', async () => {
+    await source()
+    const post = await observation((await run(store.reserveCollection())).id)
+    const candidate = id(), venueId = await venue()
+    const input = candidateInput(candidate, post, venueId, { artwork_note: '   ' })
+    await run(submitCandidateEffect(store, input))
+    expect(await run(previewCandidateEffect(store, candidate))).toMatchObject({ action: 'held',
+      reasons: ['Select retained artwork or give a reason in artwork_note'] })
+    const artwork_note = 'The only retained image is a schedule for several shows.'
+    await run(submitCandidateEffect(store, { ...input, expected_revision: 1, artwork_note }))
+    const preview = await run(previewCandidateEffect(store, candidate))
+    expect(preview).toMatchObject({ action: 'create', artwork_note, payload: { image_url: null } })
+    expect(await run(store.plan(preview.id))).toMatchObject({ artwork_note })
+    expect(await run(commitPlanEffect(store, preview.id, publishers))).toMatchObject({ action: 'create' })
+  })
+
+  it.each([
+    { search: 'Old search document  ', version: 1 },
+    { search: null, version: CURRENT_EMBEDDING_VERSION },
+    { search: 'Synthetic Jazz. Venue: Former Venue', version: CURRENT_EMBEDDING_VERSION },
+  ])(
+    'preserves search during an artwork-only update and repairs it once at night ($search)', async ({ search, version }) => {
+    await source()
+    const runId = (await run(store.reserveCollection())).id
+    const venueId = await venue()
+    const post = await observation(runId, undefined, undefined, undefined, ['https://scontent.cdninstagram.com/v/flyer.jpg'])
+    const image = await describeImage(new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 4, 5, 6]))
+    await run(store.retainImage(post, 0, image))
+    const [{ id: artwork_media_id }] = await run(store.mediaFor(post))
+    const candidate = id(), event = id()
+    const at = new Date(`${shiftDay(baToday(), 5)}T21:00:37-03:00`).toISOString()
+    await db.prepare(`INSERT INTO events (id, name, starts_at, venue_id, source, categories, description_es, description_en,
+      description_display_es, description_display_en, description_summary_es, description_summary_en, search_document, embedding_version, enrichment_status)
+      VALUES (?, 'Synthetic Jazz', ?, ?, 'luma', '["music"]', 'Texto original', 'Original text', 'Texto visible', 'Visible text',
+      'Resumen guardado', 'Stored summary', ?, ?, 'pending')`).bind(event, at, venueId, search, version).run()
+    const read = () => db.prepare(`SELECT starts_at, description_es, description_en, description_display_es, description_display_en,
+      description_summary_es, description_summary_en, search_document, embedding_version, enrichment_status, image_url FROM events WHERE id = ?`).bind(event).first()
+    const { image_url: _, ...before } = (await read())!
+    await run(submitCandidateEffect(store, candidateInput(candidate, post, venueId, { intent: 'update', target_event_id: event, artwork_media_id })))
+    const preview = await run(previewCandidateEffect(store, candidate))
+    const image_url = `https://baeventos.com/api/event-artwork/${event}/${image.object_key}`
+    expect(preview).toMatchObject({ action: 'update', reasons: [], payload: { ...before, image_url } })
+    const unexpected = async () => { throw new Error('An artwork-only update must not call providers') }
+    expect(await run(commitPlanEffect(store, preview.id, { embed: unexpected, presentation: unexpected }))).toMatchObject({ action: 'update', event_id: event })
+    expect(await read()).toEqual({ ...before, image_url })
+    expect(artwork.objects.has(image.object_key)).toBe(true)
+    expect(await db.prepare('SELECT count(*) AS n FROM vector_sync').first()).toEqual({ n: 0 })
+
+    const repaired = buildSearchDocument({ name: 'Synthetic Jazz', description_es: 'Texto original', description_en: 'Original text',
+      categories: ['music'], venue_name: 'Synthetic Venue', venue_neighborhood: 'Palermo' })
+    const embed = vi.fn(async (input: Parameters<typeof buildSearchDocument>[0]) => ({ embedding: [0.5], searchDocument: buildSearchDocument(input) }))
+    const options = { embed, embedText: unexpected }
+    expect(await reconcileCatalog(db, vectors.index, options)).toMatchObject({ reembedded: 1, resynced: 0, restored: 0 })
+    expect(await read()).toEqual({ ...before, image_url, search_document: repaired, embedding_version: CURRENT_EMBEDDING_VERSION })
+    expect(vectors.vectors.get(event)?.values[0]).toBe(0.5)
+    expect(await reconcileCatalog(db, vectors.index, options)).toMatchObject({ reembedded: 0, resynced: 0, restored: 0, metadataUpdated: 0 })
+    expect(embed).toHaveBeenCalledTimes(1)
+
+    await db.prepare("UPDATE events SET name = 'Unaccepted name', search_document = 'Unaccepted search text', embedding_version = 1 WHERE id = ?").bind(event).run()
+    expect(await db.prepare('SELECT name, search_document, embedding_version FROM events WHERE id = ?').bind(event).first())
+      .toEqual({ name: 'Synthetic Jazz', search_document: repaired, embedding_version: CURRENT_EMBEDDING_VERSION })
+  })
+
+  it('re-embeds changed search inputs without regenerating unchanged description presentation', async () => {
+    await source()
+    const post = await observation((await run(store.reserveCollection())).id)
+    const candidate = id(), venueId = await venue(), event = id()
+    const startsAt = new Date(`${shiftDay(baToday(), 5)}T21:00:00-03:00`).toISOString()
+    await db.prepare(`INSERT INTO events (id, name, starts_at, venue_id, source, categories, description_es, description_summary_es, search_document)
+      VALUES (?, 'Old title', ?, ?, 'luma', '["music"]', 'Texto original', 'Resumen guardado', 'Old document')`).bind(event, startsAt, venueId).run()
+    const input = candidateInput(candidate, post, venueId, { intent: 'update', target_event_id: event })
+    await run(submitCandidateEffect(store, input))
+    const preview = await run(previewCandidateEffect(store, candidate))
+    await run(commitPlanEffect(store, preview.id, { ...publishers, presentation: async () => { throw new Error('Unchanged description') } }))
+    const result = () => db.prepare('SELECT description_summary_es, search_document FROM events WHERE id = ?').bind(event).first()
+    expect(await result()).toEqual({ description_summary_es: 'Resumen guardado', search_document: 'Synthetic Jazz | Synthetic Venue' })
+
+    const revised = { ...input, expected_revision: 1, description_es: 'Texto nuevo',
+      evidence: [{ ...input.evidence[0], fields: [...input.evidence[0].fields, 'description'] }] }
+    await run(submitCandidateEffect(store, revised))
+    const next = await run(previewCandidateEffect(store, candidate))
+    await run(commitPlanEffect(store, next.id, {
+      embed: async ({ description_es }) => ({ embedding: Array(1536).fill(0.3), searchDocument: `${description_es} | Synthetic Venue` }),
+      presentation: async ({ description_es }) => ({ description_summary_es: `${description_es} resumido`, description_summary_en: null,
+        description_display_es: description_es ?? null, description_display_en: null }),
+    }))
+    expect(await result()).toEqual({ description_summary_es: 'Texto nuevo resumido', search_document: 'Texto nuevo | Synthetic Venue' })
+  })
+
+  it('names the path and options when an evidence field uses a catalog column name', async () => {
+    const obs = { observation_id: id(), fields: ['name'], excerpt: 'Synthetic Jazz', media_id: null }
+    const evidence = [obs, obs, { kind: 'official_page', fields: ['ticket_url'], excerpt: 'Entradas disponibles', url: 'https://example.org/show' }]
+    expect(await fails(submitCandidateEffect(store, candidateInput(id(), obs.observation_id, null, { evidence }))))
+      .toBe('Invalid candidate: evidence[2].fields[0]: expected one of name, date, time, venue, price, status, description, ticket; got "ticket_url"')
   })
 
   it('refuses a candidate whose venue_id or target_event_id is not in the catalog, naming the ID, and stores nothing', async () => {
@@ -329,7 +478,7 @@ describe.skipIf(bun)('the operator flow on D1', () => {
     await db.prepare("INSERT INTO events (id, name, starts_at, venue_id, source) VALUES (?, 'SYNTHETIC JAZZ', ?, ?, 'luma')")
       .bind(listed, new Date(`${day}T21:00:00-03:00`).toISOString(), venueId).run()
     const candidate = id()
-    await run(submitCandidateEffect(store, candidateInput(candidate, post, venueId)))
+    await run(submitCandidateEffect(store, candidateInput(candidate, post, venueId, { artwork_note: undefined })))
     const preview = await run(previewCandidateEffect(store, candidate))
     expect(preview).toMatchObject({ action: 'link', event_id: listed })
     expect(await run(commitPlanEffect(store, preview.id, publishers))).toMatchObject({ action: 'link', event_id: listed })
@@ -347,7 +496,11 @@ describe.skipIf(bun)('the operator flow on D1', () => {
     const day = shiftDay(baToday(), 5)
     const url = 'https://teatro.example.org/obra/synthetic-jazz/'
     let html = `<html><body><h1>Synthetic Jazz</h1><div>PRÓXIMAS FUNCIONES</div><div>${day}</div><div>21:00</div></body></html>`
-    const readPage = async (requested: string, sites: ReadonlySet<string>) => { expect(requested).toBe(url); expect(sites.has('example.org')).toBe(true); return visibleTextFor(html) }
+    const readPage = async (requested: string, sites: ReadonlySet<string>) => {
+      expect(requested).toBe(url)
+      expect(sites.has('example.org')).toBe(true)
+      return readOfficialPage(requested, sites, (async () => new Response(html, { headers: { 'Content-Type': 'text/html' } })) as typeof fetch)
+    }
     const candidate = id()
     await run(submitCandidateEffect(store, candidateInput(candidate, post, venueId, { evidence: [
       { observation_id: post, fields: ['name', 'venue'], excerpt: 'Synthetic Jazz en Synthetic Venue', media_id: null },
@@ -359,7 +512,10 @@ describe.skipIf(bun)('the operator flow on D1', () => {
     html = '<html><body>Funciones agotadas</body></html>'
     expect(await fails(commitPlanEffect(store, preview.id, { ...publishers, readPage })))
       .toBe(`Official page evidence must be an excerpt of the page's visible text: ${url}`)
-    html = `<html><body>Synthetic Jazz: ${day} 21:00</body></html>`
+    html = `<html><body><h1>Agenda</h1><p>Synthetic Jazz: ${day} 21:00</p></body></html>`
+    expect(await fails(commitPlanEffect(store, preview.id, { ...publishers, readPage })))
+      .toBe(`Official page does not name "Synthetic Jazz" (H1: "Agenda"): ${url}`)
+    html = `<html><head><title>Synthetic Jazz</title></head><body><p>${day} 21:00</p></body></html>`
     const receipt = await run(commitPlanEffect(store, preview.id, { ...publishers, readPage }))
     expect(receipt).toMatchObject({ action: 'create', event_id: preview.event_id })
     expect((await db.prepare('SELECT observation_id FROM event_source_evidence').all()).results).toEqual([{ observation_id: post }])

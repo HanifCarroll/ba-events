@@ -2,7 +2,7 @@ import type { D1Database } from '@cloudflare/workers-types'
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { freshD1 } from '../../tests/support/d1.ts'
 import { fakeVectorize } from '../../tests/support/vectorize.ts'
-import { CURRENT_EMBEDDING_VERSION } from '#shared/lib/ai/embeddings.ts'
+import { CURRENT_EMBEDDING_VERSION, type embedEventWithDocument } from '#shared/lib/ai/embeddings.ts'
 import { markPastEvents, reconcileCatalog, runCatalogTask, runEmbeddingTask } from './catalog-maintenance.ts'
 import { d1Catalog } from '#features/import/core/catalog-store-d1.ts'
 import { homeAgendaD1 } from '#shared/lib/db/event-reads-d1.server.ts'
@@ -77,7 +77,7 @@ describe('reconcileCatalog (nightly reembed-stale and Vectorize check)', () => {
     const { index, vectors } = fakeVectorize()
     const starts = '2030-02-01T23:00:00.000Z'
     await db.prepare("INSERT INTO venues (id, name, neighborhood) VALUES ('v', 'Sala Sintética', 'Palermo')").run()
-    await insert('stale', { starts_at: starts, embedding_version: 1, venue_id: 'v', facets: '{"genres":["jazz"]}' })
+    await insert('stale', { starts_at: starts, embedding_version: 1, venue_id: 'v', price: 2500, facets: '{"genres":["jazz"]}' })
     await insert('no-vector', { starts_at: starts })
     await insert('wrong-meta', { starts_at: starts })
     await insert('fine', { starts_at: starts })
@@ -101,6 +101,23 @@ describe('reconcileCatalog (nightly reembed-stale and Vectorize check)', () => {
     expect(vectors.has('old-past')).toBe(false)
 
     expect(await reconcileCatalog(db, index, { embed, embedText, now: NOW })).toEqual({ reembedded: 0, resynced: 0, restored: 0, metadataUpdated: 0, checked: 4, deferred: 0 })
+  })
+
+  it('does not save a rebuild when a venue changes during the embedding call', async () => {
+    const { index, vectors } = fakeVectorize()
+    await db.prepare("INSERT INTO venues (id, name) VALUES ('v', 'Sala anterior')").run()
+    await insert('changing', { starts_at: '2030-02-01T23:00:00.000Z', venue_id: 'v', search_document: null })
+    const embed: typeof embedEventWithDocument = async event => {
+      const venue_name = 'venue_name' in event ? event.venue_name : null
+      if (venue_name === 'Sala anterior') await db.prepare("UPDATE venues SET name = 'Sala nueva' WHERE id = 'v'").run()
+      return { embedding: [0.8], searchDocument: `Show en ${venue_name}` }
+    }
+    expect(await reconcileCatalog(db, index, { embed, now: NOW })).toMatchObject({ reembedded: 0, deferred: 1 })
+    expect(vectors.size).toBe(0)
+    expect(await db.prepare('SELECT count(*) FROM vector_sync').first('count(*)')).toBe(0)
+    expect(await db.prepare("SELECT search_document FROM events WHERE id = 'changing'").first('search_document')).toBeNull()
+    expect(await reconcileCatalog(db, index, { embed, now: NOW })).toMatchObject({ reembedded: 1, deferred: 0 })
+    expect(await db.prepare("SELECT search_document FROM events WHERE id = 'changing'").first('search_document')).toBe('Show en Sala nueva')
   })
 
   it('replaces a vector whose write failed after an event update committed', async () => {

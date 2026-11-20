@@ -30,7 +30,7 @@ export type RetainedImage = { bytes: Uint8Array; content_type: string; sha256: s
 export type IntakePlanRow = {
   id: string; candidate_id: string; revision: number; action: 'held' | 'create' | 'update' | 'link'
   event_id: string; expected_event_updated_at: string | null; payload: EventInsert
-  artwork_media_id: string | null; evidence: Candidate['evidence']; reasons: string[]; receipt: Row | null
+  artwork_media_id: string | null; artwork_note?: string | null; evidence: Candidate['evidence']; reasons: string[]; receipt: Row | null
 }
 export type PlanInsert = Omit<IntakePlanRow, 'id' | 'receipt'>
 export type VenueRow = { id: string; name: string; address: string | null; neighborhood: string | null }

@@ -1,3 +1,4 @@
+import type { EventInsert } from '#shared/lib/types.ts'
 import type { Candidate } from './schema.ts'
 import { isOfficialPage, validPublicUrl } from './schema.ts'
 
@@ -22,6 +23,15 @@ export function canonicalTicket(value: string | null): string | null {
   url.searchParams.sort()
   return `${url.origin}${url.pathname.replace(/\/$/, '')}${url.search}`
 }
+export const descriptionChanged = (before: Record<string, unknown>, after: EventInsert) =>
+  (before.description_es ?? null) !== (after.description_es ?? null) || (before.description_en ?? null) !== (after.description_en ?? null)
+
+// Updates carry the stored facets unchanged. A venue change supplies new venue text and barrio to the builder.
+export const searchInputsChanged = (before: Record<string, unknown>, after: EventInsert) =>
+  descriptionChanged(before, after) || before.name !== after.name || (before.venue_id ?? null) !== (after.venue_id ?? null) ||
+  (before.price ?? null) !== (after.price ?? null) || Boolean(before.is_free) !== Boolean(after.is_free) ||
+  JSON.stringify(before.categories ?? []) !== JSON.stringify(after.categories ?? [])
+
 export const baDate = (iso: string) => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' }).format(new Date(iso))
 
 /** The timezone is explicit even when the catalog uses a time-TBA placeholder. */

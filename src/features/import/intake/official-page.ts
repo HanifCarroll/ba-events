@@ -3,6 +3,7 @@ import { load, type CheerioAPI } from 'cheerio/slim'
 import { es } from 'date-fns/locale'
 import { formatInTimeZone } from 'date-fns-tz'
 import { Effect } from 'effect'
+import { normalizeTitle } from './planning.ts'
 import { isOfficialPage, validPublicUrl, type Evidence } from './schema.ts'
 
 const MAX_BYTES = 2_097_152
@@ -55,8 +56,9 @@ export const officialPageAllowed = (url: string, sites: ReadonlySet<string>) => 
 
 /** Accent- and case-insensitive, with every whitespace run as one space: words and numbers keep their boundaries. */
 export const normalizePageText = (value: string) => value.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replace(/\s+/gu, ' ').trim()
-/** For the name check only: punctuation is a space too, so "¡Forever Young!" is found as "forever young". */
-const nameText = (value: string) => ` ${normalizePageText(value).replace(/[^\p{L}\p{N}]+/gu, ' ').trim()} `
+/** Ordinary ticket-page titles can use a standalone Spanish `y` as an artist separator. */
+const nameText = (value: string) => normalizeTitle(value).split(' ').filter(word => word !== 'y').join(' ')
+const pageTitleHint = (title: string | null) => title ? ` (page title: ${JSON.stringify(title.slice(0, 255))})` : ''
 
 // React's inline reveal calls: `$RS("S:n","P:m")` moves a segment into a placeholder, `$RC("B:m","S:n")` into a boundary.
 const REVEAL = /\$RS\(\s*(["'])(S:\d+)\1\s*,\s*(["'])(P:\d+)\3\s*\)|\$RC\(\s*(["'])(B:\d+)\5\s*,\s*(["'])(S:\d+)\7\s*\)/g
@@ -89,7 +91,7 @@ function revealStreamedSegments($: CheerioAPI) {
 }
 
 type SelectedPerformance = { text: string; date: string; time: string; title: string }
-type PageRead = string | { visible: string; selected: SelectedPerformance | null }
+type PageRead = { visible: string; title: string | null; h1: string | null; selected?: SelectedPerformance | null }
 const camarinPerformanceUrl = (url: URL) => /^(?:www\.)?elcamarindelasmusas\.com$/.test(url.hostname) &&
   url.pathname.startsWith('/event/') && url.searchParams.has('eventDateId')
 
@@ -119,15 +121,18 @@ function selectedCamarinPerformance($: CheerioAPI, url: URL): SelectedPerformanc
   } catch { return null } // Missing or changed page data cannot verify the selected date or time.
 }
 
-export function visibleText(html: string): string { return visibleDom(load(html)) }
+export function visibleText(html: string): string {
+  const $ = load(html)
+  prepareVisibleDom($)
+  return $.root().text()
+}
 
-function visibleDom($: CheerioAPI): string {
+function prepareVisibleDom($: CheerioAPI) {
   revealStreamedSegments($)
-  $('head, script, style, noscript, template, svg, iframe, [hidden], [aria-hidden="true"]').remove()
+  $('head, title, script, style, noscript, template, svg, iframe, [hidden], [aria-hidden="true"]').remove()
   $('[style]').filter((_, element) => /display\s*:\s*none|visibility\s*:\s*hidden/i.test($(element).attr('style') ?? '')).remove()
   // A space at every element boundary: <span>LUNES</span><span>23</span> reads "LUNES 23", never "LUNES23".
   $('*').each((_, element) => { $(element).prepend(' ').append(' ') })
-  return $.root().text()
 }
 
 /** GET with no cookies or credentials, manual redirects re-checked hop by hop, a time limit and a size limit. */
@@ -170,14 +175,18 @@ export async function readOfficialPage(url: string, sites: ReadonlySet<string>, 
     const source = new URL(current)
     const camarin = camarinPerformanceUrl(source)
     const selected = $ && camarin ? selectedCamarinPerformance($, source) : null
-    const visible = $ ? visibleDom($) : text
+    // Cheerio's slim parser leaves the document title in place when optional head tags are omitted.
+    const title = ($ && $('head > title, html > title').add($.root().children('title')).first().text().replace(/\s+/g, ' ').trim()) || null
+    if ($) prepareVisibleDom($)
+    const h1 = $?.('h1').first().text().replace(/\s+/g, ' ').trim() || null
+    const visible = $ ? $.root().text() : text
     // An empty page (Incapsula's stub) or a short Cloudflare challenge page. A protection script alone proves nothing:
     // Imperva and Cloudflare inject theirs into real pages too.
     const shown = visible.replace(/\s+/g, ' ').trim().length
     if (!shown || shown < CHALLENGE_TEXT && /<title>\s*Just a moment\.\.\.\s*<\/title>|cf[-_]chl/i.test(text)) {
       throw new Error('the site shows a bot check or an empty page to automated readers; cite another official page')
     }
-    return camarin ? { visible, selected } : visible
+    return { visible, title, h1, ...(camarin ? { selected } : {}) }
   }
 }
 export type ReadPage = (url: string, sites: ReadonlySet<string>) => Promise<PageRead>
@@ -204,6 +213,7 @@ export const verifyOfficialPagesEffect = (evidence: readonly Evidence[], facts: 
   const pages = evidence.filter(isOfficialPage)
   const texts = new Map<string, Promise<PageRead>>()
   const reasons: string[] = []
+  const name = nameText(facts.name)
   for (const page of pages) {
     if (!publicPageUrl(page.url)) { reasons.push(`Official page must be a public HTTPS address: ${page.url}`); continue }
     if (!officialPageAllowed(page.url, facts.sites)) {
@@ -220,8 +230,7 @@ export const verifyOfficialPagesEffect = (evidence: readonly Evidence[], facts: 
       reasons.push(`Official page could not be read: ${page.url} (${text.error instanceof Error ? text.error.message : String(text.error)})`)
       continue
     }
-    const visible = typeof text.value === 'string' ? text.value : text.value.visible
-    const selected = typeof text.value === 'string' ? null : text.value.selected
+    const { visible, title, h1, selected } = text.value
     const quoted = new RegExp(`(?<![\\p{L}\\p{N}])${excerpt.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\p{L}\\p{N}])`, 'u')
     if (selected && quoted.test(normalizePageText(selected.text))) {
       if (page.fields.some(field => field !== 'date' && field !== 'time')) {
@@ -236,14 +245,22 @@ export const verifyOfficialPagesEffect = (evidence: readonly Evidence[], facts: 
         reasons.push(`Official page excerpt does not state the performance start time ${facts.time}: ${page.url}`)
         continue
       }
-      if (nameText(selected.title) !== nameText(facts.name)) reasons.push(`Official page selected performance is not for "${facts.name}": ${page.url}`)
+      const selectedName = normalizeTitle(facts.name)
+      if (!selectedName || normalizeTitle(selected.title) !== selectedName) reasons.push(`Official page selected performance is not for "${facts.name}"${pageTitleHint(selected.title)}: ${page.url}`)
       continue
     }
-    if ((typeof text.value !== 'string' || camarinPerformanceUrl(new URL(page.url))) && page.fields.some(field => field === 'date' || field === 'time')) {
+    if ((selected !== undefined || camarinPerformanceUrl(new URL(page.url))) && page.fields.some(field => field === 'date' || field === 'time')) {
       reasons.push(`Official page date or time evidence must quote the selected future performance: ${page.url}`)
     } else if (!quoted.test(normalizePageText(visible))) {
       reasons.push(`Official page evidence must be an excerpt of the page's visible text: ${page.url}`)
-    } else if (!nameText(visible).includes(nameText(facts.name))) reasons.push(`Official page does not name "${facts.name}": ${page.url}`)
+    } else if (!name || (h1 ? nameText(h1) !== name : nameText(title ?? '') !== name)) {
+      // The first H1 is the page's identity when it has one; the <title> only stands in for a page without one.
+      const headings = [
+        title && `page title: ${JSON.stringify(title.slice(0, 255))}`,
+        h1 && `H1: ${JSON.stringify(h1.slice(0, 255))}`,
+      ].filter(Boolean).join('; ')
+      reasons.push(`Official page does not name "${facts.name}"${headings ? ` (${headings})` : ''}: ${page.url}`)
+    }
   }
   return reasons
 })

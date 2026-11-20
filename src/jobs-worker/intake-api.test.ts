@@ -68,7 +68,7 @@ describe.skipIf(bun)('intake API boundary', () => {
     expect(await error(await call('preflight', body({ extra: 1 })))).toMatchObject({ status: 400 })
     expect(await error(await call('preview', body({ id: 'not-a-uuid' })))).toMatchObject({ status: 400 })
     expect(await error(await call('source', body({ username: 'Bad Name', authority: 'venue', enabled: false, qualification: 'x' })))).toMatchObject({ status: 400 })
-    expect(await error(await call('submit', body({ id: 'x' })))).toMatchObject({ status: 400, error: 'Invalid candidate; see the candidate schema' })
+    expect(await error(await call('submit', body({ id: 'x' })))).toMatchObject({ status: 400, error: expect.stringMatching(/^Invalid candidate: id:/) })
     expect(await error(await call('lookup', body({ name: '50%' })))).toMatchObject({ status: 400, error: 'Use a plain name fragment' })
     expect(await error(await call('review', body({ observation_id: crypto.randomUUID(), note: '' })))).toMatchObject({ status: 400 })
     expect(await error(await call('preflight', { body: 'not json' }))).toMatchObject({ status: 400 })

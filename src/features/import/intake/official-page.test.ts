@@ -3,6 +3,8 @@ import { Effect } from 'effect'
 import { normalizePageText, officialSites, publicPageUrl, readOfficialPage, siteOf, verifyOfficialPagesEffect, visibleText } from './official-page.ts'
 
 const page = (body: string, init: ResponseInit = {}) => new Response(body, { status: 200, headers: { 'content-type': 'text/html; charset=utf-8' }, ...init })
+const readHtml = (html: string) => (url: string, sites: ReadonlySet<string>) =>
+  readOfficialPage(url, sites, (async () => page(html)) as typeof fetch)
 const sites = officialSites({ website: 'https://www.teatro.example.org', captions: ['Entradas: https://down.example.org/obra'] })
 const facts = { name: 'Forever Sintético', date: '2026-11-23', time: '21:00', sites }
 const SHOWTIMES = `<html><head><title>Sala Sintética</title><script>var s = "LUNES 1 ENERO 09:00"</script></head><body><h1>Forever&nbsp;Sint&eacute;tico</h1>
@@ -40,14 +42,14 @@ describe('official-page evidence', () => {
     const reasons = await Effect.runPromise(verifyOfficialPagesEffect([
       evidence('https://teatro.example.org/obra', 'Lunes 23 noviembre 21:00'),
       evidence('https://teatro.example.org/obra', 'teatro sintetico, pasaje ficticio 1234', ['venue']),
-    ], facts, async () => visibleText(SHOWTIMES)))
+    ], facts, readHtml(SHOWTIMES)))
     expect(reasons).toEqual([])
     expect(normalizePageText(' Á  b\u00a0C ')).toBe('a b c')
     expect(normalizePageText(visibleText('<p><span>LUNES</span><span>23</span></p>'))).toBe('lunes 23')
   })
 
   it('keeps token boundaries: "sábado 2 21:00" is not "sábado 22 1:00" or "12 21:00"', async () => {
-    const page = async () => visibleText('<h1>Forever Sintético</h1><p>sábado 22 1:00</p><p>viernes 12 21:00</p>')
+    const page = readHtml('<h1>Forever Sintético</h1><p>sábado 22 1:00</p><p>viernes 12 21:00</p>')
     const day2 = { ...facts, date: '2026-11-02' }
     for (const excerpt of ['sábado 2 21:00', '2 21:00 y más']) {
       expect(await Effect.runPromise(verifyOfficialPagesEffect([evidence('https://teatro.example.org/obra', excerpt)], day2, page)))
@@ -57,15 +59,78 @@ describe('official-page evidence', () => {
 
   it('requires the show\'s name on the page and the cited date and time in the excerpt', async () => {
     const run = (excerpt: string, fields?: Array<'date' | 'time'>, html = SHOWTIMES, at = facts) =>
-      Effect.runPromise(verifyOfficialPagesEffect([evidence('https://teatro.example.org/obra', excerpt, fields)], at, async () => visibleText(html)))
+      Effect.runPromise(verifyOfficialPagesEffect([evidence('https://teatro.example.org/obra', excerpt, fields)], at, readHtml(html)))
     expect(await run('LUNES 23 NOVIEMBRE 21:00', undefined, SHOWTIMES.replace(/Forever&nbsp;Sint&eacute;tico/, 'Otra obra')))
-      .toEqual(['Official page does not name "Forever Sintético": https://teatro.example.org/obra'])
+      .toEqual(['Official page does not name "Forever Sintético" (page title: "Sala Sintética"; H1: "Otra obra"): https://teatro.example.org/obra'])
     expect(await run('NOVIEMBRE 2026 en cartel', ['date'], '<h1>Forever Sintético</h1><p>NOVIEMBRE 2026 en cartel</p>'))
       .toEqual(['Official page excerpt does not state the day 23: https://teatro.example.org/obra'])
     expect(await run('LUNES 23 NOVIEMBRE 21:00', undefined, SHOWTIMES, { ...facts, time: '21:30' }))
       .toEqual(['Official page excerpt does not state the time 21:30: https://teatro.example.org/obra'])
     // Leading zeros and 12-hour times with p.m. count.
     expect(await run('lunes 02/11 9 p.m.', undefined, '<h1>Forever Sintético</h1><p>Lunes 02/11 9 p.m.</p>', { ...facts, date: '2026-11-02' })).toEqual([])
+  })
+
+  const officialUrl = 'https://teatro.example.org/obra'
+  const officialQuote = 'LUNES 23 NOVIEMBRE 21:00'
+  const verifyShow = (name: string, html: string) => Effect.runPromise(verifyOfficialPagesEffect(
+    [evidence(officialUrl, officialQuote)], { ...facts, name }, readHtml(html)))
+
+  it('normalizes the Fiorel show name without treating a different spelling as equal', async () => {
+    const name = 'Fiorel y Crezco del Viento + Joaquin y Orquesta de Bolsillo'
+    const label = 'Fiorel y crezco del viento - Joaquín y orquesta de bolsillo'
+    const schedule = `<p>${officialQuote}</p>`
+    expect(await verifyShow(name, `<head><title>${label}</title></head><body>${schedule}</body>`)).toEqual([])
+    expect(await verifyShow(name, `<h1>${label}</h1>${schedule}`)).toEqual([])
+    const wrong = name.replace('Joaquin', 'Joaquinx')
+    expect(await verifyShow(wrong, `<h1>${label}</h1>${schedule}`)).toEqual([
+      `Official page does not name "${wrong}" (H1: "${label}"): ${officialUrl}`,
+    ])
+  })
+
+  it('uses a document title without head tags for the name, but never for the excerpt', async () => {
+    const show = 'Sol y Luna'
+    expect(await verifyShow(show, `<title>${show}</title><p>${officialQuote}</p>`)).toEqual([])
+    expect(await verifyShow(show, `<html><title>${show}</title><body><p>${officialQuote}</p></body></html>`)).toEqual([])
+    expect(await verifyShow(show, `<title>${officialQuote}</title><h1>${show}</h1>`)).toEqual([
+      `Official page evidence must be an excerpt of the page's visible text: ${officialUrl}`,
+    ])
+  })
+
+  it('ignores a sidebar recommendation and later H1s when the primary show differs', async () => {
+    const html = `<head><title>Entradas para Otra Obra</title></head><body>
+      <h1>Otra Obra</h1><p>${officialQuote}</p>
+      <aside><h1>Sol y Luna</h1><p>${officialQuote}</p></aside></body>`
+    expect(await verifyShow('Sol + Luna', html)).toEqual([
+      `Official page does not name "Sol + Luna" (page title: "Entradas para Otra Obra"; H1: "Otra Obra"): ${officialUrl}`,
+    ])
+  })
+
+  it('holds a page whose H1 names another show even when its title names this one', async () => {
+    const html = `<head><title>Sol y Luna</title></head><body><h1>Otra Obra</h1><p>${officialQuote}</p></body>`
+    expect(await verifyShow('Sol + Luna', html)).toEqual([
+      `Official page does not name "Sol + Luna" (page title: "Sol y Luna"; H1: "Otra Obra"): ${officialUrl}`,
+    ])
+  })
+
+  it('holds a calendar whose primary heading identifies the calendar rather than either show', async () => {
+    const html = `<head><title>Teatro Flores | Cartelera</title></head><body><h1>Agenda de noviembre</h1>
+      <section><h2>Sol y Luna</h2><p>MARTES 24 NOVIEMBRE 21:00</p></section>
+      <section><h4>Otra Obra</h4><p>${officialQuote}</p></section></body>`
+    for (const name of ['Sol + Luna', 'Otra Obra']) {
+      expect(await verifyShow(name, html)).toEqual([
+        `Official page does not name "${name}" (page title: "Teatro Flores | Cartelera"; H1: "Agenda de noviembre"): ${officialUrl}`,
+      ])
+    }
+  })
+
+  it('accepts a single show whose schedule sits outside its header div', async () => {
+    const html = `<head><title>Teatro Flores</title></head><body><h1 hidden>Otra Obra</h1>
+      <div class="header"><h1>Sol y Luna</h1><span>Teatro Flores</span></div>
+      <p>${officialQuote}</p></body>`
+    expect(await verifyShow('Sol + Luna', html)).toEqual([])
+    expect(await verifyShow('Otra Obra', html)).toEqual([
+      `Official page does not name "Otra Obra" (page title: "Teatro Flores"; H1: "Sol y Luna"): ${officialUrl}`,
+    ])
   })
 
   it('rejects an excerpt the page lacks, hidden text, a failed read, a private address, and a too-short excerpt', async () => {
@@ -76,7 +141,7 @@ describe('official-page evidence', () => {
       evidence('https://down.example.org/obra', 'LUNES 23 NOVIEMBRE', ['date']),
       evidence('https://192.168.0.2/obra', 'LUNES 23 NOVIEMBRE', ['date']),
       evidence('https://teatro.example.org/obra', 'el 23', ['date']),
-    ], facts, async url => { reads++; if (url.includes('down')) throw new Error('answered 503'); return visibleText(SHOWTIMES) }))
+    ], facts, async (url, allowed) => { reads++; if (url.includes('down')) throw new Error('answered 503'); return readHtml(SHOWTIMES)(url, allowed) }))
     expect(reasons).toEqual([
       'Official page evidence must be an excerpt of the page\'s visible text: https://teatro.example.org/obra',
       'Official page evidence must be an excerpt of the page\'s visible text: https://teatro.example.org/obra',
@@ -95,7 +160,7 @@ describe('official-page evidence', () => {
       if (url.endsWith('/sneaky')) return new Response(null, { status: 302, headers: { location: 'https://169.254.169.254/latest' } })
       return page(SHOWTIMES)
     }) as typeof fetch
-    expect(await readOfficialPage('https://teatro.example.org/old', sites, fetcher)).toContain('LUNES 23 NOVIEMBRE')
+    expect((await readOfficialPage('https://teatro.example.org/old', sites, fetcher)).visible).toContain('LUNES 23 NOVIEMBRE')
     expect(requests.map(request => request.url)).toEqual(['https://teatro.example.org/old', 'https://teatro.example.org/obra'])
     expect(requests[0].init).toMatchObject({ redirect: 'manual' })
     expect(Object.keys(requests[0].init!.headers as object).map(key => key.toLowerCase())).not.toContain('cookie')
@@ -139,7 +204,7 @@ describe('official-page evidence', () => {
     const reasons = await Effect.runPromise(verifyOfficialPagesEffect([
       evidence('https://agenda.example.net/forever', 'LUNES 23 NOVIEMBRE 21:00'),
       evidence('https://teatro-example-org.translate.goog/obra', 'LUNES 23 NOVIEMBRE 21:00'),
-    ], { ...facts, sites: new Set([...sites, 'translate.goog']) }, async () => visibleText(SHOWTIMES)))
+    ], { ...facts, sites: new Set([...sites, 'translate.goog']) }, readHtml(SHOWTIMES)))
     expect(reasons).toEqual([
       "Official page must be on the venue's website, a site a cited post links to, the post-backed ticket site, or a known ticket seller: https://agenda.example.net/forever",
       "Official page must be on the venue's website, a site a cited post links to, the post-backed ticket site, or a known ticket seller: https://teatro-example-org.translate.goog/obra",
@@ -223,7 +288,7 @@ describe('official-page evidence', () => {
     const allowed = CAMARIN_SITES
     const fetcher = (async () => page(fixture)) as typeof fetch
     const read = await readOfficialPage(url, allowed, fetcher)
-    expect(read).toEqual({ visible: expect.stringContaining('Forever Sintético'),
+    expect(read).toMatchObject({ visible: expect.stringContaining('Forever Sintético'), title: null,
       selected: { date: '2026-11-28', time: '22:00', text: excerpt, title: facts.name } })
     expect(JSON.stringify(read)).not.toMatch(/sáb 21|OCULTO|OTRA OBRA/)
     const early = (async () => page(fixture.replaceAll('2026-11-29T0', '2026-12-05T0'))) as typeof fetch
@@ -248,7 +313,7 @@ describe('official-page evidence', () => {
       expect(await readOfficialPage(unsupported, allowed, fetcher), unsupported).toMatchObject({ selected: null })
     }
     for (const generic of [url.split('?')[0], url.replace('elcamarindelasmusas.com', 'teatro.example.org')]) {
-      expect(typeof await readOfficialPage(generic, officialSites({ website: generic }), fetcher), generic).toBe('string')
+      expect((await readOfficialPage(generic, officialSites({ website: generic }), fetcher)).selected, generic).toBeUndefined()
     }
   })
 
@@ -266,7 +331,18 @@ describe('official-page evidence', () => {
     const read = camarinRead(camarinPage('17', 'Otra Obra Sintética', '<aside>También en cartel: Forever Sintético</aside>'))
     expect(await Effect.runPromise(verifyOfficialPagesEffect([evidence(CAMARIN_URL, CAMARIN_EXCERPT)],
       { ...facts, date: '2026-11-28', time: '22:00', sites: CAMARIN_SITES }, read)))
-      .toEqual([`Official page selected performance is not for "${facts.name}": ${CAMARIN_URL}`])
+      .toEqual([`Official page selected performance is not for "${facts.name}" (page title: "Otra Obra Sintética"): ${CAMARIN_URL}`])
+  })
+
+  it('keeps a standalone y significant in the title of a selected El Camarín performance', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-11-20T12:00:00Z'))
+    const read = camarinRead(camarinPage('17', 'María y José'))
+    const verify = (name: string) => Effect.runPromise(verifyOfficialPagesEffect([evidence(CAMARIN_URL, CAMARIN_EXCERPT)],
+      { ...facts, name, date: '2026-11-28', time: '22:00', sites: CAMARIN_SITES }, read))
+    expect(await verify('Maria y Jose')).toEqual([])
+    expect(await verify('María José')).toEqual([
+      `Official page selected performance is not for "María José" (page title: "María y José"): ${CAMARIN_URL}`,
+    ])
   })
 
   it('does not synthesize a past performance while the same event still has a future one', async () => {

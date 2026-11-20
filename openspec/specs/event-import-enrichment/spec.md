@@ -126,6 +126,7 @@ Imports, venue settlement, the venue review queue, enrichment, the blocklist, an
 #### Scenario: Vectorize drifts from D1
 - **WHEN** the nightly reconcile finds a stale search document, a live event without a vector, or vector metadata that differs from the row
 - **THEN** it re-embeds the document, restores the vector, or rewrites the metadata, within a bounded number of embedding calls per night
+- **AND** a stale or missing search document can be rebuilt from current intake-accepted facts without making those facts writable by importers
 
 ### Requirement: Catch-up retries are bounded per scheduled chain
 The scheduled catch-up SHALL include retryable `failed` events in its first batch, then select only `pending` events in chained batches. A failed event MUST be attempted at most once per scheduled catch-up chain and remain eligible for a later scheduled run.
@@ -262,6 +263,7 @@ The agent SHALL submit validated structured candidates with supporting observati
 #### Scenario: A date, time or address appears only on an official page
 - **WHEN** a candidate cites `{ kind: 'official_page', url, excerpt }` evidence for a field the post doesn't state
 - **THEN** preview and commit each fetch the URL themselves (public HTTPS hosts only, no cookies, bounded size and time) and accept it only when the page's visible text contains the excerpt after whitespace-, case- and accent-insensitive normalization
+- **AND** on an ordinary page, the candidate name matches the page title or the first visible H1 after folding case, accents, punctuation, and `+`/`-`/standalone `y` separators. A match elsewhere does not count, including on a venue calendar whose title and first H1 identify the agenda instead of the show. A name mismatch quotes the page title and first visible H1 when available
 - **AND** on El Camarín de las Musas's Fanz event page with an explicit `eventDateId`, date and time evidence must quote the selected same-day performance's date-picker line and match its own event title, full local date, and start time; ordinary page text cannot substitute for that line, and a performance that has already started does not produce one
 - **AND** a scheme-less `www.` domain in a cited caption counts as a linked site even with trailing sentence punctuation; an unmentioned domain does not
 - **AND** a redirect to a Queue-it waiting room is not fetched and tells the operator to cite another official page
@@ -270,6 +272,15 @@ The agent SHALL submit validated structured candidates with supporting observati
 #### Scenario: A flyer describes several occurrences or several posts promote one occurrence
 - **WHEN** candidates are prepared from the observations
 - **THEN** each occurrence retains its own stable candidate/event identity, and repeated promotion may attach additional evidence to the existing event
+
+#### Scenario: The operator selects artwork for an occurrence
+- **WHEN** a candidate is submitted to create or update an event
+- **THEN** preview holds it unless it selects a retained image of that occurrence or records a short `artwork_note` explaining why no image was selected
+- **AND** the plan keeps the note, an absent selection does not remove existing artwork, and links do not require an artwork decision
+
+#### Scenario: A candidate contains an invalid schema value
+- **WHEN** submit refuses a malformed candidate
+- **THEN** the error names the offending field path and lists accepted values for enum fields
 
 #### Scenario: A held candidate's venue is not in the catalog
 - **WHEN** the operator submits a sourced venue name, street address with a house number after the street name, optional barrio and evidence URLs to the intake `venue` operation
@@ -283,13 +294,17 @@ The agent SHALL submit validated structured candidates with supporting observati
 - **AND** the `held` operation lists unpublished future candidates grouped by venue with their hold reasons
 
 ### Requirement: Intake publication is transactional and revision checked
-The shared preview/commit interface SHALL persist candidate revisions, proposed actions and durable receipts. A repeated commit SHALL return its original receipt. Changed candidates, changed catalog rows, newer source observations, expired plans and held cases SHALL reject publication. A successful create or correction SHALL prepare the existing search document/embedding and description presentation before the catalog transaction.
+The shared preview/commit interface SHALL persist candidate revisions, proposed actions and durable receipts. A repeated commit SHALL return its original receipt. Changed candidates, changed catalog rows, newer source observations, expired plans and held cases SHALL reject publication. A successful create SHALL prepare the search document, embedding, and description presentation before the catalog transaction. A correction SHALL regenerate description presentation only when a description changes and regenerate the search document and embedding only when search inputs change.
 
 #### Scenario: A scheduled event is canceled or rescheduled
 - **WHEN** current direct organizer/venue evidence supports a correction
 - **THEN** the commit updates the same catalog UUID without replacing an existing platform source identity
 - **AND** subsequent legacy importer/enrichment writes cannot undo accepted facts or replace their corresponding search document
 - **AND** a curator repost cannot authorize a correction
+
+#### Scenario: A correction only adds artwork
+- **WHEN** an existing event gains a selected retained image without changing its other facts
+- **THEN** preview and commit retain the existing description presentation and search document byte for byte, without a model or embedding call
 
 #### Scenario: Publication is retried after a successful commit
 - **WHEN** the same plan is committed again
