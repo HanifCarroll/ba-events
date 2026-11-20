@@ -18,7 +18,8 @@ import type {
   ServerEnrichmentResult,
   ServerEnrichmentOptions,
 } from '../enrichment-types.ts'
-import { enrichEventFull } from '#shared/lib/ai/enrichment.ts'
+import { enrichEventFull, fetchWithJina } from '#shared/lib/ai/enrichment.ts'
+import { labeledOrganizer } from '#shared/lib/ai/event-credits.ts'
 
 export const baTourismEnrichmentAdapter: EnrichmentAdapter = {
   source: 'ba-tourism',
@@ -45,10 +46,16 @@ export const baTourismEnrichmentAdapter: EnrichmentAdapter = {
     options?: ServerEnrichmentOptions
   ): Promise<ServerEnrichmentResult | null> => {
     try {
+      if (options?.organizerOnly) {
+        const markdown = await fetchWithJina(link)
+        const organizer = markdown ? labeledOrganizer(markdown) : undefined
+        return organizer ? { organizer, description_es: null, description_en: null, venue_name: null } : null
+      }
       // Use the shared enrichment pipeline with known Spanish language
       const result = await enrichEventFull(link, {
         knownLanguage: 'spanish',
         extractVenue: options?.extractVenue ?? true,
+        extractOrganizer: true,
       })
 
       if (!result) {
@@ -60,6 +67,7 @@ export const baTourismEnrichmentAdapter: EnrichmentAdapter = {
         sourceObservedAt: result.sourceObservedAt ?? null,
         description_en: result.description_en,
         venue_name: result.venue_name,
+        ...(result.organizer ? { organizer: result.organizer } : {}),
       }
     } catch (error) {
       console.error('[BA Tourism Enrichment] Error:', error)

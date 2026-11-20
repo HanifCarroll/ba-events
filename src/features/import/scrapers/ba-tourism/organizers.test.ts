@@ -1,4 +1,5 @@
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
+import { baTourismEnrichmentAdapter } from '../../adapters/enrichment/ba-tourism-enrichment.ts'
 import { parseBATourismEvents } from './scraper.ts'
 import { transformBATourismEvent } from './transformer.ts'
 
@@ -22,4 +23,17 @@ it('copies only named organizers from the current tourism agenda schema', () => 
   expect(withCredit).toMatchObject({ organizer_name: 'Colectivo Nube' })
   expect(withCredit).not.toHaveProperty('organizer_url')
   expect(withoutCredit).not.toHaveProperty('organizer_name')
+})
+
+it('checks the linked detail once for an explicit organizer when the card lacks one', async () => {
+  const detail = `Title: Muestra sintética\n\nMarkdown Content:\n# Muestra sintética\n\nDónde: Sala Nube\n\n**Organiza:** [Asociación Puente](https://puente.example/)`
+  const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(detail))
+    .mockResolvedValueOnce(new Response('# Muestra sintética\nDónde: Sala Nube'))
+  try {
+    const url = 'https://turismo.buenosaires.gob.ar/es/article/sintetico'
+    const read = baTourismEnrichmentAdapter.serverEnrich!
+    expect(await read(url, { organizerOnly: true })).toMatchObject({ organizer: { name: 'Asociación Puente', url: 'https://puente.example/' } })
+    expect(String(fetchSpy.mock.calls[0]?.[0])).toContain(url)
+    expect(await read(url, { organizerOnly: true })).toBeNull()
+  } finally { fetchSpy.mockRestore() }
 })

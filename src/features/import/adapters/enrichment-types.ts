@@ -109,6 +109,8 @@ export interface EnrichmentConfig {
 export interface ServerEnrichmentOptions {
   /** Whether to also extract venue information */
   extractVenue?: boolean
+  /** The stored description is adequate; read source credits without translating it again. */
+  organizerOnly?: boolean
 }
 
 /**

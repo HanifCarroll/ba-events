@@ -304,8 +304,8 @@ export function enrichSingleEventEffect(
 
     if (input.description_es) {
       console.log(`[event-enrichment] Reusing stored Spanish description for ${name}`)
-      const organizer = source === 'luma' && !input.organizer_name && adapter?.serverEnrich
-        ? (yield* enrichmentTry('event-enrichment.luma-host', () => adapter.serverEnrich!(link)))?.organizer
+      const organizer = (source === 'luma' || source === 'ba-tourism') && !input.organizer_name && adapter?.serverEnrich
+        ? (yield* enrichmentTry('event-enrichment.detail-organizer', () => adapter.serverEnrich!(link, { organizerOnly: true })))?.organizer
         : undefined
       enrichmentResult = {
         organizer,
@@ -361,10 +361,10 @@ export function enrichSingleEventEffect(
       }))
     }
 
-    if (enrichmentResult?.organizer) {
+    if (enrichmentResult?.organizer && !input.organizer_name) {
       const { name: organizerName, url } = enrichmentResult.organizer
       yield* updateEventEnrichmentEffect(catalog, id, { organizer_name: organizerName,
-        organizer_url: url ?? (input.organizer_name === organizerName ? input.organizer_url : null) })
+        organizer_url: url ?? null })
     }
 
     if (!enrichmentResult || !enrichmentResult.description_es) {
