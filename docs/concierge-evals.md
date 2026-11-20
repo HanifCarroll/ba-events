@@ -16,7 +16,7 @@ mutations. Web and Telegram both use `runSharedChatTurn`; channel rendering is
 outside the agent.
 
 ```bash
-bun test evals/concierge/deterministic.test.ts
+bun run test evals/concierge/deterministic.test.ts
 bun run eval:concierge --staging       # requires explicit live credentials
 ```
 

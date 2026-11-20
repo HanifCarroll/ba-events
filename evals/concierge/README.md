@@ -3,13 +3,13 @@
 Two layers verify the ToolLoopAgent concierge:
 
 1. **Deterministic** — `deterministic.test.ts`, no model/database, discovered by
-   `bun test`. It uses the injected agent runner and covers follow-ups,
+   `bun run test`. It uses the injected agent runner and covers follow-ups,
    ambiguity, tool chaining, refs, grounding, pins, empty results, and shared
    web/Telegram history.
 2. **Live** — `run.ts`, explicitly invoked against DeepSeek and the staging catalog. See [development setup](../../docs/development.md#search-configuration).
 
 ```bash
-bun test evals/concierge/deterministic.test.ts
+bun run test evals/concierge/deterministic.test.ts
 bun run eval:concierge --staging       # requires live credentials
 ```
 

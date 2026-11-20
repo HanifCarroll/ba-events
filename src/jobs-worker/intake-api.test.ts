@@ -16,14 +16,9 @@ const TOKEN = 'synthetic-intake-token-0123456789abcdef'
 let db: D1Database
 let dispose: () => Promise<void>
 let env: IntakeApiEnv & { INTAKE_EVIDENCE: ReturnType<typeof fakeR2> }
-// Vitest only: under `bun test` these files' Miniflare work reliably tripped Bun's intermittent spawn failure (`connect
-// ENOENT` on workerd's control pipe), which failed d1-schema.test.ts after them. Vitest runs them in every gate.
-// shortcut: drop the skip once Bun's child_process extra-stdio bug is fixed or tests/support/d1.ts retries the start.
-const bun = 'Bun' in globalThis
-beforeAll(async () => { if (bun) return; ({ db, dispose } = await freshD1()) }, 60_000)
-afterAll(async () => { if (bun) return; await dispose() })
+beforeAll(async () => { ({ db, dispose } = await freshD1()) }, 60_000)
+afterAll(async () => { await dispose?.() })
 beforeEach(async () => {
-  if (bun) return
   await db.batch(['intake_media', 'intake_observations', 'intake_runs', 'instagram_sources'].map(table => db.prepare(`DELETE FROM ${table}`)))
   await db.prepare('UPDATE intake_policy SET collection_enabled = 1, publishing_enabled = 0').run()
   env = { DB: db, VECTORIZE: fakeVectorize().index, INTAKE_EVIDENCE: fakeR2(), INTAKE_ARTWORK: fakeR2(), INTAKE_API_TOKEN: TOKEN }
@@ -37,7 +32,7 @@ const body = (value: unknown) => ({ body: JSON.stringify(value) })
 const client = () => intakeApi('https://jobs.example', TOKEN, ((input: RequestInfo | URL, init?: RequestInit) =>
   handleIntakeRequest(new Request(input, init), env)) as typeof fetch)
 
-describe.skipIf(bun)('intake API boundary', () => {
+describe('intake API boundary', () => {
   it('stays a 404 everywhere without a D1 binding, as production is until the cutover', async () => {
     const { DB: _db, ...production } = env
     expect((await call('preflight', {}, production)).status).toBe(404)
@@ -94,7 +89,7 @@ describe.skipIf(bun)('intake API boundary', () => {
   })
 })
 
-describe.skipIf(bun)('collect through the CLI client', () => {
+describe('collect through the CLI client', () => {
   it('reserves, retains posts and evidence images in R2, and resumes without a second paid run', async () => {
     await db.prepare("INSERT INTO instagram_sources (username, authority, enabled, qualification) VALUES ('synthetic_venue', 'venue', 1, 'Synthetic')").run()
     const flyer = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 9, 9, 9])

@@ -5,8 +5,7 @@ import { loadEnv } from 'vite';
 import { sveltekit } from '@sveltejs/kit/vite';
 import adapter from '@sveltejs/adapter-cloudflare';
 
-// The legacy suite assumed .env values in process.env (Bun auto-loads them; Vitest's
-// node environment does not). Populate missing keys only — real env always wins.
+// Populate missing local environment variables for running Vite directly.
 for (const [key, value] of Object.entries(loadEnv(process.env.NODE_ENV ?? 'development', process.cwd(), ''))) {
 	process.env[key] ??= value;
 }
@@ -41,7 +40,7 @@ export default defineConfig({
 				test: {
 					name: 'server',
 					environment: 'node',
-					include: ['src/**/*.{test,spec}.{js,ts}'],
+					include: ['{src,tests,scripts}/**/*.{test,spec}.{js,ts}', 'evals/concierge/deterministic.test.ts'],
 					exclude: ['src/**/*.svelte.{test,spec}.{js,ts}']
 				}
 			}
