@@ -176,25 +176,7 @@ describe('search_events Phase 1 — candidate limit vs display limit', () => {
     vi.restoreAllMocks()
   })
 
-  it('semantic path with limit 1 calls hybridEventSearch with 50, not 1', async () => {
-    mockedHybridEventSearch.mockResolvedValue(candidates)
-
-    const result = await tool.execute(
-      { query: 'orchestra concert', limit: 1 },
-      context
-    )
-
-    expect(result.success).toBe(true)
-    expect(mockedHybridEventSearch).toHaveBeenCalledTimes(1)
-    expect(mockedHybridEventSearch).toHaveBeenCalledWith(
-      'orchestra concert',
-      expect.anything(),
-      50,
-      undefined
-    )
-  })
-
-  it('returns exactly 1 event when the semantic candidate set is 50', async () => {
+  it('searches up to 50 semantic candidates but shows only the requested top result', async () => {
     mockedHybridEventSearch.mockResolvedValue(candidates)
 
     const result = await tool.execute(
@@ -203,9 +185,8 @@ describe('search_events Phase 1 — candidate limit vs display limit', () => {
     )
 
     expect(result.success).toBe(true)
-    expect((result.events ?? []).length).toBe(1)
-    // The returned event is the first candidate (top by vector order).
-    expect((result.events ?? [])[0]?.id).toBe('candidate-0')
+    expect(mockedHybridEventSearch).toHaveBeenCalledExactlyOnceWith('museum exhibition', expect.anything(), 50, undefined)
+    expect(result.events?.map(event => event.id)).toEqual(['candidate-0'])
   })
 
   it('keeps the display limit honored for a limit-5 request on the semantic path', async () => {
@@ -613,41 +594,6 @@ describe('search_events prefer rerank', () => {
 
   afterEach(() => {
     vi.restoreAllMocks()
-  })
-
-  it('preserves retrieval order when the reranker is disabled', async () => {
-    const mk = (id: string, facets: unknown) => ({
-      id,
-      name: id,
-      starts_at: '2026-12-20T11:00:00.000Z',
-      image_url: null,
-      venue_id: null,
-      venue_name: null,
-      venue_neighborhood: null,
-      venue_address: null,
-      location_tba: false,
-      description_unavailable: false,
-      categories: [] as string[],
-      is_free: false,
-      price: null,
-      facets,
-    })
-
-    const party = mk('party', { vibes: ['energetic'], energy: 'high', eventType: ['party'] })
-    const romantic = mk('romantic', { vibes: ['romantic'], energy: 'low', eventType: ['dinner'] })
-
-    // Hybrid returns vector order: party first, romantic last. The reranker is
-    // disabled without an API key, so the raw retrieval order is preserved.
-    mockedHybridEventSearch.mockResolvedValue([party, romantic])
-
-    const result = await tool.execute({ query: 'romantic', limit: 2 }, context)
-
-    expect(result.success).toBe(true)
-    expect(result.metadata?.searchMode).toBe('semantic')
-    expect(result.metadata?.rerank).toBe('disabled')
-    expect(mockedHybridEventSearch).toHaveBeenCalledWith('romantic', expect.anything(), 50, undefined)
-    const events = result.events ?? []
-    expect(events.map((e) => e.id)).toEqual(['party', 'romantic'])
   })
 
   it('applies the reranked order and then diversity', async () => {

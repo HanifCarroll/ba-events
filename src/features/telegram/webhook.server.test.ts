@@ -141,6 +141,7 @@ describe('Telegram webhook', () => {
       chat_id: 123,
       action: 'typing',
     })
+    expect(trigger).toHaveBeenCalledOnce()
     const [payload, options] = trigger.mock.calls[0]
     expect(payload.updateId).toBe('42')
     expect(payload.queueKey).toBe(queueKey)
@@ -272,12 +273,6 @@ describe('Telegram webhook', () => {
     await handleTelegramWebhook(request(promptCallbackUpdate), { ...base, claim, rateLimit, trigger })
     await handleTelegramWebhook(request(promptCallbackUpdate), { ...base, claim, rateLimit, trigger })
     expect(rateLimit).toHaveBeenCalledOnce()
-    expect(trigger).toHaveBeenCalledOnce()
-  })
-
-  it('keeps ordinary text on Trigger', async () => {
-    const trigger = triggerMock()
-    await handleTelegramWebhook(request(messageUpdate), { ...base, trigger })
     expect(trigger).toHaveBeenCalledOnce()
   })
 

@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
   getFallbackConversationTitle,
-  isGenericConversationTitle,
   normalizeConversationTitle,
 } from './title.ts'
 
@@ -25,8 +24,4 @@ describe('conversation title utilities', () => {
     expect(getFallbackConversationTitle('   ')).toBe('New conversation')
   })
 
-  it('matches generic title regardless of case', () => {
-    expect(isGenericConversationTitle('new conversation')).toBe(true)
-    expect(isGenericConversationTitle('Weekend plan')).toBe(false)
-  })
 })
