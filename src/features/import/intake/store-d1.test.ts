@@ -450,21 +450,21 @@ describe.skipIf(bun)('the operator flow on D1', () => {
     const base = { date: day, time: null }
     const validFrom = '2026-11-20T18:00:00.000Z'
     await run(submitCandidateEffect(store, candidateInput(candidate, post, venueId, { ...base, organizer: { name: 'Nube' },
-      performers: [{ name: 'Trío Sol' }], offers_valid_from: validFrom, ticket_url: ticket,
-      evidence: evidence(['organizer', 'performers', 'offers_valid_from', 'ticket']) })))
+      performers: [{ name: 'Trío Sol' }], offers_valid_from: validFrom,
+      evidence: evidence(['organizer', 'performers', 'offers_valid_from']) })))
     const create = await run(previewCandidateEffect(store, candidate))
     expect(create).toMatchObject({ action: 'create', reasons: [] })
     await run(commitPlanEffect(store, create.id, publishers))
 
     await run(submitCandidateEffect(store, candidateInput(candidate, post, venueId, { ...base, expected_revision: 1, intent: 'update',
-      target_event_id: create.event_id, doors_time: '00:30', doors_date: doorsDate, evidence: evidence(['doors_time']) })))
+      target_event_id: create.event_id, doors_time: '00:30', doors_date: doorsDate, ticket_url: ticket, evidence: evidence(['doors_time', 'ticket']) })))
     const correction = await run(previewCandidateEffect(store, candidate))
     expect(correction).toMatchObject({ action: 'update', reasons: [], event_id: create.event_id })
     await run(commitPlanEffect(store, correction.id, publishers))
     await db.prepare('UPDATE events SET doors_at = NULL, organizer_name = NULL WHERE id = ?').bind(create.event_id).run()
-    expect(await db.prepare('SELECT starts_at, time_tba, doors_at, organizer_name, performers, offers_valid_from FROM events WHERE id = ?').bind(create.event_id).first())
+    expect(await db.prepare('SELECT starts_at, time_tba, doors_at, organizer_name, performers, offers_valid_from, ticket_url FROM events WHERE id = ?').bind(create.event_id).first())
       .toEqual({ starts_at: `${day}T03:00:00.000Z`, time_tba: 1, doors_at: `${doorsDate}T03:30:00.000Z`, organizer_name: 'Nube',
-        performers: JSON.stringify([{ name: 'Trío Sol' }]), offers_valid_from: validFrom })
+        performers: JSON.stringify([{ name: 'Trío Sol' }]), offers_valid_from: validFrom, ticket_url: ticket })
 
     const newDate = shiftDay(day, 7), newTicket = 'https://tickets.example/replacement'
     const updateExcerpt = `Synthetic Jazz, reprogramado al ${newDate}. Nueva reserva: ${newTicket}`
