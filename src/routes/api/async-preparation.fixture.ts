@@ -21,8 +21,9 @@ const saved: CanonicalChatResponse = {
 const started: string[] = []
 const effects: string[] = []
 const deliveryCalls: string[] = []
-const readFrames = async (response: Response) => (await response.text()).split('\n').filter(line => line.startsWith('data: {'))
+const readTerminalFrames = async (response: Response) => (await response.text()).split('\n').filter(line => line.startsWith('data: {'))
   .map(line => JSON.parse(line.slice('data: '.length)))
+  .filter(frame => ['data-response', 'error', 'finish'].includes(frame.type))
 let release!: () => void
 const gate = new Promise<void>(resolve => { release = resolve })
 const turnId = '10000000-0000-4000-8000-000000000001'
@@ -99,7 +100,7 @@ if (mode === 'events') {
   } as unknown as RequestEvent)
   running = replay ? execute('generate').then(async response => {
     assert.equal(response.status, 200)
-    assert.deepEqual((await readFrames(response)).filter(frame => ['data-response', 'error'].includes(frame.type)), [])
+    assert.deepEqual(await readTerminalFrames(response), [])
     assert.deepEqual(checkpoint, { canonical: saved, executionTrace: [] })
     return execute('commit')
   }) : execute()
@@ -116,11 +117,10 @@ if (mode === 'events') {
   assert.deepEqual(effects, [])
 } else if (replay) {
   assert.equal(response.status, 200)
-  const frames = await readFrames(response)
+  assert.deepEqual(await readTerminalFrames(response), [
+    { type: 'data-response', data: saved }, { type: 'finish', finishReason: 'stop' },
+  ])
   assert.deepEqual(deliveryCalls, ['POST /checkpoint', 'GET /checkpoint', 'POST /commit'])
-  assert.deepEqual(frames.filter(frame => frame.type === 'error'), [])
-  assert.deepEqual(frames.filter(frame => frame.type === 'data-response'), [{ type: 'data-response', data: saved }])
-  assert.deepEqual(frames.filter(frame => frame.type === 'finish'), [{ type: 'finish', finishReason: 'stop' }])
   assert.deepEqual(effects, [])
 } else {
   assert.match(await response.text(), /Chat turn unavailable/)
