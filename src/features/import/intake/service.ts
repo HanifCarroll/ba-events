@@ -6,7 +6,8 @@ import { buildDescriptionPresentationFields } from '#features/events/lib/descrip
 import { importTry, ImportOperationError } from '../core/effect-utils.ts'
 import { candidateError, decodeCandidate, isOfficialPage, type Candidate } from './schema.ts'
 import { officialSites, verifyOfficialPagesEffect, type ReadPage } from './official-page.ts'
-import { baDate, candidateStart, decideMatch, descriptionChanged, searchInputsChanged, validateEvidence, normalizeTitle, type CatalogMatch, type Observation } from './planning.ts'
+import { baDate, candidateStart, candidateDoors, decideMatch, descriptionChanged, searchInputsChanged, validateEvidence, normalizeTitle,
+  suppliedDetailFacts, type CatalogMatch, type Observation } from './planning.ts'
 import type { IntakePlanRow, IntakeStore } from './store.ts'
 
 export type IntakePlan = IntakePlanRow
@@ -98,6 +99,10 @@ export const previewCandidateEffect = Effect.fn('intake.preview')(function*(stor
       candidate.price_kind === 'unknown' ? old?.price as number | null ?? null : null,
     is_free: candidate.price_kind === 'free' || candidate.price_kind === 'unknown' && old?.is_free === true,
     ticket_url: candidate.ticket_url ?? old?.ticket_url as string | null ?? null,
+    ...(candidate.organizer ? { organizer_name: candidate.organizer.name.trim(), organizer_url: candidate.organizer.url ?? null } : {}),
+    performers: candidate.performers?.map(credit => ({ ...credit, name: credit.name.trim() })),
+    offers_valid_from: candidate.offers_valid_from,
+    doors_at: candidateDoors(candidate),
     source: 'instagram', external_id: candidate.id, status: candidate.status,
     image_url: flyer ? store.artworkUrl(eventId, flyer) : old?.image_url as string | null ?? null,
     image_width: flyer ? null : old?.image_width as number | null ?? null,
@@ -117,7 +122,7 @@ export const previewCandidateEffect = Effect.fn('intake.preview')(function*(stor
       description_unavailable: old.description_unavailable, enrichment_status: old.enrichment_status,
     })
     if (!searchInputsChanged(old, payload)) Object.assign(payload, storedSearch(old))
-    const changes: string[] = []
+    const changes = suppliedDetailFacts(candidate)
     if (old.status !== payload.status) changes.push('status')
     if (new Date(String(old.starts_at)).getTime() !== new Date(payload.starts_at).getTime()) changes.push('date', ...(candidate.time ? ['time'] : []))
     if (old.venue_id !== payload.venue_id) changes.push('venue')

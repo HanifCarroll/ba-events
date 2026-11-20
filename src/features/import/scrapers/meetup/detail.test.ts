@@ -64,7 +64,11 @@ describe('Meetup detail extraction', () => {
       starts_at: '2026-08-26T14:00:00.000Z',
       ends_at: '2026-08-26T16:00:00.000Z',
       status: 'canceled',
+      organizer_name: 'Group',
+      organizer_url: 'https://www.meetup.com/group/',
     })
+    expect(transformMeetupEvent({ ...event, group: { name: 'Unknown Group', urlname: '', rating: null } }, null))
+      .not.toHaveProperty('organizer_name')
 
     const originalDescription = event.description
     mergeMeetupDetail(event, { description: null, venue: null, dateTime: null, endTime: null, status: null })

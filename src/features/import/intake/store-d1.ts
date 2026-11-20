@@ -43,7 +43,7 @@ const d1 = <A>(operation: string, run: () => Promise<A>) => importTry(operation,
 
 const BOOLEANS = ['enabled', 'publishing_enabled', 'collection_enabled', 'is_all_day', 'is_free', 'location_hidden', 'location_tba',
   'description_unavailable', 'time_tba']
-const JSON_COLUMNS = ['input', 'media_urls', 'payload', 'evidence', 'reasons', 'receipt', 'categories', 'facets', 'enrichment_provenance', 'fields']
+const JSON_COLUMNS = ['input', 'media_urls', 'payload', 'evidence', 'reasons', 'receipt', 'categories', 'facets', 'performers', 'enrichment_provenance', 'fields']
 /** Decodes integer booleans and JSON text from D1 rows. */
 export function decodeRow<T = Row>(row: Row): T {
   const out: Row = { ...row }
@@ -362,7 +362,9 @@ export function d1Intake({ db, evidence, artwork, vectors }: IntakeBindings, sit
         const moved = Date.parse(previous.starts_at as string) !== Date.parse(startsAt)
         const changed = { status: previous.status !== (e.status ?? 'scheduled'), date: moved, time: moved && !e.time_tba,
           venue: (previous.venue_id ?? null) !== (e.venue_id ?? null),
-          price: (previous.price ?? null) !== (e.price ?? null) || !!previous.is_free !== !!e.is_free }
+          price: (previous.price ?? null) !== (e.price ?? null) || !!previous.is_free !== !!e.is_free,
+          organizer: e.organizer_name !== undefined, performers: e.performers !== undefined,
+          offers_valid_from: e.offers_valid_from !== undefined, doors_time: e.doors_at !== undefined }
         for (const [fact, needsEvidence] of Object.entries(changed)) {
           if (needsEvidence && !evidenceRows.some(row => (row.authority === 'venue' || row.authority === 'organizer') &&
             (JSON.parse(row.fields ?? '[]') as string[]).includes(fact) && (!protection || row.observed_at >= protection.observed_at))) {
@@ -373,29 +375,39 @@ export function d1Intake({ db, evidence, artwork, vectors }: IntakeBindings, sit
       const needsEmbedding = plan.action === 'create' || plan.action === 'update' && previous && searchInputsChanged(previous, e)
       if (needsEmbedding && (!e.embedding || e.search_document == null)) throw new Error('Search preparation is required')
 
+      const performers = e.performers ?? previous?.performers
+      const details = [e.organizer_name ?? previous?.organizer_name ?? null,
+        e.organizer_url ?? (e.organizer_name === undefined || e.organizer_name === previous?.organizer_name ? previous?.organizer_url ?? null : null),
+        performers ? JSON.stringify(performers) : null, e.offers_valid_from ?? previous?.offers_valid_from ?? null,
+        e.doors_at ?? previous?.doors_at ?? null] as const
+      const protects = [...PROTECTED_FIELDS,
+        ...(e.organizer_name !== undefined ? ['organizer_name', 'organizer_url'] : []),
+        ...(e.performers !== undefined ? ['performers'] : []),
+        ...(e.offers_valid_from !== undefined ? ['offers_valid_from'] : []),
+        ...(e.doors_at !== undefined ? ['doors_at'] : [])]
       const writes = []
       if (plan.action === 'create') {
         writes.push(db.prepare(`INSERT INTO events (id, name, starts_at, ends_at, time_tba, venue_id, description_es, description_en,
             description_display_es, description_display_en, description_summary_es, description_summary_en, categories, price, is_free,
             image_url, image_width, image_height, link, ticket_url, source, external_id, status, search_document, embedding_version,
-            enrichment_status, description_unavailable)
-          VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'instagram', ?, ?, ?, ?, ?, ?)`).bind(
+            enrichment_status, description_unavailable, organizer_name, organizer_url, performers, offers_valid_from, doors_at)
+          VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'instagram', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(
           plan.event_id, e.name, startsAt, bit(e.time_tba) ?? 0, e.venue_id ?? null, e.description_es ?? null, e.description_en ?? null,
           e.description_display_es ?? null, e.description_display_en ?? null, e.description_summary_es ?? null, e.description_summary_en ?? null,
           JSON.stringify(e.categories ?? []), e.price ?? null, bit(e.is_free) ?? 0, e.image_url ?? null, e.image_width ?? null, e.image_height ?? null,
           e.link ?? null, e.ticket_url ?? null, plan.candidate_id, e.status ?? 'scheduled', e.search_document ?? null, e.embedding_version ?? 1,
-          e.enrichment_status ?? 'pending', bit(e.description_unavailable) ?? 0))
+          e.enrichment_status ?? 'pending', bit(e.description_unavailable) ?? 0, ...details))
       } else if (plan.action === 'update') {
         writes.push(db.prepare(`UPDATE events SET name = ?, starts_at = ?, ends_at = ?, time_tba = ?, venue_id = ?, description_es = ?,
             description_en = ?, description_display_es = ?, description_display_en = ?, description_summary_es = ?, description_summary_en = ?,
             categories = ?, price = ?, is_free = ?, image_url = COALESCE(?, image_url), image_width = ?, image_height = ?,
             ticket_url = COALESCE(?, ticket_url), status = ?, search_document = ?, embedding_version = ?, enrichment_status = ?,
-            description_unavailable = ?
+            description_unavailable = ?, organizer_name = ?, organizer_url = ?, performers = ?, offers_valid_from = ?, doors_at = ?
           WHERE id = ?`).bind(e.name, startsAt, iso(e.ends_at), bit(e.time_tba) ?? 0, e.venue_id ?? null, e.description_es ?? null,
           e.description_en ?? null, e.description_display_es ?? null, e.description_display_en ?? null, e.description_summary_es ?? null,
           e.description_summary_en ?? null, JSON.stringify(e.categories ?? []), e.price ?? null, bit(e.is_free) ?? 0, e.image_url ?? null,
           e.image_width ?? null, e.image_height ?? null, e.ticket_url ?? null, e.status ?? 'scheduled', e.search_document ?? null,
-          e.embedding_version ?? 1, e.enrichment_status ?? 'pending', bit(e.description_unavailable) ?? 0, plan.event_id))
+          e.embedding_version ?? 1, e.enrichment_status ?? 'pending', bit(e.description_unavailable) ?? 0, ...details, plan.event_id))
       }
       writes.push(db.prepare(`INSERT INTO event_source_evidence (event_id, candidate_id, observation_id, revision)
         SELECT ?, ?, json_extract(value, '$.observation_id'), ? FROM json_each(?) WHERE json_extract(value, '$.observation_id') IS NOT NULL
@@ -407,8 +419,10 @@ export function d1Intake({ db, evidence, artwork, vectors }: IntakeBindings, sit
           writes.push(db.prepare('INSERT INTO vector_sync (event_id) VALUES (?) ON CONFLICT (event_id) DO NOTHING').bind(plan.event_id))
         }
         writes.push(db.prepare(`INSERT INTO event_intake_protection (event_id, fields, plan_id, authority, observed_at) VALUES (?, ?, ?, ?, ?)
-          ON CONFLICT (event_id) DO UPDATE SET fields = excluded.fields, plan_id = excluded.plan_id, authority = excluded.authority,
-            observed_at = excluded.observed_at`).bind(plan.event_id, JSON.stringify(PROTECTED_FIELDS), plan.id, level, observed))
+          ON CONFLICT (event_id) DO UPDATE SET fields = (SELECT json_group_array(value) FROM (
+              SELECT value FROM json_each(event_intake_protection.fields) UNION SELECT value FROM json_each(excluded.fields)
+            )), plan_id = excluded.plan_id, authority = excluded.authority,
+            observed_at = excluded.observed_at`).bind(plan.event_id, JSON.stringify(protects), plan.id, level, observed))
       }
       const receipt = { plan_id: plan.id, candidate_id: plan.candidate_id, revision: plan.revision, action: plan.action, event_id: plan.event_id,
         committed_at: at, previous_event: plan.action === 'update' ? previous : null }

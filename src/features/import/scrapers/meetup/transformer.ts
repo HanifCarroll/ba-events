@@ -40,6 +40,13 @@ function generateMeetupExternalId(event: MeetupEvent, dateStr?: string): string 
   return `meetup-${normalized}-${dateOnly}`
 }
 
+function meetupOrganizer({ group }: MeetupEvent) {
+  const name = group.name.trim()
+  if (!name || name === 'Unknown Group') return {}
+  const url = /^[a-z0-9][a-z0-9._-]*$/i.test(group.urlname) ? `https://www.meetup.com/${group.urlname}/` : undefined
+  return { organizer_name: name, organizer_url: url }
+}
+
 /**
  * Transform a single Meetup event to EventInsert format
  * For non-recurring events
@@ -67,6 +74,7 @@ export function transformMeetupEvent(
     link: normalizeUrl(event.eventUrl),
     ticket_url: normalizeUrl(event.eventUrl),
     source: 'meetup',
+    ...meetupOrganizer(event),
     external_id: generateMeetupExternalId(event),
     status: event.status,
   }
@@ -127,6 +135,7 @@ export function transformMeetupEventWithExpansion(
       link: normalizeUrl(event.eventUrl),
       ticket_url: normalizeUrl(event.eventUrl),
       source: 'meetup',
+      ...meetupOrganizer(event),
       external_id: `meetup-${expandedId}`,
       status: event.status,
     }

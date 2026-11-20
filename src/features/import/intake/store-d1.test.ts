@@ -435,7 +435,33 @@ describe.skipIf(bun)('the operator flow on D1', () => {
     const obs = { observation_id: id(), fields: ['name'], excerpt: 'Synthetic Jazz', media_id: null }
     const evidence = [obs, obs, { kind: 'official_page', fields: ['ticket_url'], excerpt: 'Entradas disponibles', url: 'https://example.org/show' }]
     expect(await fails(submitCandidateEffect(store, candidateInput(id(), obs.observation_id, null, { evidence }))))
-      .toBe('Invalid candidate: evidence[2].fields[0]: expected one of name, date, time, venue, price, status, description, ticket; got "ticket_url"')
+      .toBe('Invalid candidate: evidence[2].fields[0]: expected one of name, date, time, venue, price, status, description, ticket, organizer, performers, offers_valid_from, doors_time; got "ticket_url"')
+  })
+
+  it('publishes credited people, then adds next-day doors to an existing event without inventing a start', async () => {
+    await source()
+    const venueId = await venue()
+    const excerpt = 'Synthetic Jazz — organiza Nube, toca Trío Sol. Entradas a la venta desde el 20/11 a las 15:00. Puerta: 00.30 hs.'
+    const post = await observation((await run(store.reserveCollection())).id, excerpt)
+    const candidate = id(), day = shiftDay(baToday(), 5), doorsDate = shiftDay(day, 1)
+    const evidence = (fields: string[]) => [{ observation_id: post, fields: ['name', 'date', 'venue', ...fields], excerpt, media_id: null }]
+    const base = { date: day, time: null }
+    const validFrom = '2026-11-20T18:00:00.000Z'
+    await run(submitCandidateEffect(store, candidateInput(candidate, post, venueId, { ...base, organizer: { name: 'Nube' },
+      performers: [{ name: 'Trío Sol' }], offers_valid_from: validFrom, evidence: evidence(['organizer', 'performers', 'offers_valid_from']) })))
+    const create = await run(previewCandidateEffect(store, candidate))
+    expect(create).toMatchObject({ action: 'create', reasons: [] })
+    await run(commitPlanEffect(store, create.id, publishers))
+
+    await run(submitCandidateEffect(store, candidateInput(candidate, post, venueId, { ...base, expected_revision: 1, intent: 'update',
+      target_event_id: create.event_id, doors_time: '00:30', doors_date: doorsDate, evidence: evidence(['doors_time']) })))
+    const correction = await run(previewCandidateEffect(store, candidate))
+    expect(correction).toMatchObject({ action: 'update', reasons: [], event_id: create.event_id })
+    await run(commitPlanEffect(store, correction.id, publishers))
+    await db.prepare('UPDATE events SET doors_at = NULL, organizer_name = NULL WHERE id = ?').bind(create.event_id).run()
+    expect(await db.prepare('SELECT starts_at, time_tba, doors_at, organizer_name, performers, offers_valid_from FROM events WHERE id = ?').bind(create.event_id).first())
+      .toEqual({ starts_at: `${day}T03:00:00.000Z`, time_tba: 1, doors_at: `${doorsDate}T03:30:00.000Z`, organizer_name: 'Nube',
+        performers: JSON.stringify([{ name: 'Trío Sol' }]), offers_valid_from: validFrom })
   })
 
   it('refuses a candidate whose venue_id or target_event_id is not in the catalog, naming the ID, and stores nothing', async () => {

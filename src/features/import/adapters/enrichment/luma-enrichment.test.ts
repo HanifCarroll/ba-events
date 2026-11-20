@@ -4,14 +4,18 @@ import { lumaEnrichmentAdapter } from './luma-enrichment.ts'
 const detail = { api_id: 'evt-synthetic', ...{
   event: { geo_address_info: { mode: 'shown', address: 'Synthetic Venue', full_address: 'Synthetic Venue, Calle 1' }, coordinate: { latitude: -34.6, longitude: -58.4 } },
   description_mirror: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Synthetic live jazz.' }] }] },
+  // Top-level hosts modeled on /event/get; all names and IDs here are synthetic.
+  hosts: [{ api_id: 'usr-synthetic', name: 'Colectivo Nube', username: 'colectivo_nube', avatar_url: 'https://example.com/avatar' },
+    { api_id: 'usr-synthetic2', name: 'Segundo anfitrión', username: null }],
 } }
 
 describe('Luma enrichment through the JSON API', () => {
-  it('reads description and venue from one API call', async () => {
+  it('reads description, venue, and the first named organizer from one API call', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(JSON.stringify(detail)))
     try {
       expect(await lumaEnrichmentAdapter.serverEnrich!('https://luma.com/synthetic', { extractVenue: true }))
-        .toMatchObject({ description_en: 'Synthetic live jazz.', description_es: null, venue_name: 'Synthetic Venue', location_hidden: false, sourceObservedAt: expect.any(String) })
+        .toMatchObject({ description_en: 'Synthetic live jazz.', description_es: null, venue_name: 'Synthetic Venue', location_hidden: false, sourceObservedAt: expect.any(String),
+          organizer: { name: 'Colectivo Nube', url: 'https://luma.com/user/colectivo_nube' } })
       expect(fetchSpy).toHaveBeenCalledTimes(1)
       expect(String(fetchSpy.mock.calls[0]![0])).toBe('https://api2.luma.com/event/get?event_api_id=synthetic')
     } finally { fetchSpy.mockRestore() }

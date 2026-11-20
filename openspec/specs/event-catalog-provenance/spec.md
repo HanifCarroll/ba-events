@@ -49,12 +49,12 @@ Time-TBA, location-TBA, missing price, missing description, and missing source d
 - **AND** canonical cards retain the source timestamps and time-TBA flag for their existing presentation rules
 
 ### Requirement: Event structured data reflects known catalog facts
-Event detail JSON-LD SHALL use recorded times, status, admission facts, and visible venue facts. It SHALL NOT supply an unknown performer, ticket sales start, ticket availability, or timed end.
+Event detail JSON-LD SHALL use recorded times, status, admission facts, and visible venue facts. It SHALL include source-credited organizers, performers, and ticket-sale opening times when stored. It SHALL NOT supply an unknown performer, ticket sales start, ticket availability, or timed end.
 
 #### Scenario: Event detail includes a confirmed venue and admission information
 - **WHEN** the event has a visible, confirmed venue
-- **THEN** JSON-LD uses the venue name as the organizer and includes its stored website when present
-- **AND** the Place uses the stored name and address without placeholder text; a hidden or unconfirmed location exposes neither its venue details nor its organizer
+- **THEN** JSON-LD uses the credited organizer and its stored URL when present, or falls back to the visible venue and its stored website
+- **AND** the Place uses the stored name and address without placeholder text; a hidden or unconfirmed location exposes neither its venue details nor a venue-derived organizer
 - **AND** an offer uses an actual ticket or registration link and omits the price when it is unknown
 
 #### Scenario: Admission is a variable contribution
@@ -66,6 +66,11 @@ Event detail JSON-LD SHALL use recorded times, status, admission facts, and visi
 - **THEN** its start and end are Buenos Aires calendar dates, with the start date also serving as the end when no end is recorded
 - **AND** a Luma event with known hours keeps its times even if flagged all-day because of its duration
 - **AND** cancellation and postponement map to their corresponding schema statuses without changing the date or location
+
+#### Scenario: A source states credits or door times
+- **WHEN** event details include a stored organizer, performer lineup, or door time
+- **THEN** the event page shows the credited people and identifies doors separately from the performance start
+- **AND** JSON-LD uses `doorTime` without treating it as the performance start, and includes a sale opening time only on an actual admission offer
 
 ### Requirement: Source presentation preserves provenance
 Event detail and summaries SHALL distinguish BA Eventos pages, original event sources, and ticket links using the stored source fields. Sanitization or summary generation MUST NOT create a source URL.
@@ -90,6 +95,11 @@ The homepage SHALL load scheduled events with `events.scope = 'in'`, from the st
 - **THEN** the server SHALL use a cache key for the new local date
 - **AND** within that date, cached cards are fresh for 60 seconds and MAY be served for a further 300 seconds while a retained background refresh runs
 - **AND** a failed refresh MUST NOT be cached as a successful empty feed
+
+#### Scenario: An agenda event has doors but no known start
+- **WHEN** an upcoming occurrence has a door time and its start is time TBA
+- **THEN** the row shows localized door time instead of time TBA, and uses the door timestamp for ordering within the event's advertised Buenos Aires date
+- **AND** these choices do not change the stored start date or publish a guessed start
 
 #### Scenario: An agenda card has linked evidence
 - **WHEN** an event has a valid stored Instagram post URL linked through intake evidence
