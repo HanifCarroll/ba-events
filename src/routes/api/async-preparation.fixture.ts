@@ -5,6 +5,7 @@ import { mock } from 'bun:test'
 import { Effect } from 'effect'
 import type { RequestEvent } from '@sveltejs/kit'
 import type { CanonicalChatResponse } from '#shared/lib/types.ts'
+import { EXECUTION_FENCE_HEADER, EXECUTION_STAGE_HEADER, type ExecutionStage } from '../../chat-delivery-worker/recovery.ts'
 
 const [, , output, mode] = process.argv
 const replay = mode === 'replay'
@@ -18,7 +19,10 @@ const saved: CanonicalChatResponse = {
   },
 }
 const started: string[] = []
-const writes: unknown[] = []
+const effects: string[] = []
+const deliveryCalls: string[] = []
+const readFrames = async (response: Response) => (await response.text()).split('\n').filter(line => line.startsWith('data: {'))
+  .map(line => JSON.parse(line.slice('data: '.length)))
 let release!: () => void
 const gate = new Promise<void>(resolve => { release = resolve })
 const turnId = '10000000-0000-4000-8000-000000000001'
@@ -56,8 +60,8 @@ if (mode === 'events') {
   }))
   mock.module('#features/chat/api/turns.server.ts', () => ({
     claimChatTurnEffect: () => Effect.succeed({ status: replay ? 'completed' : 'running', claim_id: attemptId, conversation_id: turnId, user_client_message_id: turnId, assistant_client_message_id: turnId, content: 'Tell me more', locale: 'en' }),
-    failChatTurnEffect: () => Effect.sync(() => { writes.push('failed') }),
-    completeChatTurnEffect: () => { throw new Error('Must neither save a replay nor complete without history') },
+    failChatTurnEffect: () => Effect.sync(() => { effects.push('failed') }),
+    completeChatTurnEffect: () => { effects.push('complete'); throw new Error('Must neither save a replay nor complete without history') },
     getTurnAssistantEffect: () => {
       assert(replay, 'Must not replay a running turn')
       return Effect.succeed({ id: 'stored-assistant', canonical: saved })
@@ -65,13 +69,15 @@ if (mode === 'events') {
   }))
   mock.module('#features/chat/api/agent/shared-turn.server.ts', () => ({
     normalizeChatTurn: () => { throw new Error('Authenticated text must be authoritative') },
-    runSharedChatTurnEffect: () => { throw new Error('Must not start the model on replay or without history') },
+    runSharedChatTurnEffect: () => { effects.push('model'); throw new Error('Must not start the model on replay or without history') },
   }))
   const { POST } = await import('#features/chat/api/execute.server.ts')
-  running = POST({
+  let checkpoint: unknown = null
+  const execute = (stage?: ExecutionStage) => POST({
     request: new Request('https://example.com/api/chat/execute', { method: 'POST', headers: {
       'Content-Type': 'application/json', 'x-chat-owner': 'synthetic-user', 'x-chat-turn': turnId,
       'x-chat-attempt': attemptId, 'x-chat-token': 'a'.repeat(64),
+      ...(stage ? { [EXECUTION_STAGE_HEADER]: stage, [EXECUTION_FENCE_HEADER]: '1' } : {}),
     }, body: JSON.stringify({
       messages: replay ? [{ role: 'user', parts: [null] }] : [],
       turnId,
@@ -82,31 +88,42 @@ if (mode === 'events') {
       idFromName: (name: string) => name,
       get: () => ({ fetch: async (request: Request) => {
         assert(replay)
-        assert.equal(new URL(request.url).pathname, '/commit')
+        const call = `${request.method} ${new URL(request.url).pathname}`
+        deliveryCalls.push(call)
+        if (call === 'GET /checkpoint') return Response.json(checkpoint)
+        if (call === 'POST /checkpoint') checkpoint = await request.json()
+        else assert.equal(call, 'POST /commit')
         return new Response(null, { status: 204 })
       } }),
     } } },
   } as unknown as RequestEvent)
+  running = replay ? execute('generate').then(async response => {
+    assert.equal(response.status, 200)
+    assert.deepEqual((await readFrames(response)).filter(frame => ['data-response', 'error'].includes(frame.type)), [])
+    assert.deepEqual(checkpoint, { canonical: saved, executionTrace: [] })
+    return execute('commit')
+  }) : execute()
 }
 try {
   await new Promise(resolve => setTimeout(resolve, 0))
   if (!replay) assert.deepEqual(started, mode === 'events' ? [] : ['pin', 'history'])
-  assert.equal(writes.length, 0)
+  assert.deepEqual(effects, [])
 } finally { release() }
 const response = await running
 if (mode === 'events') {
   assert.equal(response.status, 500)
   assert.match(await response.text(), /Creating events through the API is not available on D1/)
-  assert.equal(writes.length, 0)
+  assert.deepEqual(effects, [])
 } else if (replay) {
   assert.equal(response.status, 200)
-  const frames = (await response.text()).split('\n').filter(line => line.startsWith('data: {'))
-    .map(line => JSON.parse(line.slice('data: '.length)))
+  const frames = await readFrames(response)
+  assert.deepEqual(deliveryCalls, ['POST /checkpoint', 'GET /checkpoint', 'POST /commit'])
+  assert.deepEqual(frames.filter(frame => frame.type === 'error'), [])
   assert.deepEqual(frames.filter(frame => frame.type === 'data-response'), [{ type: 'data-response', data: saved }])
   assert.deepEqual(frames.filter(frame => frame.type === 'finish'), [{ type: 'finish', finishReason: 'stop' }])
-  assert.equal(writes.length, 0)
+  assert.deepEqual(effects, [])
 } else {
   assert.match(await response.text(), /Chat turn unavailable/)
-  assert.deepEqual(writes, ['failed'])
+  assert.deepEqual(effects, ['failed'])
 }
 writeFileSync(output, JSON.stringify({ mode, passed: true }))

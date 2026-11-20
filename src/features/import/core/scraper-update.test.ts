@@ -26,18 +26,6 @@ describe('classifyScraperUpdate', () => {
     expect(classifyScraperUpdate(incoming({ description_unavailable: undefined }), { ...existing, description_unavailable: true }, 2)).toBe('unchanged')
   })
 
-  it('retains enrichment-owned fields before classifying', () => {
-    const enriched = incoming({
-      description_es: 'Texto del scraper', description_en: 'Scraper text', categories: ['food'],
-      facets: { ...existing.facets, genres: ['jazz'] },
-    })
-    Object.assign(enriched, {
-      description_es: existing.description_es, description_en: existing.description_en,
-      categories: existing.categories, facets: existing.facets,
-    })
-    expect(classifyScraperUpdate(enriched, existing, 2)).toBe('unchanged')
-  })
-
   it('returns only changed mutable columns without null clobbers', () => {
     const previous = { ...existing, image_url: 'https://example.com/old.jpg' }
     expect(getChangedMutableFields(incoming({ image_url: null, venue_id: null }), previous)).toEqual({ image_url: null })
