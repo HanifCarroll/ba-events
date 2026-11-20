@@ -266,19 +266,25 @@ const MONTH_PREFIXES = MONTHS.map(pattern => pattern.slice(0, 3))
 const MONTH_NAME = new RegExp(String.raw`\b(?:${MONTHS.join('|')})\b`, 'g')
 const monthNumber = (name: string) => MONTH_PREFIXES.indexOf(name.slice(0, 3).replace('set', 'sep')) + 1
 const DATE = new RegExp(String.raw`\b(?<!\d[./-])(?:(?<isoYear>\d{4})-(?<isoMonth>\d{2})-(?<isoDay>\d{2})|(?<day>\d{1,2})(?:(?<sep>[./-])(?<month>\d{1,2})(?:\k<sep>(?<numericYear>\d{4}|\d{2}))?| (?:de )?(?<monthName>${MONTHS.join('|')})(?:[.,]? (?:del? )?(?<year>\d{4}))?))\b(?![./-]\d)`, 'g')
-const HOUR_RANGE = /\bde (\d{1,2}) (?:a|hasta) (?:las? )?\d{1,2} ?(?:hs?|horas)\b/g
-const CLOCK = /\b(?<!\d[./-])(?:(a las?) )?(\d{1,2})(?:([:.])(\d{2}))?(?: ?(?:([ap])\.? ?m\b\.?|(hs?|horas)\b\.?))?(?![\w:]|\.\d)/g
-const DAY_ONLY = /(?:^|\b(?:el|lun(?:es)?|mar(?:tes)?|mie(?:rcoles)?|jue(?:ves)?|vie(?:rnes)?|sab(?:ado)?|dom(?:ingo)?)[.,]? )(\d{1,2})\b(?![./-]\d)/
+const CLOCK_VALUE = String.raw`\d{1,2}(?:[:.]\d{2})?`
+const CLOCK_LIST = new RegExp(String.raw`\b(?<!\d[:./-])(?:a las? ${CLOCK_VALUE}(?:,| (?:y|o|e|u)) ${CLOCK_VALUE}\b|${CLOCK_VALUE} (?:y|o|e|u) ${CLOCK_VALUE} ?(?:hs?|horas|[ap]\.? ?m)\b)`)
+const MULTIPLE_OCCURRENCES = "lists multiple dates or start times; cite the single occurrence's line"
+const BARE_START_RANGE = new RegExp(String.raw`\b(?<!\d[:./-])(de )?(\d{1,2})(?: *[-–—] *| (?:a|hasta) (las? )?)(${CLOCK_VALUE})(?: ?(hs?|horas|[ap]\.? ?m))?\b(?![:.]\d)`, 'g')
+const CLOCK = /\b(?<!\d[:./])(?:(?<!\d-)|(?=\d{1,2}:))(?:(a las?) )?(\d{1,2})(?:([:.])(\d{2}))?(?: ?(?:([ap])\.? ?m\b\.?|(hs?|horas)\b\.?))?(?![\w:]|\.\d)/g
+const DAY_ONLY = new RegExp(String.raw`\b(?:el|dia|lun(?:es)?|mar(?:tes)?|mie(?:rcoles)?|jue(?:ves)?|vie(?:rnes)?|sab(?:ado)?|dom(?:ingo)?|${MONTHS.join('|')})[.,:]? (\d{1,2})\b(?![./-]\d)`, 'g')
+const JOINED_DAYS = /\b\d{1,2}\b *(?:[,–—-]|y\b|o\b|al\b) *#|# *(?:[,–—-]|\by\b|\bo\b|\bal\b) *\d{1,2}\b(?! [a-z])/
 
 /** Why a normalized excerpt doesn't state the facts it is cited for; null when it does. */
 export function excerptFactsReason(excerpt: string, fields: readonly string[], facts: PageFacts): string | null {
   if (!fields.includes('date') && !fields.includes('time')) return null
+  if (CLOCK_LIST.test(excerpt)) return MULTIPLE_OCCURRENCES
   const [year, month, day] = facts.date.split('-').map(Number)
-  const [hour, minute] = facts.time?.split(':').map(Number) ?? []
-  let matchesTime = false
+  const starts: Array<[number, number]> = []
   let previousClockEnd: number | undefined
-  const afterHourRanges = excerpt.replace(HOUR_RANGE, (_, start: string) => {
-    matchesTime ||= Number(start) === hour && minute === 0
+  const afterHourRanges = excerpt.replace(BARE_START_RANGE, (token, from: string, start: string, at: string, end: string, unit: string) => {
+    if (!from && at || !unit && !/[.:]/.test(end)) return token // "viernes 20 a las 21 hs" has a day, not a range.
+    // Without an explicit meridiem on the start, don't infer it from the end.
+    starts.push([unit && /^[ap]/.test(unit) ? -1 : Number(start), 0])
     return ' '
   })
   // Remove clock tokens before reading the calendar so hours and minutes cannot stand in for dates.
@@ -289,20 +295,27 @@ export function excerptFactsReason(excerpt: string, fields: readonly string[], f
     const betweenClocks = previousClockEnd === undefined ? null : afterHourRanges.slice(previousClockEnd, offset)
     const rangeEnd = betweenClocks !== null && (/^(?:\s*[-–—]\s*| (?:a|hasta)(?: las?)? )$/.test(betweenClocks) || !!prefix && betweenClocks === ' ')
     previousClockEnd = offset + token.length
-    matchesTime ||= !rangeEnd && localHour === hour && Number(m ?? 0) === minute
+    if (!rangeEnd) starts.push([localHour, Number(m ?? 0)])
     return ' '
   })
   const dates = [...calendar.matchAll(DATE)]
+  const partialCalendar = calendar.replace(DATE, '#')
+  const contextualDays = [...partialCalendar.matchAll(DAY_ONLY)]
+  // Mark recognized dates so a shorthand list such as "20 y 21 de noviembre" also holds.
+  if (starts.length > 1 || dates.length + contextualDays.length > 1 || JOINED_DAYS.test(partialCalendar.replace(DAY_ONLY, '#'))) {
+    return MULTIPLE_OCCURRENCES
+  }
+  const groups = dates[0]?.groups
+  const statedDay = groups?.isoDay ?? groups?.day ?? contextualDays[0]?.[1]
+  if (Number(statedDay) !== day) return `does not state the day ${day}`
   const wrongMonth = `does not state the month ${String(month).padStart(2, '0')}`
   const wrongYear = `does not state the year ${year}`
-  for (const { groups = {} } of dates) {
+  if (groups) {
     const statedMonth = groups.monthName ? monthNumber(groups.monthName) : Number(groups.isoMonth ?? groups.month)
     const statedYear = groups.isoYear ?? groups.year ?? groups.numericYear
-    if (Number(groups.isoDay ?? groups.day) !== day) return `does not state the day ${day}`
     if (statedMonth !== month) return wrongMonth
     if (statedYear && Number(statedYear) !== (statedYear.length === 2 ? year % 100 : year)) return wrongYear
   }
-  if (fields.includes('date') && !dates.length && Number(DAY_ONLY.exec(calendar.trim())?.[1]) !== day) return `does not state the day ${day}`
   // A month heading or a separated year still constrains the quoted occurrence.
   for (const { 0: name, index } of calendar.matchAll(MONTH_NAME)) {
     // Before a day number, bare "mar" is the weekday abbreviation. A month after the day is checked above.
@@ -310,7 +323,12 @@ export function excerptFactsReason(excerpt: string, fields: readonly string[], f
     if (monthNumber(name) !== month) return wrongMonth
   }
   for (const [number] of calendar.matchAll(/\b(?:19|20)\d{2}\b/g)) if (Number(number) !== year) return wrongYear
-  if (fields.includes('time') && facts.time && !matchesTime) return `does not state the time ${facts.time}`
+  const start = starts[0]
+  if (!start || start[0] < 0 || start[0] > 23 || start[1] > 59) {
+    return facts.time ? `does not state the time ${facts.time}` : 'does not state a start time'
+  }
+  const [hour, minute] = facts.time?.split(':').map(Number) ?? []
+  if (facts.time && (start[0] !== hour || start[1] !== minute)) return `does not state the time ${facts.time}`
   return null
 }
 
