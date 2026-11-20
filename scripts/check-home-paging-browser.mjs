@@ -66,7 +66,7 @@ async function checkComposerPlacement(javaScriptEnabled) {
     assert.deepEqual(checks.filter(({ placement, expected }) => placement !== expected), [])
     assert.equal(await textbox.count(), 1, 'the composer must have a descriptive accessible name')
     if (await page.evaluate(() => CSS.supports('reading-flow', 'grid-rows'))) {
-      await cards.last().getByRole('button', { name: 'Preguntar por este evento' }).focus()
+      await cards.last().getByRole('button', { name: /^Preguntar sobre / }).focus()
       await page.keyboard.press('Tab')
       assert.ok(await textbox.evaluate(el => el === document.activeElement), 'Tab from the last visual card must reach the composer')
     }
