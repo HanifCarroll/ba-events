@@ -21,9 +21,9 @@ const saved: CanonicalChatResponse = {
 const started: string[] = []
 const effects: string[] = []
 const deliveryCalls: string[] = []
-const readTerminalFrames = async (response: Response) => (await response.text()).split('\n').filter(line => line.startsWith('data: {'))
+const readReplayFrames = async (response: Response) => (await response.text()).split('\n').filter(line => line.startsWith('data: {'))
   .map(line => JSON.parse(line.slice('data: '.length)))
-  .filter(frame => ['data-response', 'error', 'finish'].includes(frame.type))
+  .filter(frame => ['text-start', 'text-delta', 'text-end', 'data-response', 'error', 'finish'].includes(frame.type))
 let release!: () => void
 const gate = new Promise<void>(resolve => { release = resolve })
 const turnId = '10000000-0000-4000-8000-000000000001'
@@ -100,7 +100,7 @@ if (mode === 'events') {
   } as unknown as RequestEvent)
   running = replay ? execute('generate').then(async response => {
     assert.equal(response.status, 200)
-    assert.deepEqual(await readTerminalFrames(response), [])
+    assert.deepEqual(await readReplayFrames(response), [])
     assert.deepEqual(checkpoint, { canonical: saved, executionTrace: [] })
     return execute('commit')
   }) : execute()
@@ -117,9 +117,17 @@ if (mode === 'events') {
   assert.deepEqual(effects, [])
 } else if (replay) {
   assert.equal(response.status, 200)
-  assert.deepEqual(await readTerminalFrames(response), [
+  const frames = await readReplayFrames(response)
+  assert.deepEqual(frames.slice(-2), [
     { type: 'data-response', data: saved }, { type: 'finish', finishReason: 'stop' },
   ])
+  const text = frames.slice(0, -2)
+  assert.equal(text[0]?.type, 'text-start')
+  assert.equal(text.at(-1)?.type, 'text-end')
+  assert(text.every(frame => frame.id === text[0].id))
+  const deltas = text.slice(1, -1)
+  assert(deltas.every(frame => frame.type === 'text-delta'))
+  assert.equal(deltas.map(frame => frame.delta).join(''), saved.text)
   assert.deepEqual(deliveryCalls, ['POST /checkpoint', 'GET /checkpoint', 'POST /commit'])
   assert.deepEqual(effects, [])
 } else {
