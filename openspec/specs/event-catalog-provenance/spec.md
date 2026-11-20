@@ -82,7 +82,7 @@ The homepage SHALL load scheduled events with `events.scope = 'in'`, from the st
 - **AND** its browser/CDN policy does not extend the intended browser freshness to the zone's four-hour minimum
 
 ### Requirement: Event artwork is bounded and responsive across sources
-Passline, Venti, Meetup, Eventbrite, and Luma artwork SHALL use the same catalog-mediated responsive WebP delivery path. BA Tourism records without source images SHALL retain their existing missing-image presentation. Transformations SHALL preserve aspect ratio, avoid upscaling, use fixed 320/640/1280-pixel variants, and retain original-image fallback on unavailable transformations or quota exhaustion. The first two homepage cards SHALL load eagerly, only the first SHALL have high fetch priority, and farther cards SHALL remain lazy.
+Passline, Venti, Meetup, Eventbrite, and Luma artwork SHALL use the same catalog-mediated responsive WebP delivery path. BA Tourism records without source images SHALL retain their existing missing-image presentation. Transformations SHALL preserve aspect ratio, avoid upscaling, use fixed 320/640/1280-pixel variants, and retain original-image fallback on unavailable transformations or quota exhaustion. The first four homepage cards SHALL load eagerly, only the first SHALL have high fetch priority, and farther cards SHALL remain lazy.
 
 #### Scenario: An image transformation is requested
 - **WHEN** a caller provides a displayable catalog event ID and a supported variant

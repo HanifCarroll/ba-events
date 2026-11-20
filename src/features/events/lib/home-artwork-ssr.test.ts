@@ -1,4 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest'
+import { createRawSnippet } from 'svelte'
 import { render } from 'svelte/server'
 import * as m from '#paraglide/messages.js'
 import { agendaEvent } from '../../../../tests/support/home-agenda.ts'
@@ -27,19 +28,21 @@ describe.skipIf('Bun' in globalThis)('homepage server-rendered agenda', () => {
     const filter = parseHomeFilter(url.searchParams.get('f'))
     const fullView = occurrences ? selectHomeView({ window, events: occurrences, asOf }, filter) : { events: [], empty: 'feed' as const }
     const view = pageHomeView(fullView, url.searchParams.get('n'))
-    return render(HomeAgenda, { props: { view, filter, url, onAsk() {}, async onMore() {} } }).body
+    const chat = createRawSnippet(() => ({ render: () => '<section data-test-chat></section>' }))
+    return render(HomeAgenda, { props: { view, filter, url, chat, day: window.day, onAsk() {}, async onMore() {} } }).body.replace(/<!--.*?-->/gs, '')
   }
 
   it('puts responsive artwork, titles, and event links in HTML before hydration', () => {
     const body = renderAgenda('/')
-    expect(body.match(/<source /g)).toHaveLength(4)
-    expect(body).toContain('calc((100vw - 44px) / 2)')
+    expect(body.match(/<source /g)).toHaveLength(8)
+    expect(body).toContain('(width &lt; 768px) 96px')
+    expect(body).toContain('blur-xl brightness-50')
     expect(body).toContain('/api/event-artwork/')
     expect(body).toContain(`href="/events/${events[0].id}"`)
     expect(body).toContain('href="https://www.instagram.com/p/synthetic/"')
     expect(body).toContain('alt="Jam sintética"')
-    expect(body).toContain('Sala sintética · Almagro · $5.000 ARS')
-    expect(body.match(/loading="eager"/g)).toHaveLength(4)
+    expect(body).toMatch(/Sala sintética · Almagro.*\$5\.000 ARS/s)
+    expect(body.match(/<img\b[^>]*alt="[^"]+"[^>]*loading="eager"/g)).toHaveLength(4)
     expect(body.match(/fetchpriority="high"/g)).toHaveLength(1)
   })
 
@@ -48,8 +51,8 @@ describe.skipIf('Bun' in globalThis)('homepage server-rendered agenda', () => {
     const first = renderAgenda('/?f=gratis', free)
     expect(first).toContain(m.home_showing_count({ shown: 24, total: 50 }))
     expect(first).toMatch(/<a href="\/\?f=gratis&amp;n=48"[^>]*>Ver más<\/a>/)
-    expect(first.match(/loading="eager"/g)).toHaveLength(4)
-    expect(first.match(/loading="lazy"/g)).toHaveLength(20)
+    expect(first.match(/<img\b[^>]*alt="[^"]+"[^>]*loading="eager"/g)).toHaveLength(4)
+    expect(first.match(/<img\b[^>]*alt="[^"]+"[^>]*loading="lazy"/g)).toHaveLength(20)
     const more = renderAgenda('/?f=gratis&n=48', free)
     expect(more).toContain(m.home_showing_count({ shown: 48, total: 50 }))
     expect(more).toContain('href="/?f=hoy"')
@@ -63,7 +66,7 @@ describe.skipIf('Bun' in globalThis)('homepage server-rendered agenda', () => {
     const title = cards[0]?.match(/<h2\b.*?<\/h2>/s)?.[0]
     const meta = cards[1]?.match(/<p\b.*?<\/p>/s)?.[0]
     expect(title).toMatch(/<button\b[^>]*aria-controls="gloss-[^"]+"[^>]*>Jam<\/button>.* sintética/s)
-    expect(meta).toMatch(/Sala sintética · Almagro · .*<button\b[^>]*>A la gorra<\/button>/s)
+    expect(meta).toMatch(/Sala sintética · Almagro.*<button\b[^>]*>A la gorra<\/button>/s)
     expect(cards[0]?.match(/<a\b.*?<\/a>/s)?.[0]).not.toContain('<button')
     expect(body.match(/aria-controls="gloss-/g)).toHaveLength(2)
   })
@@ -80,6 +83,44 @@ describe.skipIf('Bun' in globalThis)('homepage server-rendered agenda', () => {
     expect(body).toContain('href="/events/upcoming"')
     expect(body).toMatch(/<time[^>]+13:00:00.000Z[^>]*>[^<]+<\/time>.* · .*<time[^>]+15:00:00.000Z/s)
     expect(body).not.toContain('10:00:00.000Z')
+  })
+
+  it('does not start a new day at UTC midnight, the composer, or the page boundary', () => {
+    const sample = Array.from({ length: 27 }, (_, i) => agendaEvent(`day-${i}`,
+      i < 6 ? '2026-11-19T23:59:00.000Z' : i < 26 ? '2026-11-20T02:59:00.000Z' : '2026-11-20T03:00:00.000Z'))
+    const first = renderAgenda('/', sample)
+    const more = renderAgenda('/?n=48', sample)
+    const headings = (html: string) => [...html.matchAll(/<h2 data-section="day"[^>]*>([^<]+)<\/h2>/g)].map(([, heading]) => heading)
+    expect(first.match(/<article\b/g)).toHaveLength(24)
+    expect(headings(first)).toEqual([m.landing_today()])
+    const tomorrow = m.home_tomorrow()
+    expect(headings(more)).toEqual([m.landing_today(), tomorrow])
+    expect(more.indexOf(tomorrow)).toBeGreaterThan(more.indexOf('href="/events/day-25"'))
+    expect(more.indexOf(tomorrow)).toBeLessThan(more.indexOf('href="/events/day-26"'))
+  })
+
+  it('keeps the date grid-only and shows local time or Time TBA in phone rows', () => {
+    const starts = '2026-11-19T23:30:00.000Z'
+    const body = renderAgenda('/', [agendaEvent('timed', starts), agendaEvent('tba', starts, { time_tba: true })])
+    expect(body).toMatch(/<span class="hidden md:inline"><time[^>]*>[^<]+<\/time> · <\/span>\s*<time[^>]*>20:30<\/time>/)
+    expect(body).toContain(m.concierge_time_tba())
+  })
+
+  it.each([
+    { href: '/', count: 4, before: 4, after: 0 },
+    { href: '/', count: 6, before: 6, after: 0 },
+    { href: '/', count: 10, before: 6, after: 4 },
+    { href: '/?f=gratis', count: 10, before: 3, after: 0 },
+    { href: '/?f=musica', count: 10, before: 6, after: 2 },
+    { href: '/?f=hoy', count: 0, before: 0, after: 0 },
+  ])('renders one composer in $href with $count source events and $before visible before it', ({ href, count, before, after }) => {
+    const sample = Array.from({ length: count }, (_, i) => agendaEvent(`sample-${i}`,
+      events[0].starts_at, { is_free: i < 3, music: i >= 2 }))
+    const html = renderAgenda(href, sample)
+    const [leading, trailing, extra] = html.split('data-test-chat')
+    expect(extra).toBeUndefined()
+    expect(leading.match(/<article\b/g) ?? []).toHaveLength(before)
+    expect(trailing.match(/<article\b/g) ?? []).toHaveLength(after)
   })
 
   it('server-renders selected and empty filter URLs, and links to other views', () => {

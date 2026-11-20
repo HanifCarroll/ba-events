@@ -12,7 +12,7 @@ const event = (cached = events) => ({ platform: { caches: { default: {
 describe('homepage event discovery', () => {
   it('returns only the requested cards plus the unchanged collage, and keeps each filter independent', async () => {
     const { load } = await import('./(chat)/+page.server.ts')
-    const { tomorrow } = homeWindow(new Date())
+    const { day, tomorrow } = homeWindow(new Date())
     const cached = Array.from({ length: 53 }, (_, index) => agendaEvent(`card-${index}`,
       new Date(Date.parse(tomorrow) + (index + 12) * 3600_000).toISOString(), { is_free: index < 31 }))
     const loadView = async (path: string) => (await load({
@@ -23,7 +23,8 @@ describe('homepage event discovery', () => {
     expect(first.view).toMatchObject({ events: cached.slice(0, 24), total: 53, empty: null })
     expect(first.flyers).toHaveLength(4)
     expect(first.refreshInMs).toBeGreaterThan(0)
-    expect(Object.keys(first).sort()).toEqual(['flyers', 'refreshInMs', 'view'])
+    expect(first.day).toBe(day)
+    expect(Object.keys(first).sort()).toEqual(['day', 'flyers', 'refreshInMs', 'view'])
     expect((await loadView('/?n=48')).view).toMatchObject({ events: cached.slice(0, 48), total: 53 })
     const free = await loadView('/?f=gratis&n=48')
     expect(free.view).toMatchObject({ events: cached.slice(0, 31), total: 31 })

@@ -23,6 +23,7 @@
 		if (visibleTooltip) return on(window, 'keydown', dismissTooltip)
 	})
 
+	const hasTime = $derived(event.time_tba || !event.is_all_day)
 	const price = $derived(event.payWhatYouCan ? m.home_price_pay_what_you_can() : formatPrice(event.price, event.is_free))
 	const venue = $derived(event.location_hidden ? m.event_location_hidden() :
 		[event.venue_name, event.venue_neighborhood].filter(Boolean).join(' · ') || m.concierge_location_tba())
@@ -49,7 +50,7 @@
 	}
 </script>
 
-{#snippet glossaryText(text: string, field: 'title' | 'meta')}
+{#snippet glossaryText(text: string, field: 'title' | 'meta' | 'price')}
 	{@const { parts, rest } = glossaryParts(text)}
 	{#each parts as { before, word, index, explain } (index)}
 		{@const id = `gloss-${event.id}-${field}-${index}`}
@@ -59,7 +60,7 @@
 			onpointerleave={() => { if (hovered === id) hovered = null }}
 		><button
 			type="button"
-			class="relative z-10 inline cursor-help text-left underline decoration-dotted underline-offset-4"
+			class={['relative z-10 inline cursor-help text-left decoration-dotted underline-offset-4', field === 'title' ? 'hover:underline focus-visible:underline' : 'underline']}
 			aria-expanded={visibleTooltip === id}
 			aria-controls={id}
 			aria-describedby={id}
@@ -68,9 +69,9 @@
 	{/each}{rest}
 {/snippet}
 
-<article class="flex min-w-0 flex-col border-b border-[#3b3b42] pb-3">
-	<div class="group relative">
-		<a href={`/events/${encodeURIComponent(event.id)}`} class="block after:absolute after:inset-0 after:z-1">
+<article data-section="event-card" class="agenda-card flex min-w-0 flex-col border-b border-[#3b3b42] pb-3">
+	<div class="card-content group relative">
+		<a href={`/events/${encodeURIComponent(event.id)}`} class="card-art block after:absolute after:inset-0 after:z-1">
 			<EventArtwork
 				eventId={event.id}
 				imageUrl={event.image_url}
@@ -78,30 +79,67 @@
 				imageHeight={event.image_height}
 				sizes={HOME_ARTWORK_SIZES}
 				aspectRatio="4 / 5"
+				blurFill
 				alt={event.name}
 				loading={index < 4 ? 'eager' : 'lazy'}
 				fetchpriority={index === 0 ? 'high' : 'auto'}
 				class="w-full rounded-none! bg-[#1d1d23]!"
 			/>
 		</a>
-		<div class="space-y-1 pt-2 wrap-anywhere">
-			<div class="font-mono text-xs text-[#d0ff36] sm:text-sm">
-				<time datetime={event.starts_at}>{formatShortDate(event.starts_at)}</time>{#if event.slotStarts}{#each event.slotStarts as slot (slot)}{' · '}<time datetime={slot}>{formatTime(slot)}</time>{/each}{:else if event.time_tba}{' · '}{m.concierge_time_tba()}{:else if !event.is_all_day}{' · '}<time datetime={event.starts_at}>{formatTime(event.starts_at)}</time>{/if}
+		<div class="card-copy space-y-1 pt-2 wrap-anywhere">
+			<div class={['text-xs font-medium text-[#d0ff36] tabular-nums sm:text-sm', !hasTime && 'hidden md:block']}>
+				<span class="hidden md:inline"><time datetime={event.starts_at}>{formatShortDate(event.starts_at)}</time>{#if hasTime}{' · '}{/if}</span>
+				{#if event.slotStarts}
+					{#each event.slotStarts as slot, i (slot)}{#if i}{' · '}{/if}<time datetime={slot}>{formatTime(slot)}</time>{/each}
+				{:else if event.time_tba}{m.concierge_time_tba()}
+				{:else if hasTime}<time datetime={event.starts_at}>{formatTime(event.starts_at)}</time>{/if}
 			</div>
 			<div class="relative">
-				<h2 class="line-clamp-3 text-base leading-tight font-semibold has-[:focus-visible]:line-clamp-none sm:line-clamp-2 group-has-[a:hover]:underline">{@render glossaryText(event.name, 'title')}</h2>
+				<h2 class="line-clamp-2 text-base leading-tight font-semibold has-[:focus-visible]:line-clamp-none has-[[aria-expanded=true]]:line-clamp-none group-has-[a:hover]:underline group-has-[a:focus-visible]:underline">{@render glossaryText(event.name, 'title')}</h2>
 			</div>
-			<p class="relative text-xs leading-snug text-[#ccccd4]">{@render glossaryText(`${venue} · ${price}`, 'meta')}</p>
+			<p class="relative text-xs leading-snug text-[#ccccd4]">
+				{@render glossaryText(venue, 'meta')}<span class="hidden md:inline">{' · '}</span><span class="block text-[#f6f6f7] md:inline md:text-inherit">{@render glossaryText(price, 'price')}</span>
+			</p>
 		</div>
 	</div>
-	<div class="mt-auto flex flex-wrap items-center gap-x-2.5 pt-1 text-xs sm:font-mono">
+	<div class="card-actions mt-auto flex flex-wrap items-center gap-x-2.5 pt-1 text-xs">
 		{#if event.sourceUrl}
-			<a href={event.sourceUrl} class="inline-flex min-h-8 max-w-full items-center gap-1 text-[#ccccd4] underline underline-offset-4 hover:text-white sm:min-h-10 sm:whitespace-nowrap">
-				<ArrowUpRight class="size-3.5 shrink-0" aria-hidden="true" /> {m.home_original_post()}
+			<a href={event.sourceUrl} title={m.home_original_post()} class="inline-flex min-h-8 max-w-full items-center gap-1 text-[#ccccd4] underline underline-offset-4 hover:text-white sm:min-h-10 sm:whitespace-nowrap">
+				<ArrowUpRight class="size-3.5 shrink-0" aria-hidden="true" /> <span class="max-md:sr-only">{m.home_original_post()}</span>
 			</a>
 		{/if}
-		<button type="button" onclick={() => onAsk(event)} class="inline-flex min-h-8 max-w-full items-center gap-1 text-left text-[#d0ff36] hover:underline sm:min-h-10 sm:whitespace-nowrap">
-			<MessageCircle class="size-3.5 shrink-0" aria-hidden="true" /> {m.home_ask_event()}
+		<button type="button" title={m.home_ask_event()} onclick={() => onAsk(event)} class="inline-flex min-h-8 max-w-full items-center gap-1 text-left text-[#d0ff36] hover:underline sm:min-h-10 sm:whitespace-nowrap">
+			<MessageCircle class="size-3.5 shrink-0" aria-hidden="true" /> <span class="max-md:sr-only">{m.home_ask_event()}</span>
 		</button>
 	</div>
 </article>
+
+<style>
+	@media (width < 48rem) {
+		.agenda-card {
+			position: relative;
+			display: grid;
+			grid-template-columns: 96px minmax(0, 1fr);
+			grid-template-rows: auto 1fr;
+			column-gap: 0.75rem;
+		}
+
+		.card-content { display: contents; }
+		.card-art { grid-row: span 2; }
+		.card-copy { padding-top: 0; }
+		.card-actions {
+			position: relative;
+			z-index: 2;
+			align-self: start;
+			justify-self: start;
+			gap: 0.25rem;
+			margin: 0;
+		}
+		.card-actions > :is(a, button) {
+			min-width: 2.25rem;
+			justify-content: center;
+			border: 1px solid #3b3b42;
+			border-radius: 0.5rem;
+		}
+	}
+</style>

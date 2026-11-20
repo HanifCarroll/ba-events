@@ -1,7 +1,7 @@
 # Web Entry Experience Specification
 
 ## Purpose
-Define homepage reassurance and consistent navigation to the web chat and Telegram bot.
+Define the homepage agenda and consistent navigation to the web chat and Telegram bot.
 
 ## Requirements
 
@@ -17,12 +17,12 @@ Event detail time ranges SHALL show the end date when it differs from the start 
 - **THEN** the end remains time-only in the active locale
 
 ### Requirement: The homepage introduces independent culture
-The homepage SHALL use the active locale for the independent-culture title, description, headline, and subtitles. It SHALL link to BA Eventos on Instagram in both desktop and mobile navigation and SHALL NOT present an invented example conversation.
+The homepage SHALL use the active locale for the independent-culture title, description, headline, and a single short subtitle. It SHALL link to BA Eventos on Instagram in both desktop and mobile navigation and SHALL NOT present an invented example conversation.
 
 #### Scenario: Visitor opens the homepage on a phone
 - **WHEN** the homepage renders at 320 to 767 CSS pixels in English or Spanish, with or without a session or an available install action
 - **THEN** the wordmark sits on the left and the language, Instagram, optional install, and sign-in or account controls sit on the right, all in a single row without overflow
-- **AND** each control has a target at least 40 CSS pixels wide and tall, and icon-only controls retain accessible names
+- **AND** the controls use consistent 40-pixel targets and styling, the active language remains distinct, and icon-only controls retain accessible names
 
 ### Requirement: The app header places the menu trigger on the right
 Below the large breakpoint, the app layout’s mobile header on non-homepage routes SHALL place the home wordmark at the left and the menu trigger at the right. The menu SHALL open below the full header without pushing the page content down.
@@ -41,7 +41,12 @@ The homepage and app navigation SHALL show the ticket wordmark as a home link wi
 - **AND** the browser tab and installed app use the ticket mark
 
 ### Requirement: The homepage leads with the current agenda
-The homepage SHALL render the event grid before the chat composer and follow links. Filter and paging URLs SHALL render the same view on a direct request. The server SHALL select each view from the shared cached agenda without sending undisplayed grid cards to the browser.
+The homepage SHALL lead with the current agenda and render exactly one centered chat composer within it, before the follow links. Filter and paging URLs SHALL render the same view on a direct request. The server SHALL select each view from the shared cached agenda without sending undisplayed cards to the browser.
+
+#### Scenario: A visitor reaches the homepage composer
+- **WHEN** the homepage renders the default or a filtered agenda
+- **THEN** the composer follows the first six phone rows or the first two desktop grid rows, or the last visible card if there are fewer
+- **AND** it follows the agenda status when no cards are visible, and contains a short heading, an input, and at most two suggestion chips
 
 #### Scenario: A visitor browses more of the agenda
 - **WHEN** the homepage renders without a valid paging parameter
@@ -54,12 +59,14 @@ The homepage SHALL render the event grid before the chat composer and follow lin
 - **WHEN** the agenda shows flyer cards
 - **THEN** the first four images load eagerly, the first has high fetch priority, and the remaining images load lazily in reserved 4:5 frames
 - **WHEN** the visitor scrolls more than approximately two viewport heights
-- **THEN** a localized back-to-top button with a target at least 44 pixels square appears clear of page controls and safe-area insets and stays available at the bottom of the page
+- **THEN** a localized back-to-top button with a target at least 44 pixels square appears clear of page controls and safe-area insets, and hides while the composer overlaps the bottom 30% of the viewport
+- **AND** the button is available at the bottom of any scrollable agenda, even when the visitor has not scrolled two viewport heights
 - **AND** activating it returns the visitor to the top without smooth scrolling when reduced motion is requested
 
 #### Scenario: A visitor filters the agenda
 - **WHEN** the visitor selects Today, This weekend, Free, or Music
-- **THEN** the grid shows respectively the current local date, the current or next Friday–Sunday intersected with the weekly window, confirmed free admission, or a concert or live-music facet
+- **THEN** the filter strip stays on one row, scrolls horizontally when needed, and visibly fills the selected filter
+- **AND** the agenda shows respectively the current local date, the current or next Friday–Sunday intersected with the weekly window, confirmed free admission, or a concert or live-music facet
 - **AND** date filters include any remaining occurrence whose interval overlaps the selected dates, even if it starts before them and has not started yet
 - **AND** pay-what-you-can evidence in an intake price note, or “a la gorra” in the title or Spanish description, takes precedence over a free flag or zero price; the card says “A la gorra” and does not appear in Gratis
 
@@ -75,17 +82,19 @@ The homepage SHALL render the event grid before the chat composer and follow lin
 
 #### Scenario: A filter has no matches
 - **WHEN** the selected filter has no matches
-- **THEN** the grid shows its localized empty message
+- **THEN** the agenda shows its localized empty message
 - **AND** only the date filters may show up to four later cards, after the selected date range, beneath that message
 - **AND** a failed feed or empty unfiltered agenda shows the localized agenda error rather than a blank section
 
 #### Scenario: A visitor uses an agenda card
-- **WHEN** an event appears on the grid
+- **WHEN** an event appears in the agenda
 - **THEN** its title, local date and time state, venue and neighborhood when known, and price state appear as real text
+- **AND** below 768 CSS pixels, events form a one-column list with a flyer thumbnail on the left and details on the right. Non-sticky headings mark changes of Buenos Aires start date, including when paging extends a date already on screen. Rows under a heading show the time state without repeating the date
+- **AND** from 768 CSS pixels, the grid has three columns, four from 1024, and five from 1440; each card shows its own date
 - **AND** the card links to event details and can prefill the composer with the existing event prompt
 - **AND** glossary triggers appear on the matched words in the title or metadata, without adding another line, and work by pointer, touch, and keyboard; terms that appear only in the description do not add a trigger, and Escape dismisses an open definition even while hovered
-- **AND** the grid has two columns below 640 CSS pixels, three from 640, four from 1024, and five from 1440; titles are clamped to three lines on mobile and two from 640 pixels until a clipped glossary trigger needs keyboard focus; the date, venue, neighborhood, and price can wrap without being clipped
-- **AND** when an original post is available, its link and the composer action can stack when space runs out; desktop action labels do not wrap within an action
+- **AND** titles underline only on hover or keyboard focus and clamp to two lines until a glossary trigger needs keyboard focus or opens its definition; metadata uses the body font and wraps without clipping
+- **AND** the original post link, when available, and the composer action show labeled icons on phones and visible action text in the grid
 
 #### Scenario: A visitor starts a chat from the agenda
 - **WHEN** the visitor sends a first message from the homepage
@@ -106,13 +115,6 @@ The homepage SHALL show three or four linked flyers in the desktop header photo 
 - **THEN** its overlapping 4:5 flyers crop artwork to fill the frame, and link to event details with the event titles as accessible names
 - **AND** hovering or keyboard-focusing a flyer straightens it and raises it above overlapping flyers, with a visible keyboard focus outline and no animation for reduced motion
 
-### Requirement: Homepage reassurance focuses on guest access
-The homepage SHALL state that the service is free to use and no sign-up is needed in the active locale. Its reassurance line SHALL NOT include the English-or-Spanish language claim.
-
-#### Scenario: Visitor opens the homepage
-- **WHEN** the homepage renders in English or Spanish
-- **THEN** the reassurance line states that the service is free and registration is unnecessary without listing chat languages
-
 ### Requirement: The homepage feed shows only in-scope events
 The D1 homepage feed SHALL omit out-of-scope and unjudged events before applying its result limit. It SHALL NOT change direct event detail URL behavior.
 
@@ -126,7 +128,7 @@ Event artwork SHALL preserve the full image without cropping inside a softly tin
 #### Scenario: Poster has a different aspect ratio from the card
 - **WHEN** a portrait or landscape poster appears in a card
 - **THEN** the full poster remains visible and unused image space uses a subtle background
-- **AND** the homepage agenda uses a 4:5 frame for portrait, square, and landscape flyers
+- **AND** the homepage agenda uses a 4:5 frame for portrait, square, and landscape flyers and fills any bars with a darkened blur of the same responsive image, without an additional image URL
 
 ### Requirement: Telegram navigation preserves icon alignment
 The desktop sidebar and mobile menu SHALL align the Telegram icon with the other primary navigation icons using the same horizontal padding and icon size. The Telegram icon SHALL retain its size when its label wraps.
@@ -182,6 +184,6 @@ The PWA installation prompt and pull-to-refresh gesture SHALL each have explicit
 
 ## Verification
 - Implementation: `messages/en.json`, `messages/es.json`, `src/features/chat/components/SuggestedPrompts.svelte`, `src/shared/ui/MainLayout.svelte`, `src/features/events/components/EventArtwork.svelte`, `src/routes/mcp/+page.svelte`, `src/shared/lib/utils/formatting.ts`
-- Browser checks: render the real components in English and Spanish at desktop and mobile widths; verify homepage and app header alignment at 320, 360, 390, and 430 CSS pixels with both session states, with and without the homepage install action; verify menu keyboard access, the reassurance line, navigation icon geometry, wrapped labels, Telegram link attributes, and Claude and ChatGPT setup instructions.
+- Browser checks: render the real components in English and Spanish at desktop and mobile widths; verify homepage and app header alignment at 320, 360, 390, and 430 CSS pixels with both session states, with and without the homepage install action; verify menu keyboard access, navigation icon geometry, wrapped labels, Telegram link attributes, and Claude and ChatGPT setup instructions. Verify the phone list, desktop grid, centered composer, and pagination.
 - Static check: `bun run paraglide:compile && bun run check`
 - Specification validation: `bunx @fission-ai/openspec validate --specs --json`
