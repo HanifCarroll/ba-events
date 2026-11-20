@@ -34,24 +34,26 @@ type ScopeInput = { name: string; source?: string; descriptionEs?: string | null
 
 // Unlike token normalization, preserve musical and other symbols that can carry program evidence.
 const normalizeListing = (text: string) => text.toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '').replace(/[\p{P}\s]+/gu, ' ').trim()
-const PASSLINE_PITCH = /encuentra\s+detalles,?\s+asegura\s+tu\s+asistencia\s+y\s+prep(?:a\u0301?|á)rate\s+para\s+disfrutar\s+de\s+una\s+experiencia\s+inolvidable/
+// Passline can HTML-encode the title in its sales sentence but not in the event name.
+const PASSLINE_OPENING = /consigue\s+tus\s+entradas\s+para[^\S\r\n]+[^\r\n]+?[^\S\r\n]+en\s+passline\b/
+const PASSLINE_PITCH = /encuentra\s+detalles,?\s+asegura\s+tu\s+asistencia\s+y\s+prep(?:a\u0301?|á)rate\s+para\s+disfrutar\s+de\s+una\s+experiencia\s+inolvidable\b/
+const PASSLINE_SALES_COPY = new RegExp(
+  String.raw`\b(?:${PASSLINE_OPENING.source}(?:[.!?]?\s+${PASSLINE_PITCH.source}|(?=[.!?](?:\s|$)|[ \t]*(?:\r?\n|$)))|${PASSLINE_PITCH.source})[.!?]?(?:[ \t]*\r?\n)?`,
+  'giu',
+)
 const SALES_ONLY_TITLE = /^(?:(?:(?:venta|compra) de )?(?:entradas|tickets)|consigue tus entradas)$/
 const LISTING_FIELDS = ['descriptionEs', 'descriptionEn', 'caption'] as const
 
 function stripPasslineSalesCopy(input: ScopeInput): ScopeInput {
   if (input.source !== 'passline') return input
   const name = normalizeListing(input.name)
-  const title = input.name.trim().split(/\s+/).map(word => RegExp.escape(word)).join('\\s+')
-  const lead = String.raw`consigue\s+tus\s+entradas\s+para\s+${title}\s+en\s+passline`
-  const template = new RegExp(String.raw`\b(?:${lead}[.!?]?\s+)?${PASSLINE_PITCH.source}\b[.!?]?(?:[ \t]*\r?\n)?`, 'giu')
-  const leadOnly = `consigue tus entradas para ${name} en passline`
   const cleaned = { ...input }
   for (const field of LISTING_FIELDS) {
     const value = input[field]
     if (typeof value !== 'string') continue
-    const remaining = value.replace(template, '').trim()
+    const remaining = value.replace(PASSLINE_SALES_COPY, '').trim()
     const normalized = normalizeListing(remaining)
-    cleaned[field] = !normalized || normalized === name || normalized === leadOnly ? '' : remaining
+    cleaned[field] = !normalized || normalized === name ? '' : remaining
   }
   return cleaned
 }
