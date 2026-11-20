@@ -15,6 +15,8 @@ import { z } from 'zod'
 import { Effect } from 'effect'
 import { textModel, NO_THINKING } from './providers.ts'
 import { HttpError } from '../errors.ts'
+import type { EventCredit } from '../types.ts'
+import { labeledOrganizer } from './event-credits.ts'
 
 // ============================================================================
 // SCHEMAS
@@ -408,6 +410,7 @@ export interface FullEnrichmentResult {
   description_es: string | null
   description_en: string | null
   venue_name: string | null
+  organizer?: EventCredit
 }
 
 /**
@@ -423,6 +426,7 @@ export async function enrichEventFull(
   options?: {
     knownLanguage?: 'spanish' | 'english'
     extractVenue?: boolean
+    extractOrganizer?: boolean
   }
 ): Promise<FullEnrichmentResult | null> {
   const { knownLanguage, extractVenue = true } = options ?? {}
@@ -462,12 +466,14 @@ export async function enrichEventFull(
     describe(),
     extractVenue ? extractVenueName(markdown) : Promise.resolve(null),
   ])
-  if (!bilingual && !venueName) return null
+  const organizer = options?.extractOrganizer ? labeledOrganizer(markdown) : undefined
+  if (!bilingual && !venueName && !organizer) return null
   if (venueName) console.log(`[enrichment] Venue: ${venueName}`)
 
   return {
     ...(bilingual ?? { description_es: null, description_en: null }),
     venue_name: venueName,
+    ...(organizer ? { organizer } : {}),
     sourceObservedAt,
   }
 }
