@@ -15,6 +15,7 @@ const CHALLENGE_TEXT = 200
 const UNREADABLE = 'the site shows a bot check or an empty page to automated readers; cite another official page'
 const MISSING_EXCERPT = "Official page evidence must be an excerpt of the page's visible text"
 const MISSING_PERFORMANCE = 'Official page date or time evidence must quote the selected future performance'
+const INVALID_FANZ_SELECTION = 'Official page could not verify the selected future Fanz performance'
 const UNCONFIRMED_HEADING = 'Official page needs its rendered heading to confirm the show name'
 const challengeTitle = (title: string | null) => /^(?:Just a moment\.{3}|Request Rejected)$/i.test(title ?? '')
 class RenderableReadError extends Error {}
@@ -108,35 +109,39 @@ type PageRead = { visible: string; title: string | null; h1: string | null; titl
 
 function identity(title: string | null, headings: readonly string[], siteName?: string | null, hasStyles = false) {
   const titleParts = title?.match(/^(.*) (?:-|\|) (.+)$/)
-  const suffix = normalizePageText(titleParts?.[2] ?? '')
+  const [left, right] = (titleParts?.slice(1) ?? []).map(normalizePageText)
   const site = normalizePageText(siteName ?? '')
-  const [first, next] = headings.filter(text => text.trim())
+  const [first, next, ...later] = headings.filter(text => text.trim())
   const heading = normalizePageText(first ?? '')
-  // An H1 whose text equals the site's own name (it equals the part of the page title after the last " - " / " | " separator, or the og:site_name) is the site header and is skipped; the next visible H1 is then the page's identity, and the title counts only when no other H1 remains.
-  // A suffix is not the site name in a title explicitly formatted as "Site name - Show name".
-  const suffixIsHeader = suffix && suffix === heading && normalizePageText(titleParts?.[1] ?? '') !== site
-  const skip = heading && (heading === site || suffixIsHeader)
-  return { title, h1: (skip ? next : first) ?? null,
-    ...(titleParts && suffix && (suffix === site || suffixIsHeader) ? { titleName: titleParts[1] } : {}),
-    ...(skip && hasStyles ? { identityNeedsRender: true } : {}) }
+  const titleShow = heading === left ? right : heading === right ? left : undefined
+  // Skip the first visible H1 only if it equals og:site_name or one side of the last " - " / " | " title separator and the next visible H1 equals the other side. The next H1 is then the identity; use the title only when no H1 remains.
+  const skip = !!heading && (heading === site || !!titleShow && normalizePageText(next ?? '') === titleShow)
+  const titleName = titleParts && site ? (site === right ? titleParts[1] : site === left ? titleParts[2] : undefined) : undefined
+  // CSS can hide the apparently corroborating H1 or an intervening heading before it.
+  const identityNeedsRender = hasStyles && (skip || !!titleShow && later.some(text => normalizePageText(text) === titleShow))
+  return { title, h1: (skip ? next : first) ?? null, titleName, identityNeedsRender }
 }
 
 /** Use the matching Fanz event/date IDs to bind the start time, never JSON descriptions or other performances. */
 function selectedFanzPerformance(url: URL, requested: URL, fanz: boolean, json: string,
   shown: { visible: string; singleDate: string; rendered: boolean }): SelectedPerformance | null | undefined {
-  if (![url, requested].some(target => target.pathname.startsWith('/event/') && target.searchParams.has('eventDateId'))) return undefined
   const originalSelection = requested.searchParams.getAll('eventDateId')
   const selection = url.searchParams.getAll('eventDateId')
-  // An explicit selection that disappears or changes on redirect cannot fall back to the general schedule.
-  if (originalSelection.length && JSON.stringify(originalSelection) !== JSON.stringify(selection)) return null
-  // Fanz can hide its footer branding; its white-label assets and Next event data can identify it too.
+  if (!originalSelection.length && !selection.length) return undefined
+  const changedSelection = originalSelection.length > 0 && JSON.stringify(originalSelection) !== JSON.stringify(selection)
+  // A redirect that drops or changes a selection on the known route cannot fall back to the general schedule.
+  if (changedSelection && requested.pathname.startsWith('/event/')) return null
+  // Recognize the platform from branding or data before validating the route name or event fields.
   let identified = fanz || /"https:\/\/(?:white-label-(?:logos|banners)|event-banners)-fanz\.s3\.amazonaws\.com\//.test(json)
   try {
     const data = JSON.parse(json)
-    const event = data?.props?.pageProps?.event
-    identified ||= data?.page === '/event/[eventId]' && (!!data.props?.pageProps?.whiteLabel ||
-      typeof event?.isExternal === 'boolean' && typeof event?.timezone === 'string' && ('Dates' in event || 'isFinished' in event))
+    const pageProps = data?.props?.pageProps
+    const event = pageProps?.event
+    identified ||= data?.page === '/event/[eventId]' && !!pageProps?.whiteLabel || !!event && typeof event === 'object' && (
+      data?.query?.eventId != null && data.query.eventDateId != null && event.id != null && 'Dates' in event ||
+      typeof event.isExternal === 'boolean' && typeof event.timezone === 'string' && ('Dates' in event || 'isFinished' in event))
     if (!identified) return undefined
+    if (changedSelection) return null
     const [, slug, eventId] = /^\/event\/((\d+)(?:-[^/]+)?)\/?$/.exec(url.pathname) ?? []
     const [dateId, ...otherDates] = selection
     if (!eventId || !dateId || !/^\d+$/.test(dateId) || otherDates.length) return null
@@ -255,21 +260,57 @@ export function renderedPageRead(requested: string, snapshot: { url: string; vis
 /** The candidate facts a page excerpt must back: its name, its BA date, and its BA time when it has one. */
 export type PageFacts = { name: string; date: string; time: string | null; sites: ReadonlySet<string> }
 
-/** Why an excerpt doesn't state the date or time it is cited for; null when it does. Digit runs are compared as numbers. */
+const MONTHS = ['ene(?:ro)?', 'feb(?:rero)?', 'mar(?:zo)?', 'abr(?:il)?', 'may(?:o)?', 'jun(?:io)?',
+  'jul(?:io)?', 'ago(?:sto)?', 'sep(?:t(?:iembre)?)?|set(?:iembre)?', 'oct(?:ubre)?', 'nov(?:iembre)?', 'dic(?:iembre)?']
+const MONTH_PREFIXES = MONTHS.map(pattern => pattern.slice(0, 3))
+const MONTH_NAME = new RegExp(String.raw`\b(?:${MONTHS.join('|')})\b`, 'g')
+const monthNumber = (name: string) => MONTH_PREFIXES.indexOf(name.slice(0, 3).replace('set', 'sep')) + 1
+const DATE = new RegExp(String.raw`\b(?<!\d[./-])(?:(?<isoYear>\d{4})-(?<isoMonth>\d{2})-(?<isoDay>\d{2})|(?<day>\d{1,2})(?:(?<sep>[./-])(?<month>\d{1,2})(?:\k<sep>(?<numericYear>\d{4}|\d{2}))?| (?:de )?(?<monthName>${MONTHS.join('|')})(?:[.,]? (?:del? )?(?<year>\d{4}))?))\b(?![./-]\d)`, 'g')
+const CLOCK = /\b(?<!\d[./-])(?:(a las?) )?(\d{1,2})(?:([:.])(\d{2}))?(?: ?(?:([ap])\.? ?m\b\.?|(hs?|horas)\b\.?))?(?![\w:]|\.\d)/g
+const DAY_ONLY = /(?:^|\b(?:el|lun(?:es)?|mar(?:tes)?|mie(?:rcoles)?|jue(?:ves)?|vie(?:rnes)?|sab(?:ado)?|dom(?:ingo)?)[.,]? )(\d{1,2})\b(?![./-]\d)/
+
+/** Why a normalized excerpt doesn't state the facts it is cited for; null when it does. */
 export function excerptFactsReason(excerpt: string, fields: readonly string[], facts: PageFacts): string | null {
-  const runs = (excerpt.match(/\d+/g) ?? []).filter(run => run.length <= 2).map(Number)
-  const day = Number(facts.date.slice(8, 10))
-  if (fields.includes('date') && !runs.includes(day)) return `does not state the day ${day}`
-  if (fields.includes('time') && facts.time) {
-    const [hour, minute] = facts.time.split(':').map(Number)
-    const pm = /\bp\.?\s?m\b/i.test(excerpt)
-    const hours = pm && hour >= 12 ? [hour, hour === 12 ? 12 : hour - 12] : [hour]
-    if (!hours.some(value => runs.includes(value)) || minute !== 0 && !runs.includes(minute)) return `does not state the time ${facts.time}`
+  if (!fields.includes('date') && !fields.includes('time')) return null
+  const [year, month, day] = facts.date.split('-').map(Number)
+  const [hour, minute] = facts.time?.split(':').map(Number) ?? []
+  let matchesTime = false
+  let previousClockEnd: number | undefined
+  // Remove clock tokens before reading the calendar so hours and minutes cannot stand in for dates.
+  const calendar = excerpt.replace(CLOCK, (token, prefix: string, h: string, separator: string, m: string, period: string, unit: string, offset: number) => {
+    if (separator !== ':' && !prefix && !period && !unit) return token // A bare dotted pair is a date, not a clock.
+    const hours = Number(h)
+    const localHour = period && hours >= 1 && hours <= 12 ? hours % 12 + (period === 'p' ? 12 : 0) : period ? -1 : hours
+    const rangeEnd = previousClockEnd !== undefined && /^(?:\s*[-–—]\s*| (?:a|hasta) )$/.test(excerpt.slice(previousClockEnd, offset))
+    previousClockEnd = offset + token.length
+    matchesTime ||= !rangeEnd && localHour === hour && Number(m ?? 0) === minute
+    return ' '
+  })
+  const dates = [...calendar.matchAll(DATE)]
+  const wrongMonth = `does not state the month ${String(month).padStart(2, '0')}`
+  const wrongYear = `does not state the year ${year}`
+  for (const { groups = {} } of dates) {
+    const statedMonth = groups.monthName ? monthNumber(groups.monthName) : Number(groups.isoMonth ?? groups.month)
+    const statedYear = groups.isoYear ?? groups.year ?? groups.numericYear
+    if (Number(groups.isoDay ?? groups.day) !== day) return `does not state the day ${day}`
+    if (statedMonth !== month) return wrongMonth
+    if (statedYear && Number(statedYear) !== (statedYear.length === 2 ? year % 100 : year)) return wrongYear
   }
+  if (fields.includes('date') && !dates.length && Number(DAY_ONLY.exec(calendar.trim())?.[1]) !== day) return `does not state the day ${day}`
+  // A month heading or a separated year still constrains the quoted occurrence.
+  for (const { 0: name, index } of calendar.matchAll(MONTH_NAME)) {
+    // Before a day number, bare "mar" is the weekday abbreviation. A month after the day is checked above.
+    if (name === 'mar' && /^[.,]? \d{1,2}\b/.test(calendar.slice(index + name.length))) continue
+    if (monthNumber(name) !== month) return wrongMonth
+  }
+  for (const [number] of calendar.matchAll(/\b(?:19|20)\d{2}\b/g)) if (Number(number) !== year) return wrongYear
+  if (fields.includes('time') && facts.time && !matchesTime) return `does not state the time ${facts.time}`
   return null
 }
 
 function pageReason({ visible, title, titleName, h1, selected, identityNeedsRender }: PageRead, quoted: RegExp, excerpt: string, fields: readonly string[], facts: PageFacts): string | null {
+  const timingEvidence = fields.some(field => field === 'date' || field === 'time')
+  if (selected === null && timingEvidence) return INVALID_FANZ_SELECTION
   if (selected && quoted.test(normalizePageText(selected.text))) {
     if (fields.some(field => field !== 'date' && field !== 'time')) return 'The selected performance excerpt can only support date and time'
     // Only the browser can tell whether a Fanz picker or card is visible under the site's stylesheet.
@@ -280,7 +321,7 @@ function pageReason({ visible, title, titleName, h1, selected, identityNeedsRend
     }
     const selectedName = normalizeTitle(facts.name)
     if (!selectedName || normalizeTitle(selected.title) !== selectedName) return `Official page selected performance is not for "${facts.name}"${pageTitleHint(selected.title)}`
-  } else if (selected !== undefined && fields.some(field => field === 'date' || field === 'time')) {
+  } else if (selected && timingEvidence) {
     return MISSING_PERFORMANCE
   } else if (!quoted.test(normalizePageText(visible))) {
     return MISSING_EXCERPT
@@ -321,7 +362,7 @@ export const verifyOfficialPagesEffect = (evidence: readonly Evidence[], facts: 
     let result = initial
     let failures = 'value' in initial ? group.map(item => item.check(initial.value)) : []
     if (renderPage && ('error' in initial ? initial.error instanceof RenderableReadError
-      : failures.some(reason => reason === MISSING_EXCERPT || reason === MISSING_PERFORMANCE || reason === UNCONFIRMED_HEADING))) {
+      : failures.some(reason => reason === MISSING_EXCERPT || reason === MISSING_PERFORMANCE || reason === INVALID_FANZ_SELECTION || reason === UNCONFIRMED_HEADING))) {
       const hydrated = yield* Effect.promise(() => readResult(renderPage(url, facts.sites, group.map(item => item.quoted)).then(rendered => {
         requireOfficialPageUrl(rendered.url, facts.sites, rendered.url !== url)
         if (!rendered.visible.trim() || challengeTitle(rendered.title)) throw new Error(UNREADABLE)
