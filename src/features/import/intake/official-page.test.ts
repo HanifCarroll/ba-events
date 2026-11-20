@@ -145,6 +145,13 @@ describe('official-page evidence', () => {
       .toEqual([`Official page excerpt lists multiple dates or start times; cite the single occurrence's line: ${officialUrl}`])
   })
 
+  it('reads "20 hs" after a weekday as a clock, so a range end never becomes the start', async () => {
+    const excerpt = 'Todos los viernes 20 hs - 22 hs'
+    const reasons = await Effect.runPromise(verifyOfficialPagesEffect([evidence(officialUrl, excerpt)], { ...facts, date: '2026-11-20', time: '22:00' },
+      readHtml(`<h1>${facts.name}</h1><p>${excerpt}</p>`)))
+    expect(reasons).not.toEqual([])
+  })
+
   it.each([
     ['LUNES 23 NOVIEMBRE', 'date', 'time 21:00'],
     ['Funciones a las 21:00', 'time', 'day 23'],

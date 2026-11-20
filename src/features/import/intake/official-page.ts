@@ -292,7 +292,8 @@ export function excerptFactsReason(excerpt: string, fields: readonly string[], f
   })
   // Remove clock tokens before reading the calendar so hours and minutes cannot stand in for dates.
   const calendar = afterHourRanges.replace(CLOCK, (token, prefix: string, h: string, separator: string, m: string, period: string, unit: string, offset: number) => {
-    if (separator !== ':' && !prefix && (!period && !unit || EXPLICIT_DAY_PREFIX.test(afterHourRanges.slice(0, offset)))) return token
+    // A bare number is a day, not a clock; an explicit unit or meridiem ("viernes 20 hs") still makes it a clock.
+    if (separator !== ':' && !prefix && !period && !unit) return token
     const hours = Number(h)
     const localHour = period && hours >= 1 && hours <= 12 ? hours % 12 + (period === 'p' ? 12 : 0) : period ? -1 : hours
     const betweenClocks = previousClockEnd === undefined ? null : afterHourRanges.slice(previousClockEnd, offset)
