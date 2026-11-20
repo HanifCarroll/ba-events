@@ -512,7 +512,10 @@ describe.skipIf(bun)('the operator flow on D1', () => {
     html = '<html><body>Funciones agotadas</body></html>'
     expect(await fails(commitPlanEffect(store, preview.id, { ...publishers, readPage })))
       .toBe(`Official page evidence must be an excerpt of the page's visible text: ${url}`)
-    html = `<html><body><p>Synthetic Jazz: ${day} 21:00</p></body></html>`
+    html = `<html><body><h1>Agenda</h1><p>Synthetic Jazz: ${day} 21:00</p></body></html>`
+    expect(await fails(commitPlanEffect(store, preview.id, { ...publishers, readPage })))
+      .toBe(`Official page does not name "Synthetic Jazz" (H1: "Agenda"): ${url}`)
+    html = `<html><head><title>Synthetic Jazz</title></head><body><p>${day} 21:00</p></body></html>`
     const receipt = await run(commitPlanEffect(store, preview.id, { ...publishers, readPage }))
     expect(receipt).toMatchObject({ action: 'create', event_id: preview.event_id })
     expect((await db.prepare('SELECT observation_id FROM event_source_evidence').all()).results).toEqual([{ observation_id: post }])

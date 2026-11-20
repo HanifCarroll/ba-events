@@ -56,7 +56,7 @@ export const officialPageAllowed = (url: string, sites: ReadonlySet<string>) => 
 
 /** Accent- and case-insensitive, with every whitespace run as one space: words and numbers keep their boundaries. */
 export const normalizePageText = (value: string) => value.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replace(/\s+/gu, ' ').trim()
-/** For event names only: punctuation and a standalone Spanish `y` can be artist separators. */
+/** Ordinary ticket-page titles can use a standalone Spanish `y` as an artist separator. */
 const nameText = (value: string) => normalizeTitle(value).split(' ').filter(word => word !== 'y').join(' ')
 const pageTitleHint = (title: string | null) => title ? ` (page title: ${JSON.stringify(title.slice(0, 255))})` : ''
 
@@ -91,8 +91,7 @@ function revealStreamedSegments($: CheerioAPI) {
 }
 
 type SelectedPerformance = { text: string; date: string; time: string; title: string }
-type Listing = { text: string; title?: string | null; primary?: boolean }
-type PageRead = { visible: string; title: string | null; listings: Listing[]; selected?: SelectedPerformance | null }
+type PageRead = { visible: string; title: string | null; h1: string | null; selected?: SelectedPerformance | null }
 const camarinPerformanceUrl = (url: URL) => /^(?:www\.)?elcamarindelasmusas\.com$/.test(url.hostname) &&
   url.pathname.startsWith('/event/') && url.searchParams.has('eventDateId')
 
@@ -130,105 +129,10 @@ export function visibleText(html: string): string {
 
 function prepareVisibleDom($: CheerioAPI) {
   revealStreamedSegments($)
-  $('head, script, style, noscript, template, svg, iframe, [hidden], [aria-hidden="true"]').remove()
+  $('head, title, script, style, noscript, template, svg, iframe, [hidden], [aria-hidden="true"]').remove()
   $('[style]').filter((_, element) => /display\s*:\s*none|visibility\s*:\s*hidden/i.test($(element).attr('style') ?? '')).remove()
   // A space at every element boundary: <span>LUNES</span><span>23</span> reads "LUNES 23", never "LUNES23".
   $('*').each((_, element) => { $(element).prepend(' ').append(' ') })
-}
-
-// These headings label a performance picker or show details, not another show's listing.
-const SECTION_LABELS = new Set(['funciones', 'proximas funciones', 'funciones disponibles', 'fecha', 'fechas', 'horarios',
-  'fecha hora', 'fecha horario', 'fecha lugar', 'fechas horarios', 'fecha hora lugar', 'date time', 'dates times',
-  'entradas', 'precios', 'sinopsis', 'ficha tecnica', 'ubicacion', 'informacion'])
-const SHOW_HEADINGS = 'h1, h2, h3'
-const HEADINGS = `${SHOW_HEADINGS}, h4, h5, h6`
-const LISTING_BOUNDARY = 'ba-intake-listing-boundary'
-const DATE_CELL = /^(?:(?:lun(?:es)?|mar(?:tes)?|mie(?:rcoles)?|jue(?:ves)?|vie(?:rnes)?|sab(?:ado)?|dom(?:ingo)?)(?:$| )|\d{1,2} (?:de )?(?:enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)\b|[\d ]+(?: (?:h|hs|am|pm|p m|a m))?$)/u
-const RECOMMENDATION_LABEL = /\b(?:(?:tambien )?te (?:puede interesar|recomendamos|podria interesar)|(?:eventos|espectaculos|obras|shows) (?:recomendad[oa]s|similares|relacionad[oa]s)|(?:more|related|recommended|similar) events|you (?:may|might) also like)\b/
-const listingTitles = (headings: string[]) => [...new Set(headings.map(nameText).filter(name => name && !SECTION_LABELS.has(name)))]
-
-function pageListings($: CheerioAPI, title: string | null) {
-  const visible = $.root().text()
-  // Ignore navigation and recommendations even when they embed their own event cards.
-  $('aside, nav, footer, [role="complementary"], [role="navigation"], [role="contentinfo"], .sidebar, #sidebar,' +
-    ' [class*="recommend" i], [class*="related-events" i], [class*="recomend" i], [class*="relacionad" i],' +
-    ' [id*="recommend" i], [id*="related-events" i], [id*="recomend" i], [id*="relacionad" i]').remove()
-  $('[aria-label]').filter((_, el) => RECOMMENDATION_LABEL.test(nameText($(el).attr('aria-label') ?? ''))).remove()
-  $('section, article, div, [role="region"]').filter((_, el) => {
-    const label = $(el).children().first()
-    return label.is('p, strong, [role="heading"]') && RECOMMENDATION_LABEL.test(nameText(label.text()))
-  }).remove()
-  for (const el of $(HEADINGS).toArray()) {
-    if (!RECOMMENDATION_LABEL.test(nameText($(el).text()))) continue
-    const heading = $(el)
-    let header = heading
-    const label = nameText(heading.text())
-    while (header.parent().is('header, div') && nameText(header.parent().text()) === label) header = header.parent()
-    const container = header.parent()
-    if (container.is('section, article, div, [role="region"]') && container.find(HEADINGS).first().is(heading)) {
-      container.remove()
-    } else {
-      // Some templates put the recommendations directly after a heading instead of wrapping them in a section.
-      header.nextUntil(HEADINGS.split(', ').slice(0, Number(el.name.slice(1))).join(', ')).remove()
-      header.remove()
-    }
-  }
-  // Without a show heading, require the name and excerpt in the same paragraph or row, not just the same article.
-  const listings: Listing[] = $('p').toArray().flatMap(el => {
-    const paragraph = $(el).clone()
-    paragraph.find('br').replaceWith('\u2028')
-    return paragraph.text().split('\u2028').filter(text => !RECOMMENDATION_LABEL.test(nameText(text))).map(text => ({ text }))
-  })
-  const h1Count = listingTitles($('h1').map((_, el) => $(el).text()).get()).length
-  // Inspect independent listings from the inside out. Their dates cannot be borrowed by an enclosing listing.
-  const blocks = $(`body, main, article, section, li, tr, [data-event-id], [itemtype$="/Event"],
-    a[href]:has(${SHOW_HEADINGS}), div:has(> :is(${SHOW_HEADINGS})), div:has(> header > :is(${SHOW_HEADINGS}))`).toArray().reverse()
-  for (const el of [...blocks, ...$.root().toArray()]) {
-    const block = $(el)
-    const names = listingTitles(block.find(SHOW_HEADINGS).map((_, el) => $(el).text()).get())
-    const cells = block.is('tr') ? block.children('th, td') : null
-    // A named row owns its date regardless of column order. An ambiguous row stays out of the parent listing.
-    if (cells && cells.length > 1 && cells.is('td')) {
-      for (const label of listingTitles(cells.map((_, cell) => $(cell).text()).get())) {
-        if (!DATE_CELL.test(label) && !names.includes(label)) names.push(label)
-      }
-    }
-    const text = block.text()
-    const eventBlock = block.is('article, [data-event-id], [itemtype$="/Event"]')
-    const linkedCard = block.is('a[href]') && names.length > 0 && names[0] !== nameText(text)
-    const standalone = eventBlock || linkedCard || names.length > 1 || names.length === 1 && names[0] !== nameText(text)
-    const hasBoundary = block.find(LISTING_BOUNDARY).length > 0
-    if (eventBlock && !hasBoundary && !names.length && !h1Count && title && nameText(block.children().first().text()) === nameText(title)) {
-      // A title-only page can identify its event with a plain label rather than a heading.
-      listings.push({ text, title })
-    } else if ((cells || linkedCard) && !hasBoundary && names.length < 2 && !RECOMMENDATION_LABEL.test(nameText(text))) {
-      listings.push({ text, title: names[0] })
-    } else if (names.length) {
-      // A heading owns only the text after it and before the next competing heading.
-      let listing: Listing | undefined
-      const pending = block.contents().toArray().reverse()
-      while (pending.length > 0) {
-        const node = $(pending.pop()!)
-        const own = node.is(SHOW_HEADINGS) ? listingTitles([node.text()])[0] : undefined
-        if (node.is(LISTING_BOUNDARY)) {
-          // Text after a detached listing could still belong to it, not the preceding show.
-          listing = undefined
-        } else if (own) {
-          listing = { title: own, text: node.text(), primary: h1Count === 1 && node.is('h1') }
-          listings.push(listing)
-        } else if (node[0]?.type === 'text') {
-          if (listing) listing.text += node.text()
-        } else {
-          for (const child of node.contents().toArray().reverse()) pending.push(child)
-        }
-      }
-    }
-    if (standalone && el.type !== 'root') block.replaceWith(`<${LISTING_BOUNDARY}></${LISTING_BOUNDARY}>`)
-  }
-  if (!h1Count && title && !$(LISTING_BOUNDARY).length && !listingTitles($(SHOW_HEADINGS).map((_, el) => $(el).text()).get()).length) {
-    listings.push({ text: $.root().text(), title })
-  }
-  return { visible, listings }
 }
 
 /** GET with no cookies or credentials, manual redirects re-checked hop by hop, a time limit and a size limit. */
@@ -271,16 +175,18 @@ export async function readOfficialPage(url: string, sites: ReadonlySet<string>, 
     const source = new URL(current)
     const camarin = camarinPerformanceUrl(source)
     const selected = $ && camarin ? selectedCamarinPerformance($, source) : null
-    const title = $?.('head title').first().text().replace(/\s+/g, ' ').trim() || null
+    // Cheerio's slim parser leaves the document title in place when optional head tags are omitted.
+    const title = ($ && $('head > title, html > title').add($.root().children('title')).first().text().replace(/\s+/g, ' ').trim()) || null
     if ($) prepareVisibleDom($)
-    const { visible, listings } = $ ? pageListings($, title) : { visible: text, listings: (text.match(/[^\r\n]{8,}/g) ?? []).map(text => ({ text })) }
+    const h1 = $?.('h1').first().text().replace(/\s+/g, ' ').trim() || null
+    const visible = $ ? $.root().text() : text
     // An empty page (Incapsula's stub) or a short Cloudflare challenge page. A protection script alone proves nothing:
     // Imperva and Cloudflare inject theirs into real pages too.
     const shown = visible.replace(/\s+/g, ' ').trim().length
     if (!shown || shown < CHALLENGE_TEXT && /<title>\s*Just a moment\.\.\.\s*<\/title>|cf[-_]chl/i.test(text)) {
       throw new Error('the site shows a bot check or an empty page to automated readers; cite another official page')
     }
-    return { visible, title, listings, ...(camarin ? { selected } : {}) }
+    return { visible, title, h1, ...(camarin ? { selected } : {}) }
   }
 }
 export type ReadPage = (url: string, sites: ReadonlySet<string>) => Promise<PageRead>
@@ -324,7 +230,7 @@ export const verifyOfficialPagesEffect = (evidence: readonly Evidence[], facts: 
       reasons.push(`Official page could not be read: ${page.url} (${text.error instanceof Error ? text.error.message : String(text.error)})`)
       continue
     }
-    const { visible, title, listings, selected } = text.value
+    const { visible, title, h1, selected } = text.value
     const quoted = new RegExp(`(?<![\\p{L}\\p{N}])${excerpt.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\p{L}\\p{N}])`, 'u')
     if (selected && quoted.test(normalizePageText(selected.text))) {
       if (page.fields.some(field => field !== 'date' && field !== 'time')) {
@@ -339,22 +245,20 @@ export const verifyOfficialPagesEffect = (evidence: readonly Evidence[], facts: 
         reasons.push(`Official page excerpt does not state the performance start time ${facts.time}: ${page.url}`)
         continue
       }
-      if (!name || nameText(selected.title) !== name) reasons.push(`Official page selected performance is not for "${facts.name}"${pageTitleHint(selected.title)}: ${page.url}`)
+      const selectedName = normalizeTitle(facts.name)
+      if (!selectedName || normalizeTitle(selected.title) !== selectedName) reasons.push(`Official page selected performance is not for "${facts.name}"${pageTitleHint(selected.title)}: ${page.url}`)
       continue
     }
     if ((selected !== undefined || camarinPerformanceUrl(new URL(page.url))) && page.fields.some(field => field === 'date' || field === 'time')) {
       reasons.push(`Official page date or time evidence must quote the selected future performance: ${page.url}`)
     } else if (!quoted.test(normalizePageText(visible))) {
       reasons.push(`Official page evidence must be an excerpt of the page's visible text: ${page.url}`)
-    } else if (!name || !listings.some(listing => {
-      if (!quoted.test(normalizePageText(listing.text))) return false
-      if (!listing.title) return ` ${nameText(listing.text)} `.includes(` ${name} `)
-      const heading = nameText(listing.title)
-      // Require both the primary heading and page title to identify the show when they add ticket or venue copy.
-      return heading === name || listing.primary === true && ` ${heading} `.includes(` ${name} `) &&
-        ` ${nameText(title ?? '')} `.includes(` ${name} `)
-    })) {
-      reasons.push(`Official page does not name "${facts.name}"${pageTitleHint(title)}: ${page.url}`)
+    } else if (!name || (nameText(title ?? '') !== name && nameText(h1 ?? '') !== name)) {
+      const headings = [
+        title && `page title: ${JSON.stringify(title.slice(0, 255))}`,
+        h1 && `H1: ${JSON.stringify(h1.slice(0, 255))}`,
+      ].filter(Boolean).join('; ')
+      reasons.push(`Official page does not name "${facts.name}"${headings ? ` (${headings})` : ''}: ${page.url}`)
     }
   }
   return reasons

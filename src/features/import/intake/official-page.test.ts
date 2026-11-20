@@ -61,7 +61,7 @@ describe('official-page evidence', () => {
     const run = (excerpt: string, fields?: Array<'date' | 'time'>, html = SHOWTIMES, at = facts) =>
       Effect.runPromise(verifyOfficialPagesEffect([evidence('https://teatro.example.org/obra', excerpt, fields)], at, readHtml(html)))
     expect(await run('LUNES 23 NOVIEMBRE 21:00', undefined, SHOWTIMES.replace(/Forever&nbsp;Sint&eacute;tico/, 'Otra obra')))
-      .toEqual(['Official page does not name "Forever Sintético" (page title: "Sala Sintética"): https://teatro.example.org/obra'])
+      .toEqual(['Official page does not name "Forever Sintético" (page title: "Sala Sintética"; H1: "Otra obra"): https://teatro.example.org/obra'])
     expect(await run('NOVIEMBRE 2026 en cartel', ['date'], '<h1>Forever Sintético</h1><p>NOVIEMBRE 2026 en cartel</p>'))
       .toEqual(['Official page excerpt does not state the day 23: https://teatro.example.org/obra'])
     expect(await run('LUNES 23 NOVIEMBRE 21:00', undefined, SHOWTIMES, { ...facts, time: '21:30' }))
@@ -70,87 +70,60 @@ describe('official-page evidence', () => {
     expect(await run('lunes 02/11 9 p.m.', undefined, '<h1>Forever Sintético</h1><p>Lunes 02/11 9 p.m.</p>', { ...facts, date: '2026-11-02' })).toEqual([])
   })
 
-  it('matches punctuation and Spanish conjunctions in show names, and quotes the page title on mismatch', async () => {
-    const url = 'https://teatro.example.org/obra'
-    const run = (name: string, html: string) => Effect.runPromise(verifyOfficialPagesEffect(
-      [evidence(url, 'LUNES 23 NOVIEMBRE 21:00')], { ...facts, name },
-      (target, allowed) => readOfficialPage(target, allowed, (async () => page(html)) as typeof fetch)))
-    const date = '<p>LUNES 23 NOVIEMBRE 21:00</p>'
-    const html = `<html><head><title>Luz del Río - Tomás y Trío Lunar</title></head><body>${date}</body></html>`
-    expect(await run('Luz del Rio + Tomas y Trio Lunar', html)).toEqual([])
-    expect(await run('Luz del Rio y Tomas - Trio Lunar', `<h1>Luz del Río - Tomás y Trío Lunar</h1>${date}`)).toEqual([])
-    expect(await run('Otro concierto', html)).toEqual([
-      `Official page does not name "Otro concierto" (page title: "Luz del Río - Tomás y Trío Lunar"): ${url}`,
+  const officialUrl = 'https://teatro.example.org/obra'
+  const officialQuote = 'LUNES 23 NOVIEMBRE 21:00'
+  const verifyShow = (name: string, html: string) => Effect.runPromise(verifyOfficialPagesEffect(
+    [evidence(officialUrl, officialQuote)], { ...facts, name }, readHtml(html)))
+
+  it('normalizes the Fiorel show name without treating a different spelling as equal', async () => {
+    const name = 'Fiorel y Crezco del Viento + Joaquin y Orquesta de Bolsillo'
+    const label = 'Fiorel y crezco del viento - Joaquín y orquesta de bolsillo'
+    const schedule = `<p>${officialQuote}</p>`
+    expect(await verifyShow(name, `<head><title>${label}</title></head><body>${schedule}</body>`)).toEqual([])
+    expect(await verifyShow(name, `<h1>${label}</h1>${schedule}`)).toEqual([])
+    const wrong = name.replace('Joaquin', 'Joaquinx')
+    expect(await verifyShow(wrong, `<h1>${label}</h1>${schedule}`)).toEqual([
+      `Official page does not name "${wrong}" (H1: "${label}"): ${officialUrl}`,
     ])
   })
 
-  it('does not pair a recommendation with the primary show’s performance', async () => {
-    const url = 'https://teatro.example.org/obra'
-    const quote = 'LUNES 23 NOVIEMBRE 21:00'
-    const run = (html: string, excerpt = quote, day = facts.date) => Effect.runPromise(verifyOfficialPagesEffect(
-      [evidence(url, excerpt)], { ...facts, name: 'Sol + Luna', date: day },
-      (target, allowed) => readOfficialPage(target, allowed, (async () => page(html)) as typeof fetch)))
-    const other = `<article><h1>Otra Obra</h1><p>${quote}</p></article>`
-    const html = (body: string, title = 'Otra Obra') => `<head><title>${title}</title></head><body>${body}</body>`
-    const mismatch = ['Official page does not name "Sol + Luna" (page title: "Otra Obra"): ' + url]
-    expect(await run(html(`${other}<aside><h2>Sol y Luna</h2></aside>`))).toEqual(mismatch)
-    expect(await run(html(`${other}<section class="related-events"><h2>Sol y Luna</h2><p>${quote}</p></section>`))).toEqual(mismatch)
-    const card = `<article><h3>Sol y Luna</h3><p>${quote}</p></article>`
-    expect(await run(html(`${other}<section><h2>También te puede interesar</h2>${card}</section>`))).toEqual(mismatch)
-    expect(await run(html(`${other}<section><div><h2>Eventos similares</h2></div>${card}</section>`))).toEqual(mismatch)
-    expect(await run(html(`${other}<section><p>Eventos recomendados</p>${card}</section>`))).toEqual(mismatch)
-    expect(await run(html(`${other}<h2>Eventos similares</h2>${card}`))).toEqual(mismatch)
-    expect(await run(html(`${other}<div aria-label="Eventos recomendados">${card}</div>`))).toEqual(mismatch)
-    expect(await run(html(`${other}<article><h2>Sol y Luna</h2><p>Entradas a la venta</p></article>`))).toEqual(mismatch)
-    expect(await run(html(`<h1>Sol y Luna</h1><article><h2>Otra Obra</h2><p>${quote}</p></article>`, 'Sol y Luna'))).toContainEqual(
-      expect.stringContaining('Official page does not name'))
-    expect(await run(html(`${other}<article><h2>Sol y Luna</h2><span>LUNES 23 NOVIEMBRE</span><span>21:00</span></article>`))).toEqual([])
-    expect(await run(html(`<h1>Sol y Luna</h1><table><tr><td>${quote}</td></tr></table>`, 'Tickets'))).toEqual([])
-    expect(await run(html(`<h1>Sol y Luna – Teatro Flores</h1><p>${quote}</p>`, 'Sol y Luna'))).toEqual([])
-    expect(await run(html(`<h1>Entradas para Sol y Luna</h1><p>${quote}</p>`, 'Sol y Luna | Ticketera'))).toEqual([])
-    expect(await run(html(`<article><h1>Sol y Luna – Teatro Flores</h1><p>${quote}</p></article>`, 'Sol y Luna'))).toEqual([])
-    expect(await run(html(`<h1>Otra Obra</h1><p>${quote}</p>`, 'Sol y Luna'))).toContainEqual(expect.stringContaining('Official page does not name'))
-    for (const heading of ['Funciones', 'Fecha y hora']) {
-      expect(await run(html(`<h1>Sol y Luna</h1><section><h2>${heading}</h2><p>${quote}</p></section>`, 'Tickets'))).toEqual([])
+  it('uses a document title without head tags for the name, but never for the excerpt', async () => {
+    const show = 'Sol y Luna'
+    expect(await verifyShow(show, `<title>${show}</title><p>${officialQuote}</p>`)).toEqual([])
+    expect(await verifyShow(show, `<html><title>${show}</title><body><p>${officialQuote}</p></body></html>`)).toEqual([])
+    expect(await verifyShow(show, `<title>${officialQuote}</title><h1>${show}</h1>`)).toEqual([
+      `Official page evidence must be an excerpt of the page's visible text: ${officialUrl}`,
+    ])
+  })
+
+  it('ignores a sidebar recommendation and later H1s when the primary show differs', async () => {
+    const html = `<head><title>Entradas para Otra Obra</title></head><body>
+      <h1>Otra Obra</h1><p>${officialQuote}</p>
+      <aside><h1>Sol y Luna</h1><p>${officialQuote}</p></aside></body>`
+    expect(await verifyShow('Sol + Luna', html)).toEqual([
+      `Official page does not name "Sol + Luna" (page title: "Entradas para Otra Obra"; H1: "Otra Obra"): ${officialUrl}`,
+    ])
+  })
+
+  it('holds a calendar whose primary heading identifies the calendar rather than either show', async () => {
+    const html = `<head><title>Teatro Flores | Cartelera</title></head><body><h1>Agenda de noviembre</h1>
+      <section><h2>Sol y Luna</h2><p>MARTES 24 NOVIEMBRE 21:00</p></section>
+      <section><h4>Otra Obra</h4><p>${officialQuote}</p></section></body>`
+    for (const name of ['Sol + Luna', 'Otra Obra']) {
+      expect(await verifyShow(name, html)).toEqual([
+        `Official page does not name "${name}" (page title: "Teatro Flores | Cartelera"; H1: "Agenda de noviembre"): ${officialUrl}`,
+      ])
     }
-    const twoCards = `<section><div><h2>Sol y Luna</h2><p>MARTES 24 NOVIEMBRE 21:00</p></div>
-      <div><h2>Otra Obra</h2><p>${quote}</p></div></section>`
-    expect(await run(html(twoCards))).toEqual(mismatch)
-    expect(await run(html(twoCards.replace('MARTES 24 NOVIEMBRE 21:00', quote)))).toEqual([])
-    const tuesday = 'MARTES 24 NOVIEMBRE 21:00'
-    const section = html(`<h1>Otra Obra</h1><section><h2>Funciones</h2><p>${quote}</p><h2>Sol y Luna</h2><p>${tuesday}</p></section>`)
-    expect(await run(section)).toEqual(mismatch)
-    expect(await run(section, tuesday, '2026-11-24')).toEqual([])
-    const links = html(`<main><a href="/sol"><p>${quote}</p><h2>Sol y Luna</h2></a>
-      <a href="/otra"><p>${tuesday}</p><h2>Otra Obra</h2></a></main>`)
-    expect(await run(links, tuesday, '2026-11-24')).toEqual(mismatch)
-    expect(await run(links)).toEqual([])
-    const linkedHeading = html(`<h1>Sol y Luna</h1><section><a href="/otra"><h2>Otra Obra</h2></a><p>${tuesday}</p></section>`)
-    expect(await run(linkedHeading, tuesday, '2026-11-24')).toEqual(mismatch)
-    const titledCard = html(`<h1>Sol y Luna</h1><p>${tuesday}</p><section><div><h2>Otra Obra</h2><span>En venta</span></div><p>${quote}</p></section>`)
-    expect(await run(titledCard)).toEqual(mismatch)
-    expect(await run(titledCard, tuesday, '2026-11-24')).toEqual([])
-    const lines = html(`<p>Sol y Luna — ${quote}<br>Otra Obra — ${tuesday}</p>`, 'Agenda cultural')
-    expect(await run(lines)).toEqual([])
-    expect(await run(lines, tuesday, '2026-11-24')).toContainEqual(expect.stringContaining('Official page does not name'))
-    const table = `<table><tr><th>Sol y Luna</th><td>MARTES 24 NOVIEMBRE 21:00</td></tr>
-      <tr><th>Otra Obra</th><td>${quote}</td></tr></table>`
-    expect(await run(html(`<article><h1>Sol y Luna</h1>${table}</article>`, 'Sol y Luna'))).toContainEqual(expect.stringContaining('Official page does not name'))
-    expect(await run(html(table.replace('MARTES 24 NOVIEMBRE 21:00', quote)))).toEqual([])
-    expect(await run(html(`<h1>Sol y Luna</h1><table><tr><td>${quote}</td><th>Otra Obra</th></tr></table>`, 'Sol y Luna'))).toContainEqual(
-      expect.stringContaining('Official page does not name'))
-    expect(await run(html(`<h1>Sol y Luna</h1><table><tr><td>23 noviembre</td><td>21:00</td></tr></table>`, 'Sol y Luna'), '23 noviembre 21:00')).toEqual([])
-    for (const wrapper of ['article', 'main', 'div']) {
-      expect(await run(html(`<${wrapper}><h1>Sol y Luna</h1><p>${quote}</p><h2>Patrocinadores</h2></${wrapper}>`, 'Sol y Luna'))).toEqual([])
-    }
-    expect(await run(html(`<h1>Sol y Luna</h1><h2>Precios</h2><p>${quote}</p>`, 'Sol y Luna'))).toEqual([])
-    expect(await run(html(`<article><h1>Sol y Luna</h1><h2>Otra Obra</h2><p>${quote}</p></article>`))).toEqual(mismatch)
-    expect(await run(html(`<h1>Otra Obra</h1><article><p>${quote}</p><p>También te puede interesar: Sol y Luna</p></article>`))).toEqual(mismatch)
-    expect(await run(html(`<p>${quote}. También te puede interesar: Sol y Luna</p>`))).toEqual(mismatch)
-    expect(await run(html(`<p>Sol y Luna — ${quote}</p>`, 'Agenda cultural'))).toEqual([])
-    expect(await run(html(`<article><p>Sol y Luna — ${quote}</p></article>`, 'Agenda cultural'))).toEqual([])
-    expect(await run(html(`<article><p>Sol y Luna</p><p>${quote}</p></article>`, 'Sol y Luna'))).toEqual([])
-    expect(await run(html(`<article><p>Otra Obra</p><p>${quote}</p></article>`, 'Sol y Luna'))).toContainEqual(expect.stringContaining('Official page does not name'))
+  })
+
+  it('accepts a single show whose schedule sits outside its header div', async () => {
+    const html = `<head><title>Teatro Flores</title></head><body><h1 hidden>Otra Obra</h1>
+      <div class="header"><h1>Sol y Luna</h1><span>Teatro Flores</span></div>
+      <p>${officialQuote}</p></body>`
+    expect(await verifyShow('Sol + Luna', html)).toEqual([])
+    expect(await verifyShow('Otra Obra', html)).toEqual([
+      `Official page does not name "Otra Obra" (page title: "Teatro Flores"; H1: "Sol y Luna"): ${officialUrl}`,
+    ])
   })
 
   it('rejects an excerpt the page lacks, hidden text, a failed read, a private address, and a too-short excerpt', async () => {
@@ -352,6 +325,17 @@ describe('official-page evidence', () => {
     expect(await Effect.runPromise(verifyOfficialPagesEffect([evidence(CAMARIN_URL, CAMARIN_EXCERPT)],
       { ...facts, date: '2026-11-28', time: '22:00', sites: CAMARIN_SITES }, read)))
       .toEqual([`Official page selected performance is not for "${facts.name}" (page title: "Otra Obra Sintética"): ${CAMARIN_URL}`])
+  })
+
+  it('keeps a standalone y significant in the title of a selected El Camarín performance', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-11-20T12:00:00Z'))
+    const read = camarinRead(camarinPage('17', 'María y José'))
+    const verify = (name: string) => Effect.runPromise(verifyOfficialPagesEffect([evidence(CAMARIN_URL, CAMARIN_EXCERPT)],
+      { ...facts, name, date: '2026-11-28', time: '22:00', sites: CAMARIN_SITES }, read))
+    expect(await verify('Maria y Jose')).toEqual([])
+    expect(await verify('María José')).toEqual([
+      `Official page selected performance is not for "María José" (page title: "María y José"): ${CAMARIN_URL}`,
+    ])
   })
 
   it('does not synthesize a past performance while the same event still has a future one', async () => {
