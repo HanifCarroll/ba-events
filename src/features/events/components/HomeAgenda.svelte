@@ -4,6 +4,7 @@
 	import { getLocale } from '#paraglide/runtime.js'
 	import { HOME_FILTERS, HOME_PAGE_SIZE, homeDay, type HomeAgendaCardEvent, type HomeAgendaEvent, type HomeFilter, type HomeViewPage } from '../lib/home-feed.ts'
 	import HomeAgendaCard from './HomeAgendaCard.svelte'
+	import InstallApp from '#shared/ui/InstallApp.svelte'
 
 	let { view, filter, url, onAsk, onMore, day, chat }: {
 		view: HomeViewPage
@@ -81,6 +82,7 @@
 			>{labels[key]()}</a>
 		{/each}
 	</nav>
+	<InstallApp hint />
 	<p aria-live="polite" class={view.empty ? 'mb-6 border-l-2 border-[#d0ff36] py-2 pl-4 text-[#eeeeef]' : 'sr-only'}>
 		{view.empty ? emptyCopy[view.empty]() : ''}
 	</p>

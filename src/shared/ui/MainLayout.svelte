@@ -8,7 +8,6 @@
 		Bookmark,
 		Settings,
 		LogOut,
-		User,
 		MessageCircle,
 		Send
 	} from 'lucide-svelte';
@@ -219,10 +218,9 @@
 						variant="ghost"
 						href="/login"
 						onclick={() => (mobileMenuOpen = false)}
-						class="w-full justify-start gap-3 px-3 text-foreground hover:bg-muted hover:text-foreground"
+						class="min-h-11 w-full justify-start px-4 text-foreground hover:bg-muted hover:text-foreground"
 					>
-						<User class="h-5 w-5" />
-						<span>{m.auth_sign_in()}</span>
+						{m.nav_sign_in()}
 					</Button>
 				{/if}
 			</nav>
@@ -316,10 +314,9 @@
 					variant="ghost"
 					href="/login"
 					onclick={() => (mobileMenuOpen = false)}
-					class="w-full justify-start gap-3 px-3 text-foreground hover:bg-muted hover:text-foreground"
+					class="min-h-11 w-full justify-start px-4 text-foreground hover:bg-muted hover:text-foreground"
 				>
-					<User class="h-5 w-5" />
-					<span>{m.auth_sign_in()}</span>
+					{m.nav_sign_in()}
 				</Button>
 			{/if}
 		</div>

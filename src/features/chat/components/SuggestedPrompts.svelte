@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { ArrowUp, CalendarDays, Camera, LogIn, Mic, Search, Ticket, User, Send } from 'lucide-svelte'
+	import { ArrowUp, CalendarDays, Camera, Mic, Search, Ticket, Send } from 'lucide-svelte'
 	import * as m from '#paraglide/messages.js'
 	import { toast } from 'svelte-sonner'
 	import { getLocale } from '#paraglide/runtime.js'
@@ -9,7 +9,6 @@
 	import HomeFlyerCollage from '#features/events/components/HomeFlyerCollage.svelte'
 	import BrandLogo from '#shared/ui/BrandLogo.svelte'
 	import LanguageSwitcher from '#shared/ui/LanguageSwitcher.svelte'
-	import InstallApp from '#shared/ui/InstallApp.svelte'
 	import {
 		DropdownMenu,
 		DropdownMenuContent,
@@ -182,25 +181,12 @@
 
 <div bind:this={scroller} onscroll={updateBackToTop} class="home h-full overflow-y-auto bg-[#101012] text-[#f6f6f7]">
 	<header data-section="intro" class="mx-auto max-w-[90rem] px-4 pt-3 pb-4 sm:px-8 sm:pt-4 sm:pb-7 lg:px-12">
-		<nav class="flex items-center max-md:-mx-1 md:flex-wrap md:gap-x-4 md:gap-y-2" aria-label={m.landing_nav_label()}>
-			<a href="/" class="inline-flex min-h-10 min-w-0 items-center max-md:mr-2 max-md:[&_img]:h-auto max-md:[&_img]:w-32">
+		<nav class="flex items-center justify-between gap-2" aria-label={m.landing_nav_label()}>
+			<a href="/" class="inline-flex min-h-11 min-w-11 items-center max-md:[&_img]:h-auto max-md:[&_img]:w-32">
 				<BrandLogo />
 			</a>
-			<div class="home-languages ml-auto shrink-0 md:contents">
-				<LanguageSwitcher compact />
-			</div>
-			<div class="flex items-center text-xs font-medium max-md:shrink-0 md:ml-auto md:flex-wrap md:gap-4 md:text-sm">
-				<a
-					href={instagram}
-					target="_blank"
-					rel="noopener noreferrer"
-					aria-label={m.landing_instagram_aria()}
-					class="home-control rounded-lg max-md:grid max-md:size-[40px] max-md:place-items-center md:px-1 md:py-2"
-				>
-					<Camera class="size-4 md:hidden" aria-hidden="true" />
-					<span class="max-md:sr-only">{m.landing_instagram()}</span>
-				</a>
-				<InstallApp compact class="home-control max-md:size-[40px] max-md:p-0 max-md:has-[>svg]:px-0 md:px-3" />
+			<div class="flex shrink-0 items-center gap-1 text-sm font-medium">
+				<LanguageSwitcher class="justify-center hover:bg-white/10" />
 				{#if auth.user}
 					<DropdownMenu>
 						<DropdownMenuTrigger>
@@ -208,23 +194,22 @@
 								<button
 									{...props}
 									type="button"
-									class="home-control flex items-center gap-1 rounded-lg max-md:w-[40px] max-md:justify-center md:px-3 md:py-2"
+									class="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg px-3 hover:bg-white/10"
 								>
-									<User class="size-4" aria-hidden="true" />
-									<span class="max-md:sr-only">{m.nav_account()}</span>
+									{m.nav_account()}
 								</button>
 							{/snippet}
 						</DropdownMenuTrigger>
 						<DropdownMenuContent align="end" class="w-48">
 							<DropdownMenuItem
 								onclick={() => goto('/saved')}
-								class="cursor-pointer hover:bg-primary/10 hover:text-primary focus:bg-primary/10 focus:text-primary"
+								class="min-h-11 cursor-pointer hover:bg-primary/10 hover:text-primary focus:bg-primary/10 focus:text-primary"
 							>
 								{m.nav_my_saved_events()}
 							</DropdownMenuItem>
 							<DropdownMenuItem
 								onclick={() => goto('/profile')}
-								class="cursor-pointer hover:bg-primary/10 hover:text-primary focus:bg-primary/10 focus:text-primary"
+								class="min-h-11 cursor-pointer hover:bg-primary/10 hover:text-primary focus:bg-primary/10 focus:text-primary"
 							>
 								{m.nav_settings()}
 							</DropdownMenuItem>
@@ -232,7 +217,7 @@
 							<DropdownMenuItem
 								onclick={handleSignOut}
 								disabled={isSigningOut}
-								class="cursor-pointer hover:bg-primary/10 hover:text-primary focus:bg-primary/10 focus:text-primary"
+								class="min-h-11 cursor-pointer hover:bg-primary/10 hover:text-primary focus:bg-primary/10 focus:text-primary"
 							>
 								{isSigningOut ? m.auth_signing_out() : m.auth_sign_out()}
 							</DropdownMenuItem>
@@ -241,10 +226,9 @@
 				{:else}
 					<a
 						href="/login"
-						class="home-control rounded-lg max-md:grid max-md:size-[40px] max-md:place-items-center md:px-4 md:py-2"
+						class="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg px-3 hover:bg-white/10"
 					>
-						<LogIn class="size-4 md:hidden" aria-hidden="true" />
-						<span class="max-md:sr-only">{m.auth_sign_in()}</span>
+						{m.nav_sign_in()}
 					</a>
 				{/if}
 			</div>
@@ -389,22 +373,6 @@
 		aspect-ratio: 1;
 		right: var(--back-to-top-right);
 		bottom: calc(3.5rem + env(safe-area-inset-bottom, 0px));
-	}
-
-	.home :global(.home-control), .home-languages :global(button) {
-		height: 40px;
-		min-width: 40px;
-		border: 0;
-		border-radius: 0.5rem;
-		color: inherit;
-	}
-
-	.home-languages :global(button:not([aria-current])) {
-		color: rgb(255 255 255 / 68%);
-	}
-
-	.home :global(.home-control:hover), .home-languages :global(button:not([aria-current]):hover) {
-		background-color: rgb(255 255 255 / 10%);
 	}
 
 	.home :global(:focus-visible) {

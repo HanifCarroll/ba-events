@@ -17,12 +17,25 @@ Event detail time ranges SHALL show the end date when it differs from the start 
 - **THEN** the end remains time-only in the active locale
 
 ### Requirement: The homepage introduces independent culture
-The homepage SHALL use the active locale for the independent-culture title, description, headline, and a single short subtitle. It SHALL link to BA Eventos on Instagram in both desktop and mobile navigation and SHALL NOT present an invented example conversation.
+The homepage SHALL use the active locale for the independent-culture title, description, headline, and a single short subtitle. It SHALL keep Instagram and Telegram links in the follow section and SHALL NOT present an invented example conversation.
 
-#### Scenario: Visitor opens the homepage on a phone
-- **WHEN** the homepage renders at 320 to 767 CSS pixels in English or Spanish, with or without a session or an available install action
-- **THEN** the wordmark sits on the left and the language, Instagram, optional install, and sign-in or account controls sit on the right, all in a single row without overflow
-- **AND** the controls use consistent 40-pixel targets and styling, the active language remains distinct, and icon-only controls retain accessible names
+#### Scenario: Visitor opens the homepage
+- **WHEN** the homepage renders at 320 CSS pixels or wider in English or Spanish
+- **THEN** the wordmark sits on the left and only the language toggle and text sign-in or account control sit on the right, on a single row without overflow
+- **AND** each target is at least 44 pixels tall and wide, and the toggle shows only the other language's code with a localized accessible name describing the switch
+
+### Requirement: The homepage offers installation to returning phone visitors
+The homepage SHALL count phone-width entries in local browser storage and offer installation below the filters only from the second such entry, below 768 CSS pixels and only when the browser offers a native prompt or can show the iOS instructions. Changing the language, changing the agenda filter, or paging within a visit SHALL NOT count as a new entry.
+
+#### Scenario: A returning visitor is offered installation
+- **WHEN** a visitor opens the homepage at phone width for the second or later time in the same browser and installation is available
+- **THEN** a localized hint with install and dismiss actions appears in the page flow without covering the agenda
+- **AND** the install action uses the browser prompt when available, or the existing iOS instructions otherwise
+
+#### Scenario: Installation is dismissed or complete
+- **WHEN** the visitor dismisses the hint, dismisses a native prompt or opens the manual iOS instructions from any install control, or receives browser confirmation of installation
+- **THEN** the homepage does not offer the hint again in that browser's local storage
+- **AND** the hint is never shown when already running standalone or when local storage is unavailable
 
 ### Requirement: The app header places the menu trigger on the right
 Below the large breakpoint, the app layout’s mobile header on non-homepage routes SHALL place the home wordmark at the left and the menu trigger at the right. The menu SHALL open below the full header without pushing the page content down.
@@ -31,6 +44,7 @@ Below the large breakpoint, the app layout’s mobile header on non-homepage rou
 - **WHEN** the visitor focuses and activates the menu trigger
 - **THEN** the trigger retains focus and its accessible name and expanded state reflect whether the menu is open
 - **AND** while the menu is open, Tab from the trigger enters the menu
+- **AND** the mobile menu and desktop sidebar use the same single language toggle as the homepage and show a text sign-in link to signed-out visitors
 
 ### Requirement: Web branding uses the BA Eventos ticket mark
 The homepage and app navigation SHALL show the ticket wordmark as a home link with the accessible name “BA Eventos”. Browser tab, Apple touch, and installable app icons SHALL use the matching ticket mark.
@@ -184,6 +198,7 @@ The PWA installation prompt and pull-to-refresh gesture SHALL each have explicit
 
 ## Verification
 - Implementation: `messages/en.json`, `messages/es.json`, `src/features/chat/components/SuggestedPrompts.svelte`, `src/shared/ui/MainLayout.svelte`, `src/features/events/components/EventArtwork.svelte`, `src/routes/mcp/+page.svelte`, `src/shared/lib/utils/formatting.ts`
-- Browser checks: render the real components in English and Spanish at desktop and mobile widths; verify homepage and app header alignment at 320, 360, 390, and 430 CSS pixels with both session states, with and without the homepage install action; verify menu keyboard access, navigation icon geometry, wrapped labels, Telegram link attributes, and Claude and ChatGPT setup instructions. Verify the phone list, desktop grid, centered composer, and pagination.
+- Browser checks: render the real components in English and Spanish at desktop and mobile widths; verify homepage alignment at 320, 390, and 1440 CSS pixels, both session states, the second-visit install hint, and its dismissal. Verify app header alignment, menu keyboard access, navigation icon geometry, wrapped labels, Telegram link attributes, and Claude and ChatGPT setup instructions. Verify the phone list, desktop grid, centered composer, and pagination.
+- Install hint persistence: `src/shared/lib/pwa/install-hint.test.ts`.
 - Static check: `bun run paraglide:compile && bun run check`
 - Specification validation: `bunx @fission-ai/openspec validate --specs --json`

@@ -1,107 +1,35 @@
 <script lang="ts">
-	import { getLocale, setLocale, locales } from '#paraglide/runtime.js';
-	import { Globe } from 'lucide-svelte';
-	import { Button } from '#shared/ui/button/index.ts';
-	import { Tooltip, TooltipContent, TooltipTrigger } from '#shared/ui/tooltip/index.ts';
-	import {
-		DropdownMenu,
-		DropdownMenuContent,
-		DropdownMenuItem,
-		DropdownMenuTrigger
-	} from '#shared/ui/dropdown-menu/index.ts';
-	import { useAuthContext } from '#features/auth/hooks/auth-context.svelte.ts';
-	import { updateLocalePreference } from '#features/auth/api/auth.remote.ts';
-	import type { Locale } from '#shared/lib/types.ts';
+	import { getLocale, setLocale } from '#paraglide/runtime.js'
+	import * as m from '#paraglide/messages.js'
+	import { page } from '$app/state'
+	import { preserveInstallHintVisit } from '#shared/lib/pwa/install-hint.ts'
+	import { useAuthContext } from '#features/auth/hooks/auth-context.svelte.ts'
+	import { updateLocalePreference } from '#features/auth/api/auth.remote.ts'
 
-	const LOCALE_CONFIG: Record<string, { label: string }> = {
-		en: { label: 'English' },
-		es: { label: 'Español' }
-	};
+	let { class: className = 'w-full px-4 text-muted-foreground hover:bg-muted/50 hover:text-foreground' }: { class?: string } = $props()
 
-	let { collapsed = false, compact = false }: { collapsed?: boolean; compact?: boolean } = $props();
+	const auth = useAuthContext()
+	const otherLocale = getLocale() === 'es' ? 'en' : 'es'
 
-	const auth = useAuthContext();
-	const currentLocale = getLocale();
-	const currentConfig = LOCALE_CONFIG[currentLocale] || LOCALE_CONFIG.en;
-
-	async function handleLocaleChange(locale: string) {
+	async function switchLanguage() {
 		if (auth.user) {
 			try {
-				await updateLocalePreference(locale as Locale);
+				await updateLocalePreference(otherLocale)
 			} catch (error) {
-				console.error('Failed to save locale preference:', error);
-				return;
+				console.error('Failed to save locale preference:', error)
+				return
 			}
 		}
-		setLocale(locale as (typeof locales)[number]);
+		if (page.url.pathname === '/') preserveInstallHintVisit()
+		setLocale(otherLocale)
 	}
 </script>
 
-{#snippet dropdown()}
-	<DropdownMenu>
-		<DropdownMenuTrigger>
-			{#snippet child({ props })}
-				<Button
-					{...props}
-					variant="ghost"
-					class={collapsed
-						? 'w-full text-muted-foreground hover:text-foreground hover:bg-muted/50 items-center p-3 justify-center'
-						: 'w-full text-muted-foreground hover:text-foreground hover:bg-muted/50 items-center justify-start gap-3 px-4'}
-				>
-					<Globe class="h-5 w-5 shrink-0" />
-					{#if !collapsed}
-						<span class="text-sm leading-none">{currentConfig.label}</span>
-					{/if}
-				</Button>
-			{/snippet}
-		</DropdownMenuTrigger>
-		<DropdownMenuContent side={collapsed ? 'right' : 'top'} align="start" class="w-40">
-			{#each locales as locale (locale)}
-				{@const config = LOCALE_CONFIG[locale] || { label: locale }}
-				{@const isActive = locale === currentLocale}
-				<DropdownMenuItem
-					onclick={() => handleLocaleChange(locale)}
-					class="flex items-center gap-2 cursor-pointer focus:bg-primary/10 focus:text-primary {isActive
-						? 'bg-primary/10 text-primary'
-						: ''}"
-				>
-					<span>{config.label}</span>
-					{#if isActive}<span class="ml-auto text-primary">✓</span>{/if}
-				</DropdownMenuItem>
-			{/each}
-		</DropdownMenuContent>
-	</DropdownMenu>
-{/snippet}
-
-{#if compact}
-	<div class="flex items-center md:gap-1" aria-label="Language / Idioma">
-		{#each locales as locale (locale)}
-			{@const isActive = locale === currentLocale}
-			<button
-				type="button"
-				onclick={() => handleLocaleChange(locale)}
-				aria-current={isActive ? 'true' : undefined}
-				class="rounded px-1.5 py-1 text-xs font-semibold transition-colors max-md:min-h-[40px] max-md:min-w-[40px] max-md:px-0 {isActive
-					? 'bg-white/15 text-white'
-					: 'text-white/65 hover:text-white'}"
-			>
-				{locale.toUpperCase()}
-			</button>
-		{/each}
-	</div>
-{:else if collapsed}
-	<Tooltip>
-		<TooltipTrigger>
-			{#snippet child({ props })}
-				<div {...props}>
-					{@render dropdown()}
-				</div>
-			{/snippet}
-		</TooltipTrigger>
-		<TooltipContent side="right" class="font-medium">
-			{currentConfig.label}
-		</TooltipContent>
-	</Tooltip>
-{:else}
-	{@render dropdown()}
-{/if}
+<button
+	type="button"
+	aria-label={m.nav_switch_language()}
+	onclick={switchLanguage}
+	class={['inline-flex min-h-11 min-w-11 items-center rounded-lg text-sm font-semibold transition-colors', className]}
+>
+	{otherLocale.toUpperCase()}
+</button>
