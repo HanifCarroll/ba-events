@@ -271,7 +271,9 @@ const CLOCK_LIST = new RegExp(String.raw`\b(?<!\d[:./-])(?:a las? ${CLOCK_VALUE}
 const MULTIPLE_OCCURRENCES = "lists multiple dates or start times; cite the single occurrence's line"
 const BARE_START_RANGE = new RegExp(String.raw`\b(?<!\d[:./-])(de )?(\d{1,2})(?: *[-–—] *| (?:a|hasta) (las? )?)(${CLOCK_VALUE})(?: ?(hs?|horas|[ap]\.? ?m))?\b(?![:.]\d)`, 'g')
 const CLOCK = /\b(?<!\d[:./])(?:(?<!\d-)|(?=\d{1,2}:))(?:(a las?) )?(\d{1,2})(?:([:.])(\d{2}))?(?: ?(?:([ap])\.? ?m\b\.?|(hs?|horas)\b\.?))?(?![\w:]|\.\d)/g
-const DAY_ONLY = new RegExp(String.raw`\b(?:el|dia|lun(?:es)?|mar(?:tes)?|mie(?:rcoles)?|jue(?:ves)?|vie(?:rnes)?|sab(?:ado)?|dom(?:ingo)?|${MONTHS.join('|')})[.,:]? (\d{1,2})\b(?![./-]\d)`, 'g')
+const WEEKDAYS = 'lun(?:es)?|mar(?:tes)?|mie(?:rcoles)?|jue(?:ves)?|vie(?:rnes)?|sab(?:ado)?|dom(?:ingo)?'
+const EXPLICIT_DAY_PREFIX = new RegExp(String.raw`\b(?:dia|${WEEKDAYS})[.,:]? (?:el )?$`)
+const DAY_ONLY = new RegExp(String.raw`\b(?:el|dia|${WEEKDAYS}|${MONTHS.join('|')})[.,:]? (\d{1,2})\b(?![./-]\d)`, 'g')
 const JOINED_DAYS = /\b\d{1,2}\b *(?:[,–—-]|y\b|o\b|al\b) *#|# *(?:[,–—-]|\by\b|\bo\b|\bal\b) *\d{1,2}\b(?! [a-z])/
 
 /** Why a normalized excerpt doesn't state the facts it is cited for; null when it does. */
@@ -281,15 +283,16 @@ export function excerptFactsReason(excerpt: string, fields: readonly string[], f
   const [year, month, day] = facts.date.split('-').map(Number)
   const starts: Array<[number, number]> = []
   let previousClockEnd: number | undefined
-  const afterHourRanges = excerpt.replace(BARE_START_RANGE, (token, from: string, start: string, at: string, end: string, unit: string) => {
-    if (!from && at || !unit && !/[.:]/.test(end)) return token // "viernes 20 a las 21 hs" has a day, not a range.
+  const afterHourRanges = excerpt.replace(BARE_START_RANGE, (token, from: string, start: string, at: string, end: string, unit: string, offset: number) => {
+    // Recognize an explicit calendar day before trying to parse a bare range start.
+    if (!from && (at || EXPLICIT_DAY_PREFIX.test(excerpt.slice(0, offset))) || !unit && !/[.:]/.test(end)) return token
     // Without an explicit meridiem on the start, don't infer it from the end.
     starts.push([unit && /^[ap]/.test(unit) ? -1 : Number(start), 0])
     return ' '
   })
   // Remove clock tokens before reading the calendar so hours and minutes cannot stand in for dates.
   const calendar = afterHourRanges.replace(CLOCK, (token, prefix: string, h: string, separator: string, m: string, period: string, unit: string, offset: number) => {
-    if (separator !== ':' && !prefix && !period && !unit) return token // A bare dotted pair is a date, not a clock.
+    if (separator !== ':' && !prefix && (!period && !unit || EXPLICIT_DAY_PREFIX.test(afterHourRanges.slice(0, offset)))) return token
     const hours = Number(h)
     const localHour = period && hours >= 1 && hours <= 12 ? hours % 12 + (period === 'p' ? 12 : 0) : period ? -1 : hours
     const betweenClocks = previousClockEnd === undefined ? null : afterHourRanges.slice(previousClockEnd, offset)

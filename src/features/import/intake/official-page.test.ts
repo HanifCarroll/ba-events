@@ -118,6 +118,8 @@ describe('official-page evidence', () => {
     ['20/11/2026 21 a 23 hs', '2026-11-20', '21:00'],
     ['viernes 20 a las 21 hs', '2026-11-20', '21:00'],
     ['día 20 a las 21:00', '2026-11-20', '21:00'],
+    ['sábado el 21 - 18:00 hs', '2026-11-21', '18:00'],
+    ['día 21 - 18:00 hs', '2026-11-21', '18:00'],
     ['Noviembre 20 a las 21:00', '2026-11-20', '21:00'],
     ['viernes 20.11 21:00 hs', '2026-11-20', '21:00'],
     ['Lunes 02/11 12 a.m.', '2026-11-02', '00:00'],
@@ -132,6 +134,9 @@ describe('official-page evidence', () => {
     ['20/11/2026, 2 funciones: 18 y 21 hs', '2026-11-20', '21:00'],
     ['Viernes 20 a las 18 y 21', '2026-11-20', '18:00'],
     ['Viernes 20/11 y sábado 21 a las 18:00', '2026-11-21', '18:00'],
+    ['Viernes 20/11 y sábado 21 - 18:00 hs', '2026-11-20', '21:00'],
+    ['Viernes 20/11 y sábado el 21 - 18:00 hs', '2026-11-20', '21:00'],
+    ['Viernes 20/11 y día 21 - 18:00 hs', '2026-11-20', '21:00'],
     ['20 y 21 de noviembre a las 18:00', '2026-11-21', '18:00'],
     ['Viernes 20 a las 18:00 y 21:00', '2026-11-20', '21:00'],
   ])('asks for a single occurrence when the quote is %s', async (excerpt, date, time) => {
