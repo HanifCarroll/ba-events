@@ -113,6 +113,23 @@ async function checkInstallHint() {
     await second.locator(hint).waitFor({ state: 'visible' })
     assert.deepEqual(await second.locator(card).first().boundingBox(), before, 'late hint must not move the first card')
     console.log('PASS first phone visit survives Back; a late hint on the second visit does not move the first card')
+
+    await second.setViewportSize({ width: 390, height: 280 })
+    await second.reload()
+    await second.evaluate(() => document.fonts.ready)
+    const top = second.locator('.back-to-top')
+    const resizeBefore = await second.locator('[data-section="chat"]').evaluate(el => {
+      const scroller = el.closest('.home')
+      const button = scroller.querySelector('.back-to-top')
+      scroller.scrollTop += el.getBoundingClientRect().bottom - button.getBoundingClientRect().top + 16
+      return scroller.scrollTop
+    })
+    await top.waitFor({ state: 'visible' })
+    await armNativePrompt(second)
+    await second.locator(hint).waitFor({ state: 'visible' })
+    assert.equal(await second.locator('.home').evaluate(el => el.scrollTop), resizeBefore)
+    await top.waitFor({ state: 'hidden' })
+    console.log('PASS late hint keeps Back to top clear without requiring a scroll')
   } finally {
     await context.close()
   }

@@ -78,7 +78,7 @@ The homepage SHALL lead with the current agenda and render exactly one centered 
 - **WHEN** the agenda shows flyer cards
 - **THEN** the first four images load eagerly, the first has high fetch priority, and the remaining images load lazily in reserved 4:5 frames
 - **WHEN** the visitor scrolls more than approximately two viewport heights
-- **THEN** a localized back-to-top button with a target at least 44 pixels square appears clear of page controls and safe-area insets, and hides when its measured footprint is within 8 CSS pixels of the composer form
+- **THEN** a localized back-to-top button with a target at least 44 pixels square appears clear of page controls and safe-area insets, and hides when its measured footprint is within 8 CSS pixels of the composer form or the install hint, including when the hint arrives without a scroll
 - **AND** the button is available at the bottom of any scrollable agenda, even when the visitor has not scrolled two viewport heights
 - **AND** activating it returns the visitor to the top without smooth scrolling when reduced motion is requested
 

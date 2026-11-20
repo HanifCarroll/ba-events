@@ -121,6 +121,14 @@
 			&& (!hint?.getClientRects().length || clears(hint.getBoundingClientRect()))
 	}
 
+	$effect(() => {
+		const composerArea = composer?.closest('[data-section="agenda-composer"]')
+		if (!composerArea) return
+		const observer = new ResizeObserver(updateBackToTop)
+		observer.observe(composerArea)
+		return () => observer.disconnect()
+	})
+
 	async function revealAgendaPage(href: string) {
 		const scrollport = scroller
 		if (!scrollport) return goto(href, { reset: false })

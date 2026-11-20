@@ -89,7 +89,7 @@
 		{#each beforeChat as event, index (event.id)}
 			{@render card(event, index)}
 		{/each}
-		<div class="agenda-composer col-span-full min-w-0 py-2">
+		<div data-section="agenda-composer" class="agenda-composer col-span-full min-w-0 py-2">
 			{@render chat()}
 			<InstallApp hint />
 		</div>
