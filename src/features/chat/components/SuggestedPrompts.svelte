@@ -113,10 +113,12 @@
 			return
 		}
 		const button = backToTopButton.getBoundingClientRect()
-		const form = composer.getBoundingClientRect()
 		const gap = 8
-		showBackToTop = form.right + gap <= button.left || form.left >= button.right + gap
-			|| form.bottom + gap <= button.top || form.top >= button.bottom + gap
+		const clears = (control: DOMRect) => control.right + gap <= button.left || control.left >= button.right + gap
+			|| control.bottom + gap <= button.top || control.top >= button.bottom + gap
+		const hint = scroller.querySelector('[data-section="install-hint"]')
+		showBackToTop = clears(composer.getBoundingClientRect())
+			&& (!hint?.getClientRects().length || clears(hint.getBoundingClientRect()))
 	}
 
 	async function revealAgendaPage(href: string) {

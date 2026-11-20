@@ -24,12 +24,17 @@ The homepage SHALL use the active locale for the independent-culture title, desc
 - **THEN** the wordmark sits on the left and only the language toggle and text sign-in or account control sit on the right, on a single row without overflow
 - **AND** each target is at least 44 pixels tall and wide, and the toggle shows only the other language's code with a localized accessible name describing the switch
 
+#### Scenario: A signed-in visitor switches languages on a filtered view
+- **WHEN** their saved language differs from the browser preference or its old locale cookie
+- **THEN** server rendering and hydration agree on the saved language, the preference cookie is readable by the browser, and the toggle offers the other language
+- **AND** switching languages persists the account preference and keeps the current filter URL
+
 ### Requirement: The homepage offers installation to returning phone visitors
-The homepage SHALL count phone-width entries in local browser storage and offer installation below the filters only from the second such entry, below 768 CSS pixels and only when the browser offers a native prompt or can show the iOS instructions. Changing the language, changing the agenda filter, or paging within a visit SHALL NOT count as a new entry.
+The homepage SHALL count one visit per browser tab session in local browser storage. It SHALL offer installation only from the second eligible session, below 768 CSS pixels with a coarse primary pointer and no hover and only when the browser offers a native prompt or can show the iOS instructions. Returning from an event, reloading, switching languages, and changing filters or paging SHALL NOT start a new visit in the same tab session.
 
 #### Scenario: A returning visitor is offered installation
-- **WHEN** a visitor opens the homepage at phone width for the second or later time in the same browser and installation is available
-- **THEN** a localized hint with install and dismiss actions appears in the page flow without covering the agenda
+- **WHEN** a visitor opens the homepage in a second eligible tab session in the same browser and installation is available
+- **THEN** a localized hint with install and dismiss actions appears after the agenda's chat composer without covering the agenda or moving its first card
 - **AND** the install action uses the browser prompt when available, or the existing iOS instructions otherwise
 
 #### Scenario: Installation is dismissed or complete

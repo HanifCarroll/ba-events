@@ -82,7 +82,6 @@
 			>{labels[key]()}</a>
 		{/each}
 	</nav>
-	<InstallApp hint />
 	<p aria-live="polite" class={view.empty ? 'mb-6 border-l-2 border-[#d0ff36] py-2 pl-4 text-[#eeeeef]' : 'sr-only'}>
 		{view.empty ? emptyCopy[view.empty]() : ''}
 	</p>
@@ -90,7 +89,10 @@
 		{#each beforeChat as event, index (event.id)}
 			{@render card(event, index)}
 		{/each}
-		<div class="agenda-composer col-span-full min-w-0 py-2">{@render chat()}</div>
+		<div class="agenda-composer col-span-full min-w-0 py-2">
+			{@render chat()}
+			<InstallApp hint />
+		</div>
 		{#each afterChat as event, index (event.id)}
 			{@render card(event, chatAfter + index)}
 		{/each}

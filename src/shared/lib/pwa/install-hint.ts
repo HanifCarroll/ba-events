@@ -1,26 +1,16 @@
 const KEY = 'ba:home-install-hint'
-type LocalStorage = { readonly localStorage: Pick<Storage, 'getItem' | 'setItem'> }
-type SessionStorage = { readonly sessionStorage: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'> }
+type VisitStorage = Pick<Storage, 'getItem' | 'setItem'>
+type LocalStorage = { readonly localStorage: VisitStorage }
 
-export function preserveInstallHintVisit(browser: SessionStorage = window): void {
+export function recordInstallHintVisit(browser: LocalStorage & { readonly sessionStorage: VisitStorage } = window): boolean {
 	try {
-		// Paraglide reloads the document to apply the locale.
-		browser.sessionStorage.setItem(KEY, 'locale-reload')
-	} catch {
-		// Blocked storage also prevents the hint from appearing.
-	}
-}
-
-export function recordInstallHintVisit(browser: LocalStorage & SessionStorage = window, countVisit = true): boolean {
-	try {
-		const sameVisit = browser.sessionStorage.getItem(KEY) === 'locale-reload'
-		if (sameVisit) browser.sessionStorage.removeItem(KEY)
-		if (!countVisit) return false
-		const storage = browser.localStorage
-		const visits = storage.getItem(KEY)
+		const visits = browser.localStorage.getItem(KEY)
 		if (visits === 'hidden') return false
-		const next = visits === '2' || (visits === '1' && !sameVisit) ? '2' : '1'
-		storage.setItem(KEY, next)
+		const thisVisit = browser.sessionStorage.getItem(KEY)
+		if (thisVisit === '1' || thisVisit === '2') return thisVisit === '2'
+		const next = visits === '1' || visits === '2' ? '2' : '1'
+		browser.localStorage.setItem(KEY, next)
+		browser.sessionStorage.setItem(KEY, next)
 		return next === '2'
 	} catch {
 		return false

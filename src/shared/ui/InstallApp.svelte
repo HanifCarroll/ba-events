@@ -22,8 +22,8 @@
 	)
 
 	onMount(() => {
-		if (hint) {
-			returningVisitor = recordInstallHintVisit(window, !installState.installed && window.matchMedia('(width < 48rem)').matches)
+		if (hint && !installState.installed && window.matchMedia('(width < 48rem) and (pointer: coarse) and (hover: none)').matches) {
+			returningVisitor = recordInstallHintVisit()
 		}
 	})
 
@@ -47,7 +47,7 @@
 {#if available}
 	{#if hint}
 		{#if returningVisitor}
-			<div data-section="install-hint" class="mb-3 flex items-center gap-1 rounded-xl border border-[#3b3b42] bg-[#19191d] py-1 pr-1 pl-3 md:hidden">
+			<div data-section="install-hint" class="install-hint mt-3 items-center gap-1 rounded-xl border border-[#3b3b42] bg-[#19191d] py-1 pr-1 pl-3">
 				<p class="flex-1 text-sm leading-snug text-[#eeeeef]">{m.install_hint()}</p>
 				<Button variant="ghost" class="min-h-11 min-w-11 px-2 text-[#d0ff36] hover:bg-white/10 hover:text-[#d0ff36]" onclick={handleInstall}>
 					{m.install_hint_add()}
@@ -86,3 +86,11 @@
 		</DialogFooter>
 	</DialogContent>
 </Dialog>
+
+<style>
+	.install-hint { display: none; }
+
+	@media (width < 48rem) and (pointer: coarse) and (hover: none) {
+		.install-hint { display: flex; }
+	}
+</style>

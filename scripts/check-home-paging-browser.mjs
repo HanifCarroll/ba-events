@@ -79,7 +79,47 @@ async function checkComposerPlacement(javaScriptEnabled) {
   }
 }
 
+async function checkInstallHint() {
+  const context = await browser.newContext(profile)
+  const hint = '[data-section="install-hint"]'
+  const card = '[data-section="event-card"]'
+  const visitKey = 'ba:home-install-hint'
+  const armNativePrompt = page => page.waitForFunction(() => {
+    const event = new Event('beforeinstallprompt', { cancelable: true })
+    Object.assign(event, { prompt: async () => {}, userChoice: Promise.resolve({ outcome: 'accepted' }) })
+    return !window.dispatchEvent(event)
+  })
+  try {
+    await context.route('**/*', route => new URL(route.request().url()).origin === url.origin ? route.continue() : route.abort())
+    const first = await context.newPage()
+    first.setDefaultTimeout(5000)
+    assert.equal((await first.goto(url.href)).status(), 200)
+    await armNativePrompt(first)
+    assert.equal(await first.locator(hint).count(), 0)
+    await first.locator(`${card} a[href^="/events/"]`).first().click()
+    await first.waitForURL('**/events/**')
+    await first.goBack()
+    await first.waitForURL(url.href)
+    await armNativePrompt(first)
+    assert.equal(await first.locator(hint).count(), 0, 'Back must not qualify as a second visit')
+
+    const second = await context.newPage()
+    second.setDefaultTimeout(5000)
+    assert.equal((await second.goto(url.href)).status(), 200)
+    await second.waitForFunction(key => sessionStorage.getItem(key) === '2', visitKey)
+    await second.evaluate(() => document.fonts.ready)
+    const before = await second.locator(card).first().boundingBox()
+    await armNativePrompt(second)
+    await second.locator(hint).waitFor({ state: 'visible' })
+    assert.deepEqual(await second.locator(card).first().boundingBox(), before, 'late hint must not move the first card')
+    console.log('PASS first phone visit survives Back; a late hint on the second visit does not move the first card')
+  } finally {
+    await context.close()
+  }
+}
+
 try {
+  await checkInstallHint()
   await checkComposerPlacement(false)
   await checkComposerPlacement(true)
   await check('tap near top of viewport reveals card 25 without a scroll jump', 'reduce', async (page, scroller) => {

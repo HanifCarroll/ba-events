@@ -1,8 +1,6 @@
 <script lang="ts">
 	import { getLocale, setLocale } from '#paraglide/runtime.js'
 	import * as m from '#paraglide/messages.js'
-	import { page } from '$app/state'
-	import { preserveInstallHintVisit } from '#shared/lib/pwa/install-hint.ts'
 	import { useAuthContext } from '#features/auth/hooks/auth-context.svelte.ts'
 	import { updateLocalePreference } from '#features/auth/api/auth.remote.ts'
 
@@ -20,7 +18,6 @@
 				return
 			}
 		}
-		if (page.url.pathname === '/') preserveInstallHintVisit()
 		setLocale(otherLocale)
 	}
 </script>
