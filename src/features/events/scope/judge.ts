@@ -1,4 +1,5 @@
 import { generateObject } from 'ai'
+import { load } from 'cheerio/slim'
 import { z } from 'zod'
 import { openai } from '#shared/lib/ai/providers.ts'
 import { isEmptyFacets } from '#shared/lib/search-facets.ts'
@@ -32,35 +33,19 @@ Return a JSON object with judgments. Give exactly one judgment for each input in
 
 type ScopeInput = { name: string; source?: string; descriptionEs?: string | null; descriptionEn?: string | null; caption?: string | null; facets?: unknown }
 
-// Unlike token normalization, preserve musical and other symbols that can carry program evidence.
-const normalizeListing = (text: string) => text.toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '').replace(/[\p{P}\s]+/gu, ' ').trim()
-// Passline can HTML-encode the title in its sales sentence but not in the event name.
-const PASSLINE_OPENING = /consigue\s+tus\s+entradas\s+para[^\S\r\n]+[^\r\n]+?[^\S\r\n]+en\s+passline\b/
-const PASSLINE_PITCH = /encuentra\s+detalles,?\s+asegura\s+tu\s+asistencia\s+y\s+prep(?:a\u0301?|á)rate\s+para\s+disfrutar\s+de\s+una\s+experiencia\s+inolvidable\b/
-const PASSLINE_SALES_COPY = new RegExp(
-  String.raw`\b(?:${PASSLINE_OPENING.source}(?:[.!?]?\s+${PASSLINE_PITCH.source}|(?=[.!?](?:\s|$)|[ \t]*(?:\r?\n|$)))|${PASSLINE_PITCH.source})[.!?]?(?:[ \t]*\r?\n)?`,
-  'giu',
-)
-const SALES_ONLY_TITLE = /^(?:(?:(?:venta|compra) de )?(?:entradas|tickets)|consigue tus entradas)$/
-const LISTING_FIELDS = ['descriptionEs', 'descriptionEn', 'caption'] as const
+const PASSLINE_PITCH = 'Encuentra detalles, asegura tu asistencia y prepárate para disfrutar de una experiencia inolvidable.'
 
-function stripPasslineSalesCopy(input: ScopeInput): ScopeInput {
-  if (input.source !== 'passline') return input
-  const name = normalizeListing(input.name)
-  const cleaned = { ...input }
-  for (const field of LISTING_FIELDS) {
-    const value = input[field]
-    if (typeof value !== 'string') continue
-    const remaining = value.replace(PASSLINE_SALES_COPY, '').trim()
-    const normalized = normalizeListing(remaining)
-    cleaned[field] = !normalized || normalized === name ? '' : remaining
-  }
-  return cleaned
+function normalizeListing(text: string) {
+  // Decode entities without discarding literal markup or symbols that may be evidence.
+  const decoded = text.includes('&') ? load(text.replaceAll('<', '&lt;'), {}, false).root().text() : text
+  return decoded.toLowerCase().replace(/\s+/gu, ' ').trim()
 }
 
 function precheckScope(input: ScopeInput): ScopeDecision | undefined {
-  if (input.source === 'passline' && SALES_ONLY_TITLE.test(normalizeListing(input.name))
-    && isEmptyFacets(input.facets) && LISTING_FIELDS.every(field => !input[field])) {
+  if (input.source !== 'passline' || !isEmptyFacets(input.facets)) return
+  const template = normalizeListing(`Consigue tus entradas para ${input.name} en Passline. ${PASSLINE_PITCH}`)
+  const details = [input.descriptionEs, input.descriptionEn, input.caption].map(text => normalizeListing(text ?? '')).filter(Boolean)
+  if (details.length && details.every(text => text === template)) {
     return { scope: 'out', reason: 'unclear: The listing has only ticket-sale text, with no program or event type.' }
   }
 }
@@ -86,9 +71,8 @@ export function requestScopeJudgments(model = openai.chat(SCOPE_MODEL)): Request
 }
 
 export async function judgeScopeBatch(inputs: ScopeInput[], request: RequestJudgments): Promise<ScopeDecision[]> {
-  const cleaned = inputs.map(stripPasslineSalesCopy)
-  const prechecked = cleaned.map(precheckScope)
-  const unresolved = cleaned.filter((_, index) => !prechecked[index])
+  const prechecked = inputs.map(precheckScope)
+  const unresolved = inputs.filter((_, index) => !prechecked[index])
   const judged = unresolved.length ? decodeScopeJudgments(await request(unresolved), unresolved.length) : []
   let next = 0
   return prechecked.map(row => row ?? judged[next++]!)
