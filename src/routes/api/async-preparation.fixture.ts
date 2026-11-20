@@ -72,7 +72,11 @@ if (mode === 'events') {
     request: new Request('https://example.com/api/chat/execute', { method: 'POST', headers: {
       'Content-Type': 'application/json', 'x-chat-owner': 'synthetic-user', 'x-chat-turn': turnId,
       'x-chat-attempt': attemptId, 'x-chat-token': 'a'.repeat(64),
-    }, body: JSON.stringify({ messages: [], turnId, happeningSoonEventId: turnId }) }),
+    }, body: JSON.stringify({
+      messages: replay ? [{ role: 'user', parts: [null] }] : [],
+      turnId,
+      happeningSoonEventId: turnId,
+    }) }),
     getClientAddress: () => '203.0.113.1', locals: {},
     platform: { env: { CHAT_DELIVERY: {
       idFromName: (name: string) => name,
