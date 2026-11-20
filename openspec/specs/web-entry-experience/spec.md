@@ -114,7 +114,7 @@ The homepage SHALL lead with the current agenda and render exactly one centered 
 - **AND** glossary triggers appear on the matched words in the title or metadata, without adding another line, and work by pointer, touch, and keyboard; terms that appear only in the description do not add a trigger, and Escape dismisses an open definition even while hovered
 - **AND** titles underline only on hover or keyboard focus and clamp to two lines until a glossary trigger needs keyboard focus or opens its definition; metadata uses the body font and wraps without clipping
 - **AND** the source link, when available, shows “Ver post” / “View post” for Instagram posts and reels, or “Ver evento” / “View event” for another event page; the composer action shows “Preguntar” / “Ask”
-- **AND** both actions have visible text and event-specific accessible names on all layouts, with targets at least 44 pixels tall and wide and both actions fitting on one line at 320 CSS pixels
+- **AND** both actions have visible text and event-specific accessible names on all layouts, with targets at least 44 pixels tall and wide and both actions fitting on one line at 320 CSS pixels; either action underlines only on hover or keyboard focus
 
 #### Scenario: A visitor starts a chat from the agenda
 - **WHEN** the visitor sends a first message from the homepage

@@ -108,7 +108,7 @@
 			<a
 				href={event.sourceUrl}
 				aria-label={sourceIsPost ? m.home_view_post_for_event({ name: event.name }) : m.home_view_event_named({ name: event.name })}
-				class="inline-flex min-h-11 min-w-11 items-center justify-center gap-1 px-1 whitespace-nowrap text-[#ccccd4] underline underline-offset-4 hover:text-white md:px-0"
+				class="inline-flex min-h-11 min-w-11 items-center justify-center gap-1 px-1 whitespace-nowrap text-[#ccccd4] underline-offset-4 hover:text-white hover:underline focus-visible:underline md:px-0"
 			>
 				<ArrowUpRight class="size-3.5 shrink-0" aria-hidden="true" /> <span>{sourceIsPost ? m.home_view_post() : m.home_view_event()}</span>
 			</a>
@@ -117,7 +117,7 @@
 			type="button"
 			aria-label={m.home_ask_event({ name: event.name })}
 			onclick={() => onAsk(event)}
-			class="inline-flex min-h-11 min-w-11 items-center justify-center gap-1 px-1 whitespace-nowrap text-[#d0ff36] hover:underline md:px-0"
+			class="inline-flex min-h-11 min-w-11 items-center justify-center gap-1 px-1 whitespace-nowrap text-[#d0ff36] underline-offset-4 hover:underline focus-visible:underline md:px-0"
 		>
 			<MessageCircle class="size-3.5 shrink-0" aria-hidden="true" /> <span>{m.home_ask()}</span>
 		</button>
