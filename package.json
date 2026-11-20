@@ -54,7 +54,7 @@
 		"test:property": "vitest run src/shared/lib/*properties.test.ts && node scripts/run-fuzz.mjs search",
 		"test:fuzz": "node scripts/run-fuzz.mjs jazzer",
 		"test:api": "node scripts/run-fuzz.mjs api",
-		"test:generative": "bun run test:property && bun run test:fuzz && bun run test:api"
+		"test:generative": "node scripts/run-fuzz.mjs search && bun run test:fuzz && bun run test:api"
 	},
 	"devDependencies": {
 		"@cloudflare/workers-types": "^5.20260901.1",

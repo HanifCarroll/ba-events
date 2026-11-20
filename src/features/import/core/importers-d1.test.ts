@@ -95,8 +95,7 @@ it.each(Object.entries(coordinators))('imports and updates %s on D1 and Vectoriz
   await db.prepare("INSERT INTO import_blocklist (id, pattern, target_field, source) VALUES ('b', 'promo', 'event_name', 'all')").run()
   const events = () => db.prepare('SELECT e.id, e.name, e.venue_id, e.location_hidden, e.location_tba, e.enrichment_status, e.search_document, e.embedding_version, e.categories, e.status, v.name AS venue_name FROM events e LEFT JOIN venues v ON v.id = e.venue_id ORDER BY e.starts_at').all<Record<string, unknown>>().then(r => r.results)
 
-  const catalog = d1Catalog(db, index)
-  const first = await run(catalog)
+  const first = await run(d1Catalog(db, index))
   let rows = await events()
   expect(first).toMatchObject({ eventsInserted: 3, eventsSkipped: 0 })
   assert.deepEqual(rows.map(row => row.name), ['Noche Sintética', 'Cena Privada Sintética', 'Feria Sintética'], 'the blocklisted event is filtered out')
@@ -114,15 +113,15 @@ it.each(Object.entries(coordinators))('imports and updates %s on D1 and Vectoriz
     assert.deepEqual(vector.metadata, { status: 'scheduled', starts_at: Date.parse((await db.prepare('SELECT starts_at FROM events WHERE id = ?').bind(row.id).first<string>('starts_at'))!) })
   }
 
-  // Second run: the same catalog changes nothing; then the host hides the second event's address.
+  // Each import starts with a fresh catalog, as the jobs Worker does.
   const embedsBefore = embeds
-  const second = await run(catalog)
+  const second = await run(d1Catalog(db, index))
   assert.equal(second.eventsInserted, 0)
   assert.equal(second.eventsUpdated, 0)
   assert.equal(embeds, embedsBefore, 'an unchanged event is not re-embedded')
 
   hiddenNow = true
-  await run(catalog)
+  await run(d1Catalog(db, index))
   rows = await events()
   assert.equal(rows.length, 3, 'still one row per event')
   const hidden = rows[1]

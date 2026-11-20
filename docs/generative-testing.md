@@ -22,18 +22,18 @@ The suite combines generated business histories, hostile parser inputs, and loca
 
 ## Run locally
 
-Use Node.js 24, Bun 1.3.14, Python 3.10+ and [uv](https://docs.astral.sh/uv/getting-started/installation/). `mise install` provides the pinned Bun, Node.js and uv.
+Use Node.js 24.18.0, Bun 1.3.14, Python 3.10+ and [uv](https://docs.astral.sh/uv/getting-started/installation/). `mise install` provides the pinned Bun, Node.js and uv.
 The lockfile pins `fast-check@4.10.2` and `@jazzer.js/core@4.0.0`. The API runner uses `uvx --from schemathesis==4.32.7`; uv installs it in an isolated cache. For a standalone CLI, run `uv tool install schemathesis==4.32.7`.
 
 ```sh
 bun install --frozen-lockfile
-bun run test:generative   # all three tools
+bun run test:generative   # isolated D1 search, Jazzer.js, and Schemathesis
 bun run test:property     # 8 unit properties plus isolated search transport property
 bun run test:fuzz         # 10,000 coverage-guided Jazzer.js executions
 bun run test:api          # 7 HTTP operations, up to 100 examples each plus explicit examples
 ```
 
-The three original input properties run 500 examples each. Business properties run 60–120 histories/data sets each; a history contains up to 20–30 operations. Search transport runs 120 generated cases plus explicit false/true/unspecified regressions. The dedicated GitHub Actions workflow runs the combined suite and retains reports, generated corpus and failures for seven days. Unit properties also run with the ordinary Vitest/Bun suites; the isolated search transport property runs through `test:property`.
+The three original input properties run 500 examples each. Business properties run 60–120 histories/data sets each; a history contains up to 20–30 operations. Search transport runs 120 generated cases plus explicit false/true/unspecified regressions. The dedicated GitHub Actions workflow runs the three isolated checks and retains reports, generated corpus, and failures for seven days. The eight unit properties run in the ordinary Vitest gate. The local `test:property` command still runs both the unit properties and the isolated search transport property.
 
 ## Isolation and limits
 
