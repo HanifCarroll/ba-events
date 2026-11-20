@@ -39,53 +39,52 @@ export function buildEventJsonLd(
 	eventUrl: string,
 	imageUrl: string
 ) {
-	const description = buildEventSummary(event);
 	const isFree = event.is_free || event.price === 0;
-	const venueName = event.venue_name || 'Venue';
+	const showVenue = !event.location_hidden && !event.location_tba;
+	const venueName = showVenue ? event.venue_name?.trim() || undefined : undefined;
+	const dateOnly = event.time_tba || event.is_all_day;
+	const localDate = (value: string) => new Date(value).toLocaleDateString('en-CA', { timeZone: BA_TIMEZONE });
+	const startDate = dateOnly ? localDate(event.starts_at) : event.starts_at;
+	const endDate = event.ends_at
+		? (dateOnly ? localDate(event.ends_at) : event.ends_at)
+		: (dateOnly ? startDate : undefined);
+	const status = {
+		scheduled: 'EventScheduled', past: 'EventScheduled', canceled: 'EventCancelled',
+		postponed: 'EventPostponed', pending_review: undefined
+	}[event.status];
 
-	const location = event.location_hidden
-		? {
-				'@type': 'Place',
-				name: venueName,
-				address: {
-					'@type': 'PostalAddress',
-					addressLocality: 'Buenos Aires',
-					addressCountry: 'AR'
-				}
-			}
-		: {
-				'@type': 'Place',
-				name: venueName,
-				address: {
-					'@type': 'PostalAddress',
-					addressLocality: 'Buenos Aires',
-					addressCountry: 'AR',
-					streetAddress: event.venue_address || undefined
-				}
-			};
-
-	const offers = {
-		'@type': 'Offer',
-		price: isFree ? '0' : String(event.price ?? ''),
-		priceCurrency: 'ARS',
-		url: event.ticket_url || event.link || eventUrl,
-		availability: 'https://schema.org/InStock'
-	};
+	// BA Tourism copies its info page into ticket_url even when it isn't an admission link.
+	const ticketUrl = event.source !== 'ba-tourism' && event.ticket_url?.trim();
+	const price = isFree ? 0 : event.price;
 
 	return {
 		'@context': 'https://schema.org',
 		'@type': 'Event',
 		name: event.name,
-		description,
-		startDate: event.time_tba
-			? new Date(event.starts_at).toLocaleDateString('en-CA', { timeZone: BA_TIMEZONE })
-			: event.starts_at,
-		endDate: event.time_tba ? undefined : event.ends_at || undefined,
+		description: buildEventSummary(event),
+		startDate,
+		endDate,
 		eventAttendanceMode: 'https://schema.org/OfflineEventAttendanceMode',
-		eventStatus: 'https://schema.org/EventScheduled',
+		eventStatus: status ? `https://schema.org/${status}` : undefined,
 		image: imageUrl,
 		url: eventUrl,
-		location,
-		offers
+		location: {
+			'@type': 'Place',
+			name: venueName,
+			address: {
+				'@type': 'PostalAddress',
+				addressLocality: 'Buenos Aires',
+				addressCountry: 'AR',
+				streetAddress: showVenue ? event.venue_address?.trim() || undefined : undefined
+			}
+		},
+		organizer: venueName ? {
+			'@type': 'Organization', name: venueName, url: event.venue_website?.trim() || undefined
+		} : undefined,
+		isAccessibleForFree: isFree || undefined,
+		offers: ticketUrl ? {
+			'@type': 'Offer', url: ticketUrl,
+			...(price != null ? { price, priceCurrency: 'ARS' } : {})
+		} : undefined
 	};
 }

@@ -157,6 +157,7 @@ export interface EventWithVenue extends Event {
   venue_name: string | null
   venue_neighborhood: Neighborhood | null
   venue_address: string | null
+  venue_website?: string | null
 }
 
 /** Explicit public event read shape shared by transport adapters. */
