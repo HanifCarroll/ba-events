@@ -5,7 +5,7 @@
  */
 import { Effect } from 'effect'
 import { importTry, ImportOperationError } from '../core/effect-utils.ts'
-import type { CollectionStore, IntakePolicy, Reservation, UnreviewedMedia } from './store.ts'
+import type { CollectionStore, IntakePolicy, MonthlyCharges, Reservation, UnreviewedMedia } from './store.ts'
 
 export type IntakeApi = {
   /** POST /intake/<operation> with a JSON body; resolves to the JSON answer, rejects with the API's error message. */
@@ -49,7 +49,7 @@ export function remoteCollection(api: IntakeApi): CollectionStore {
   return {
     policy: () => op('intake.policy', () => api.call<IntakePolicy>('collection/policy')),
     reserveCollection: () => op('intake.reserve', () => api.call<Reservation>('collection/reserve')),
-    updateRun: (id, patch) => op(`intake.${patch.state}`, () => api.call('collection/run', { id, patch })).pipe(Effect.asVoid),
+    updateRun: (id, patch) => op(`intake.${patch.state}`, async () => (await api.call<{ month?: MonthlyCharges }>('collection/run', { id, patch })).month),
     latestObservation: postId => op('intake.latest', () => api.call<{ id: string; content_hash: string } | null>('collection/latest', { post_id: postId })),
     touchObservation: id => op('intake.seen', () => api.call('collection/seen', { id })).pipe(Effect.asVoid),
     upsertObservation: row => op('intake.observe', () => api.call<{ id: string }>('collection/observe', row)),

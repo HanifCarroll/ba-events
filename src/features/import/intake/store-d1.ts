@@ -167,9 +167,17 @@ export function d1Intake({ db, evidence, artwork, vectors }: IntakeBindings, sit
     updateRun: (id, patch) => d1(`intake.${patch.state}`, async () => {
       const values = { ...patch, ...'completed_at' in patch ? { completed_at: iso(patch.completed_at) } : {} }
       const columns = Object.keys(values)
-      const result = await db.prepare(`UPDATE intake_runs SET ${columns.map(column => `${column} = ?`).join(', ')} WHERE id = ?`)
-        .bind(...Object.values(values), id).run()
-      if (!result.meta.changes) throw new Error('Collection run not found')
+      const update = db.prepare(`UPDATE intake_runs SET ${columns.map(column => `${column} = ?`).join(', ')} WHERE id = ?`)
+        .bind(...Object.values(values), id)
+      if (patch.state === 'succeeded') {
+        const [result, month] = await db.batch<{ charged_usd: number; unmeasured_runs: number }>([update, db.prepare(`
+          SELECT COALESCE(SUM(charged_usd), 0) AS charged_usd, COUNT(*) - COUNT(charged_usd) AS unmeasured_runs
+          FROM intake_runs WHERE substr(local_date, 1, 7) = (SELECT substr(local_date, 1, 7) FROM intake_runs WHERE id = ?)`)
+          .bind(id)])
+        if (!result.meta.changes) throw new Error('Collection run not found')
+        return month.results[0]
+      }
+      if (!(await update.run()).meta.changes) throw new Error('Collection run not found')
     }),
     latestObservation: postId => d1('intake.latest', () => first<{ id: string; content_hash: string }>(db.prepare(
       'SELECT id, content_hash FROM intake_observations WHERE post_id = ? ORDER BY observed_at DESC LIMIT 1').bind(postId))),

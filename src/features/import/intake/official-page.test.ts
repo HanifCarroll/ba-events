@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Effect } from 'effect'
-import { normalizePageText, officialSites, publicPageUrl, readOfficialPage, siteOf, verifyOfficialPagesEffect, visibleText } from './official-page.ts'
+import { readFileSync } from 'node:fs'
+import { normalizePageText, officialSites, publicPageUrl, readOfficialPage, renderedPageRead, siteOf, verifyOfficialPagesEffect, visibleText } from './official-page.ts'
+
+const fixture = (name: string) => readFileSync(new URL(`./fixtures/${name}.html`, import.meta.url), 'utf8')
 
 const page = (body: string, init: ResponseInit = {}) => new Response(body, { status: 200, headers: { 'content-type': 'text/html; charset=utf-8' }, ...init })
 const readHtml = (html: string) => (url: string, sites: ReadonlySet<string>) =>
@@ -94,6 +97,79 @@ describe('official-page evidence', () => {
     expect(await verifyShow(show, `<title>${officialQuote}</title><h1>${show}</h1>`)).toEqual([
       `Official page evidence must be an excerpt of the page's visible text: ${officialUrl}`,
     ])
+  })
+
+  it('skips a site-name H1, then uses the next visible H1 or the show portion of the title', async () => {
+    const header = `<title>Sol y Luna - Bolsa Sintética</title><header><h1>Bolsa Sintética</h1></header><p>${officialQuote}</p>`
+    expect(await verifyShow('Sol + Luna', header)).toEqual([])
+    expect(await verifyShow('Sol + Luna', `${header}<h1 hidden>Otra obra oculta</h1><h1>Sol y Luna</h1>`)).toEqual([])
+    expect(await verifyShow('Sol + Luna', `${header}<h1>Otra obra</h1>`)).toEqual([
+      `Official page does not name "Sol + Luna" (page title: "Sol y Luna - Bolsa Sintética"; H1: "Otra obra"): ${officialUrl}`,
+    ])
+    const og = `<title>Sol y Luna</title><meta property="og:site_name" content="Bolsa Sintética"><h1>Bolsa Sintética</h1><p>${officialQuote}</p>`
+    expect(await verifyShow('Sol + Luna', og)).toEqual([])
+    const conflicting = `<meta property="og:site_name" content="BS">${header}`
+    expect(await verifyShow('Sol + Luna', `${conflicting}<h1>Sol y Luna</h1>`)).toEqual([])
+    expect((await verifyShow('Sol + Luna', `${conflicting}<h1>Otra obra</h1>`))[0]).toContain('H1: "Otra obra"')
+    expect(await verifyShow('Sol + Luna', `<title>Bolsa Sintética - Sol y Luna</title><meta property="og:site_name" content="Bolsa Sintética"><h1>Sol y Luna</h1><h1>Agenda</h1><p>${officialQuote}</p>`)).toEqual([])
+    const logo = '<h1><img src="/logo.svg" alt="Bolsa Sintética"></h1>'
+    expect(await verifyShow('Sol + Luna', `<title>Sol y Luna</title>${logo}<p>${officialQuote}</p>`)).toEqual([])
+    expect(await verifyShow('Sol + Luna', `${logo}<h1>Sol y Luna</h1><p>${officialQuote}</p>`)).toEqual([])
+  })
+
+  it('confirms which heading is visible after a styled site header is skipped', async () => {
+    const title = 'Sol y Luna - Bolsa Sintética'
+    const header = `<title>${title}</title><h1>Bolsa Sintética</h1>`
+    const actual = `${header}<h1>Otra obra</h1><p>${officialQuote}</p>`
+    const html = `<style>.mobile-only { display: none }</style>${header}<h1 class="mobile-only">Sol y Luna</h1><h1>Otra obra</h1><p>${officialQuote}</p>`
+    const render = vi.fn(async () => ({ ...await readHtml(actual)(officialUrl, sites), url: officialUrl }))
+    expect(await Effect.runPromise(verifyOfficialPagesEffect([evidence(officialUrl, officialQuote)], { ...facts, name: 'Sol + Luna' }, readHtml(html), render)))
+      .toEqual([`Official page does not name "Sol + Luna" (page title: "${title}"; H1: "Otra obra"): ${officialUrl}`])
+    expect(render).toHaveBeenCalledTimes(1)
+  })
+
+  it('only renders after a missing excerpt or an unreadable page and reuses that render for later evidence', async () => {
+    const html = fixture('official-page-rendered')
+    const makeRenderer = (rendered = html, url = officialUrl) => vi.fn(async (_url: string, _sites: ReadonlySet<string>, _excerpts: readonly RegExp[]) =>
+      ({ ...await readHtml(rendered)(url, sites), url }))
+    const render = makeRenderer()
+    const evidenceItems = [evidence(officialUrl, officialQuote), evidence(officialUrl, 'Teatro Sintético, Pasaje Ficticio 1234', ['venue'])]
+    expect(await Effect.runPromise(verifyOfficialPagesEffect(evidenceItems, facts, readHtml(SHOWTIMES), render))).toEqual([])
+    expect(render).not.toHaveBeenCalled()
+    expect(await Effect.runPromise(verifyOfficialPagesEffect(evidenceItems, facts, readHtml(fixture('official-page-shell')), render))).toEqual([])
+    expect(render).toHaveBeenCalledTimes(1)
+    expect(await Effect.runPromise(verifyOfficialPagesEffect([...evidenceItems].reverse(), facts, readHtml('<body></body>'), render))).toEqual([])
+    expect(render).toHaveBeenCalledTimes(2)
+    for (const [, , excerpts] of render.mock.calls) {
+      expect(excerpts).toHaveLength(2)
+      for (const { excerpt } of evidenceItems) expect(excerpts.some(regex => regex.test(normalizePageText(excerpt)))).toBe(true)
+    }
+    for (const prefix of ['OCULTO', 'OTRO', 'CARROUSEL', 'TRANSPARENTE']) {
+      const excerpt = `${prefix} 23 NOVIEMBRE 21:00`
+      expect(await Effect.runPromise(verifyOfficialPagesEffect([evidence(officialUrl, excerpt)], facts, readHtml('<body></body>'), render)))
+        .toEqual([`Official page evidence must be an excerpt of the page's visible text: ${officialUrl}`])
+    }
+    const wrong = makeRenderer(html.replace('Forever Sintético', 'Otra obra'))
+    expect(await Effect.runPromise(verifyOfficialPagesEffect([evidenceItems[0]], facts, readHtml('<body></body>'), wrong)))
+      .toEqual([`Official page does not name "Forever Sintético" (page title: "Sala de Prueba"; H1: "Otra obra"): ${officialUrl}`])
+    const denied = vi.fn(async () => ({ ...await readHtml(html)(officialUrl, sites), url: 'https://unapproved.example.net/event' }))
+    expect((await Effect.runPromise(verifyOfficialPagesEffect([evidenceItems[0]], facts, readHtml('<body></body>'), denied)))[0])
+      .toContain('redirected to unapproved.example.net')
+    const wall = vi.fn(async () => ({ visible: `Verify you are human: ${officialQuote}`, title: 'Just a moment...', h1: facts.name, url: officialUrl }))
+    expect((await Effect.runPromise(verifyOfficialPagesEffect([evidenceItems[0]], facts, readHtml('<body></body>'), wall)))[0])
+      .toContain('Official page could not be read')
+  })
+
+  it('does not combine an earlier date with an address added after hydration', async () => {
+    const address = 'Teatro Sintético, Pasaje Ficticio 1234'
+    const staticPage = readHtml(`<h1>${facts.name}</h1><p>${officialQuote}</p>`)
+    const renderedPage = vi.fn(async () => ({ h1: facts.name, title: null, visible: address, url: officialUrl }))
+    const items = [evidence(officialUrl, officialQuote), evidence(officialUrl, address, ['venue'])]
+    for (const citations of [items, [...items].reverse()]) {
+      expect(await Effect.runPromise(verifyOfficialPagesEffect(citations, facts, staticPage, renderedPage)))
+        .toEqual([`Official page evidence must be an excerpt of the page's visible text: ${officialUrl}`])
+    }
+    expect(renderedPage).toHaveBeenCalledTimes(2)
   })
 
   it('ignores a sidebar recommendation and later H1s when the primary show differs', async () => {
@@ -274,11 +350,17 @@ describe('official-page evidence', () => {
         Dates: dates, description: 'OCULTO 28/11/2026' },
         related: [{ id: 17, name: 'OTRA OBRA 28/11/2026' }] } },
     }
-    return `<h1>${title}</h1><p hidden>OCULTO 22:00</p>${extra}
+    const startLine = id === '17' ? CAMARIN_EXCERPT : 'Empieza el sáb 21 de nov 2026 22:00 - 23:15 hs'
+    return `<h1>${title}</h1><p>${startLine}</p><p hidden>OCULTO 22:00</p><footer><a href="https://fanz.com.ar">Fanz</a></footer>${extra}
       <script type="application/json" id="__NEXT_DATA__">${JSON.stringify(data)}</script>`
   }
-  const camarinRead = (fixture: string) => (url: string, sites: ReadonlySet<string>) =>
-    readOfficialPage(url, sites, (async () => page(fixture)) as typeof fetch)
+  const camarinRead = readHtml
+  const fanzJson = (html: string) => /<script[^>]*>(.*)<\/script>/.exec(html)?.[1] ?? ''
+  const camarinRender = (html: string) => async (url: string, sites: ReadonlySet<string>) => {
+    const { title, visible, h1 } = await camarinRead(html)(url, sites)
+    return renderedPageRead(url, { url, title: title ?? '', visible, headings: h1 ? [h1] : [], siteName: null,
+      fanzLinks: ['https://fanz.com.ar'], fanzJson: fanzJson(html), singleDate: '', challenge: false })
+  }
 
   it('reads only El Camarín’s URL-selected date from the current Fanz event, not other JSON or hidden text', async () => {
     vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-11-20T12:00:00Z'))
@@ -291,13 +373,14 @@ describe('official-page evidence', () => {
     expect(read).toMatchObject({ visible: expect.stringContaining('Forever Sintético'), title: null,
       selected: { date: '2026-11-28', time: '22:00', text: excerpt, title: facts.name } })
     expect(JSON.stringify(read)).not.toMatch(/sáb 21|OCULTO|OTRA OBRA/)
-    const early = (async () => page(fixture.replaceAll('2026-11-29T0', '2026-12-05T0'))) as typeof fetch
+    const early = (async () => page(fixture.replaceAll('2026-11-29T0', '2026-12-05T0')
+      .replace(excerpt, 'Empieza el vie 04 de dic 2026 22:00 - 23:15 hs'))) as typeof fetch
     expect(await readOfficialPage(url, allowed, early)).toMatchObject({
       selected: { date: '2026-12-04', text: 'Empieza el vie 04 de dic 2026 22:00 - 23:15 hs' },
     })
     const verify = (time: string, date = '2026-11-28', quote = excerpt, fields?: Array<'date' | 'time' | 'venue'>) => Effect.runPromise(
       verifyOfficialPagesEffect([evidence(url, quote, fields)], { ...facts, date, time, sites: allowed },
-        (target, sites) => readOfficialPage(target, sites, fetcher)))
+        (target, sites) => readOfficialPage(target, sites, fetcher), camarinRender(fixture)))
     expect(await verify('22:00')).toEqual([])
     for (const time of ['23:15', '22:15']) {
       expect(await verify(time)).toEqual([`Official page excerpt does not state the performance start time ${time}: ${url}`])
@@ -312,9 +395,66 @@ describe('official-page evidence', () => {
     for (const unsupported of [url.replace('17', '16'), url.replace('/42', '/99'), `${url}&eventDateId=16`]) {
       expect(await readOfficialPage(unsupported, allowed, fetcher), unsupported).toMatchObject({ selected: null })
     }
-    for (const generic of [url.split('?')[0], url.replace('elcamarindelasmusas.com', 'teatro.example.org')]) {
-      expect((await readOfficialPage(generic, officialSites({ website: generic }), fetcher)).selected, generic).toBeUndefined()
-    }
+    expect((await readOfficialPage(url.split('?')[0], allowed, fetcher)).selected).toBeUndefined()
+    const venueUrl = 'https://teatro.example.org/event/42-synthetic-show?eventDateId=17'
+    const sluggified = fixture.replace('"eventId":"42"', '"eventId":"42-synthetic-show"')
+    expect((await camarinRead(sluggified)(venueUrl, sites)).selected).toMatchObject({ date: '2026-11-28', time: '22:00' })
+    const unbranded = sluggified.replace('https://fanz.com.ar', 'https://not-fanz.example.org')
+    expect((await camarinRead(unbranded)(venueUrl, sites)).selected).toMatchObject({ date: '2026-11-28', time: '22:00' })
+    expect((await camarinRead(unbranded.replace('"Dates":', '"changedDates":'))(venueUrl, sites)).selected).toBeNull()
+    expect((await camarinRead(unbranded.replace('"page":"/event/[eventId]"', '"page":"/other"'))(venueUrl, sites)).selected).toBeUndefined()
+    vi.mocked(Date.now).mockReturnValue(Date.parse('2026-11-29T01:00:00Z'))
+    expect(await Effect.runPromise(verifyOfficialPagesEffect([evidence(venueUrl, CAMARIN_EXCERPT)],
+      { ...facts, date: '2026-11-28', time: '22:00' }, readHtml(unbranded))))
+      .toEqual([`Official page date or time evidence must quote the selected future performance: ${venueUrl}`])
+  })
+
+  it('does not accept Fanz JSON or a hidden date-picker line as visible evidence', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-11-20T12:00:00Z'))
+    const raw = camarinPage().replace(`<p>${CAMARIN_EXCERPT}</p>`, `<p hidden>${CAMARIN_EXCERPT}</p>`)
+    const read = readHtml(raw)
+    const verify = (renderPage?: Parameters<typeof verifyOfficialPagesEffect>[3]) => Effect.runPromise(verifyOfficialPagesEffect(
+      [evidence(CAMARIN_URL, CAMARIN_EXCERPT)], { ...facts, sites: CAMARIN_SITES, date: '2026-11-28', time: '22:00' }, read, renderPage))
+    expect(await verify()).toEqual([`Official page date or time evidence must quote the selected future performance: ${CAMARIN_URL}`])
+    expect(await verify(camarinRender(camarinPage()))).toEqual([])
+  })
+
+  it('verifies a Fanz single-date card only from the matching rendered start line, before start', async () => {
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-11-20T12:00:00Z'))
+    const url = 'https://teatro.example.org/event/42-synthetic-show?eventDateId=17'
+    const line = 'Sábado, 28 de Noviembre\n22:00 - 23:15 hs'
+    const raw = camarinPage().replace(`<p>${CAMARIN_EXCERPT}</p>`, `<style>.inactive { display: none }</style>
+      <div class="styles_singleDateContainer__synthetic inactive">${line}</div>`).replace('"eventId":"42"', '"eventId":"42-synthetic-show"')
+      .replace('{"id":16,"start":"2026-11-22T01:00:00.000Z","end":"2026-11-22T02:15:00.000Z"},', '')
+    const verify = (shown: string, quote = line, at = '22:00', h1 = facts.name) => Effect.runPromise(verifyOfficialPagesEffect(
+      [evidence(url, quote)], { ...facts, date: '2026-11-28', time: at }, readHtml(raw), async () => renderedPageRead(url, {
+        url, visible: `${facts.name}\n${line}`, title: facts.name, headings: [h1], siteName: null, fanzLinks: ['https://fanz.com.ar'],
+        fanzJson: fanzJson(raw), singleDate: shown, challenge: false,
+      })))
+    const missing = [`Official page date or time evidence must quote the selected future performance: ${url}`]
+    expect(await verify(line)).toEqual([])
+    expect(await verify('')).toEqual(missing) // CSS-hidden in static HTML, and unrelated body text cannot stand in for the rendered card
+    expect(await verify(line, line, '23:15')).toEqual([`Official page excerpt does not state the performance start time 23:15: ${url}`])
+    expect((await verify(line, line, '22:00', 'Otra obra'))[0]).toContain('H1: "Otra obra"')
+    clock.mockReturnValue(Date.parse('2026-11-29T01:00:00Z'))
+    expect(await verify(line)).toEqual(missing)
+  })
+
+  it('uses ordinary verification for a page that merely shares the URL shape', async () => {
+    const url = 'https://teatro.example.org/event/42?eventDateId=17'
+    expect(await Effect.runPromise(verifyOfficialPagesEffect([evidence(url, officialQuote)], facts, readHtml(SHOWTIMES)))).toEqual([])
+  })
+
+  it('does not downgrade a selected performance to a general schedule after redirect', async () => {
+    const url = 'https://teatro.example.org/event/42?eventDateId=17'
+    const final = 'https://teatro.example.org/schedule'
+    const html = `<h1>${facts.name}</h1><p>${officialQuote}</p>`
+    const fetcher = ((requested: string) => Promise.resolve(requested === url
+      ? new Response(null, { status: 302, headers: { location: final } }) : page(html))) as typeof fetch
+    expect((await readOfficialPage(url, sites, fetcher)).selected).toBeNull()
+    expect(await Effect.runPromise(verifyOfficialPagesEffect([evidence(url, officialQuote)], facts,
+      (target, sites) => readOfficialPage(target, sites, fetcher), async () => ({ ...await readHtml(html)(final, sites), url: final }))))
+      .toEqual([`Official page date or time evidence must quote the selected future performance: ${url}`])
   })
 
   it('does not let ordinary El Camarín page text stand in for the selected performance', async () => {
@@ -328,17 +468,17 @@ describe('official-page evidence', () => {
 
   it('binds the selected performance to its own title, not another show appearing on the page', async () => {
     vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-11-20T12:00:00Z'))
-    const read = camarinRead(camarinPage('17', 'Otra Obra Sintética', '<aside>También en cartel: Forever Sintético</aside>'))
+    const html = camarinPage('17', 'Otra Obra Sintética', '<aside>También en cartel: Forever Sintético</aside>')
     expect(await Effect.runPromise(verifyOfficialPagesEffect([evidence(CAMARIN_URL, CAMARIN_EXCERPT)],
-      { ...facts, date: '2026-11-28', time: '22:00', sites: CAMARIN_SITES }, read)))
+      { ...facts, date: '2026-11-28', time: '22:00', sites: CAMARIN_SITES }, camarinRead(html), camarinRender(html))))
       .toEqual([`Official page selected performance is not for "${facts.name}" (page title: "Otra Obra Sintética"): ${CAMARIN_URL}`])
   })
 
   it('keeps a standalone y significant in the title of a selected El Camarín performance', async () => {
     vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-11-20T12:00:00Z'))
-    const read = camarinRead(camarinPage('17', 'María y José'))
+    const html = camarinPage('17', 'María y José')
     const verify = (name: string) => Effect.runPromise(verifyOfficialPagesEffect([evidence(CAMARIN_URL, CAMARIN_EXCERPT)],
-      { ...facts, name, date: '2026-11-28', time: '22:00', sites: CAMARIN_SITES }, read))
+      { ...facts, name, date: '2026-11-28', time: '22:00', sites: CAMARIN_SITES }, camarinRead(html), camarinRender(html)))
     expect(await verify('Maria y Jose')).toEqual([])
     expect(await verify('María José')).toEqual([
       `Official page selected performance is not for "María José" (page title: "María y José"): ${CAMARIN_URL}`,
@@ -361,7 +501,7 @@ describe('official-page evidence', () => {
     // Trimmed from plateanet.com (2026-11-18): Incapsula answers automated readers with this stub.
     const incapsula = '<html><head><META NAME="robots" CONTENT="noindex,nofollow"><script src="/_Incapsula_Resource?SWJIYLWA=0"></script><body></body></html>'
     const cloudflare = '<html><head><title>Just a moment...</title></head><body><p>Verificando 23 noviembre</p><script>window._cf_chl_opt = {}</script></body></html>'
-    for (const html of [incapsula, cloudflare, '<html><body> </body></html>']) {
+    for (const html of [incapsula, cloudflare, cloudflare.replace('Verificando', 'Verificando '.repeat(30)), '<html><body> </body></html>']) {
       const reasons = await Effect.runPromise(verifyOfficialPagesEffect([evidence('https://www.plateanet.com/obra/1', 'LUNES 23 NOVIEMBRE 21:00')],
         facts, (url, allowed) => readOfficialPage(url, allowed, (async () => page(html)) as unknown as typeof fetch)))
       expect(reasons).toEqual(['Official page could not be read: https://www.plateanet.com/obra/1 (the site shows a bot check or an empty page to automated readers; cite another official page)'])

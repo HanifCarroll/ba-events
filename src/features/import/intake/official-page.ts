@@ -12,6 +12,12 @@ const MAX_REDIRECTS = 3
 const MIN_EXCERPT = 8
 // A challenge page shows at most a line or two ("Verifying you are human…"); any event page with a name, date and venue is longer.
 const CHALLENGE_TEXT = 200
+const UNREADABLE = 'the site shows a bot check or an empty page to automated readers; cite another official page'
+const MISSING_EXCERPT = "Official page evidence must be an excerpt of the page's visible text"
+const MISSING_PERFORMANCE = 'Official page date or time evidence must quote the selected future performance'
+const UNCONFIRMED_HEADING = 'Official page needs its rendered heading to confirm the show name'
+const challengeTitle = (title: string | null) => /^(?:Just a moment\.{3}|Request Rejected)$/i.test(title ?? '')
+class RenderableReadError extends Error {}
 
 /** Public HTTPS host names only: no IP literals, no single-label or local names. */
 export function publicPageUrl(value: string): boolean {
@@ -53,6 +59,12 @@ export const officialPageAllowed = (url: string, sites: ReadonlySet<string>) => 
   const site = siteOf(new URL(url).hostname)
   return !NEVER.has(site) && sites.has(site)
 }
+export function requireOfficialPageUrl(url: string, sites: ReadonlySet<string>, redirected: boolean) {
+  if (!publicPageUrl(url)) throw new Error('not a public HTTPS page')
+  const { hostname } = new URL(url)
+  if (redirected && siteOf(hostname) === 'queue-it.net') throw new Error('the page sits behind a waiting room; cite another official page')
+  if (!officialPageAllowed(url, sites)) throw new Error(`${redirected ? 'redirected to' : 'is on'} ${hostname}, which is not the venue's, organizer's or a ticket seller's site`)
+}
 
 /** Accent- and case-insensitive, with every whitespace run as one space: words and numbers keep their boundaries. */
 export const normalizePageText = (value: string) => value.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replace(/\s+/gu, ' ').trim()
@@ -90,20 +102,45 @@ function revealStreamedSegments($: CheerioAPI) {
   }
 }
 
-type SelectedPerformance = { text: string; date: string; time: string; title: string }
-type PageRead = { visible: string; title: string | null; h1: string | null; selected?: SelectedPerformance | null }
-const camarinPerformanceUrl = (url: URL) => /^(?:www\.)?elcamarindelasmusas\.com$/.test(url.hostname) &&
-  url.pathname.startsWith('/event/') && url.searchParams.has('eventDateId')
+type SelectedPerformance = { text: string; date: string; time: string; title: string; confirmed: boolean }
+type PageRead = { visible: string; title: string | null; h1: string | null; titleName?: string;
+  identityNeedsRender?: boolean; selected?: SelectedPerformance | null }
 
-/** Fanz renders El Camarín's selected performance in the browser, from the matching event and date IDs. */
-function selectedCamarinPerformance($: CheerioAPI, url: URL): SelectedPerformance | null {
-  const eventId = /^\/event\/(\d+)\/?$/.exec(url.pathname)?.[1]
-  const [dateId, ...otherDates] = url.searchParams.getAll('eventDateId')
-  if (!eventId || !dateId || !/^\d+$/.test(dateId) || otherDates.length) return null
+function identity(title: string | null, headings: readonly string[], siteName?: string | null, hasStyles = false) {
+  const titleParts = title?.match(/^(.*) (?:-|\|) (.+)$/)
+  const suffix = normalizePageText(titleParts?.[2] ?? '')
+  const site = normalizePageText(siteName ?? '')
+  const [first, next] = headings.filter(text => text.trim())
+  const heading = normalizePageText(first ?? '')
+  // An H1 whose text equals the site's own name (it equals the part of the page title after the last " - " / " | " separator, or the og:site_name) is the site header and is skipped; the next visible H1 is then the page's identity, and the title counts only when no other H1 remains.
+  // A suffix is not the site name in a title explicitly formatted as "Site name - Show name".
+  const suffixIsHeader = suffix && suffix === heading && normalizePageText(titleParts?.[1] ?? '') !== site
+  const skip = heading && (heading === site || suffixIsHeader)
+  return { title, h1: (skip ? next : first) ?? null,
+    ...(titleParts && suffix && (suffix === site || suffixIsHeader) ? { titleName: titleParts[1] } : {}),
+    ...(skip && hasStyles ? { identityNeedsRender: true } : {}) }
+}
+
+/** Use the matching Fanz event/date IDs to bind the start time, never JSON descriptions or other performances. */
+function selectedFanzPerformance(url: URL, requested: URL, fanz: boolean, json: string,
+  shown: { visible: string; singleDate: string; rendered: boolean }): SelectedPerformance | null | undefined {
+  if (![url, requested].some(target => target.pathname.startsWith('/event/') && target.searchParams.has('eventDateId'))) return undefined
+  const originalSelection = requested.searchParams.getAll('eventDateId')
+  const selection = url.searchParams.getAll('eventDateId')
+  // An explicit selection that disappears or changes on redirect cannot fall back to the general schedule.
+  if (originalSelection.length && JSON.stringify(originalSelection) !== JSON.stringify(selection)) return null
+  // Fanz can hide its footer branding; its white-label assets and Next event data can identify it too.
+  let identified = fanz || /"https:\/\/(?:white-label-(?:logos|banners)|event-banners)-fanz\.s3\.amazonaws\.com\//.test(json)
   try {
-    const data = JSON.parse($('script#__NEXT_DATA__[type="application/json"]:not([src])').text())
+    const data = JSON.parse(json)
     const event = data?.props?.pageProps?.event
-    if (data?.page !== '/event/[eventId]' || data.query?.eventId !== eventId || data.query?.eventDateId !== dateId ||
+    identified ||= data?.page === '/event/[eventId]' && (!!data.props?.pageProps?.whiteLabel ||
+      typeof event?.isExternal === 'boolean' && typeof event?.timezone === 'string' && ('Dates' in event || 'isFinished' in event))
+    if (!identified) return undefined
+    const [, slug, eventId] = /^\/event\/((\d+)(?:-[^/]+)?)\/?$/.exec(url.pathname) ?? []
+    const [dateId, ...otherDates] = selection
+    if (!eventId || !dateId || !/^\d+$/.test(dateId) || otherDates.length) return null
+    if (data?.page !== '/event/[eventId]' || data.query?.eventId !== slug || data.query?.eventDateId !== dateId ||
         event?.id !== Number(eventId) || typeof event.title !== 'string' || !event.title.trim() || event.isExternal !== false || !Array.isArray(event.Dates) ||
         !['America/Buenos_Aires', 'America/Argentina/Buenos_Aires'].includes(event.timezone)) return null
     const dates: Array<{ id?: unknown; start?: unknown; end?: unknown }> = event.Dates
@@ -117,8 +154,15 @@ function selectedCamarinPerformance($: CheerioAPI, url: URL): SelectedPerformanc
     const date = format(start, 'yyyy-MM-dd')
     // shortcut: only render the observed same-day range; add other formats once verified in the browser.
     if (date !== format(end, 'yyyy-MM-dd')) return null
-    return { date, title: event.title, time: format(start, 'HH:mm'), text: `Empieza el ${format(start, "EEE dd 'de' MMM yyyy HH:mm")} - ${format(end, 'HH:mm')} hs` }
-  } catch { return null } // Missing or changed page data cannot verify the selected date or time.
+    const time = format(start, 'HH:mm')
+    const range = `${time} - ${format(end, 'HH:mm')} hs`
+    const picker = `Empieza el ${format(start, "EEE dd 'de' MMM yyyy HH:mm")} - ${format(end, 'HH:mm')} hs`
+    // A single-date card has a different visible line; only its own date-and-start block can verify it.
+    const card = `${format(start, "EEEE, d 'de' MMMM")} ${range}`
+    const text = normalizePageText(shown.singleDate) === normalizePageText(card) ? shown.singleDate
+      : normalizePageText(shown.visible).includes(normalizePageText(picker)) ? picker : ''
+    return { date, title: event.title, time, text, confirmed: shown.rendered }
+  } catch { return identified ? null : undefined } // Missing Fanz data cannot verify the selection.
 }
 
 export function visibleText(html: string): string {
@@ -130,7 +174,7 @@ export function visibleText(html: string): string {
 function prepareVisibleDom($: CheerioAPI) {
   revealStreamedSegments($)
   $('head, title, script, style, noscript, template, svg, iframe, [hidden], [aria-hidden="true"]').remove()
-  $('[style]').filter((_, element) => /display\s*:\s*none|visibility\s*:\s*hidden/i.test($(element).attr('style') ?? '')).remove()
+  $('[style]').filter((_, element) => /display\s*:\s*none|visibility\s*:\s*hidden|(?:^|;)\s*opacity\s*:\s*0(?:\.0+)?(?=\s|;|!|$)/i.test($(element).attr('style') ?? '')).remove()
   // A space at every element boundary: <span>LUNES</span><span>23</span> reads "LUNES 23", never "LUNES23".
   $('*').each((_, element) => { $(element).prepend(' ').append(' ') })
 }
@@ -140,21 +184,22 @@ export async function readOfficialPage(url: string, sites: ReadonlySet<string>, 
   const signal = AbortSignal.timeout(TIMEOUT_MS)
   let current = url
   for (let hop = 0; ; hop++) {
-    if (!publicPageUrl(current)) throw new Error('not a public HTTPS page')
-    if (!officialPageAllowed(current, sites)) throw new Error(`${hop ? 'redirected to' : 'is on'} ${new URL(current).hostname}, which is not the venue's, organizer's or a ticket seller's site`)
+    requireOfficialPageUrl(current, sites, hop > 0)
     const response = await fetcher(current, { redirect: 'manual', signal,
       headers: { Accept: 'text/html,application/xhtml+xml;q=0.9,text/plain;q=0.5', 'User-Agent': 'BA Eventos intake (+https://baeventos.com)' } })
     const location = response.headers.get('location')
     if (response.status >= 300 && response.status < 400 && location) {
       await response.body?.cancel()
-      const next = new URL(location, current)
-      if (siteOf(next.hostname) === 'queue-it.net') throw new Error('the page sits behind a waiting room; cite another official page')
       if (hop >= MAX_REDIRECTS) throw new Error('too many redirects')
-      current = next.toString()
+      current = new URL(location, current).toString()
       continue
     }
     const type = response.headers.get('content-type') ?? ''
-    if (!response.ok || !response.body) { await response.body?.cancel(); throw new Error(`answered ${response.status}`) }
+    if (!response.ok || !response.body) {
+      await response.body?.cancel()
+      if ([403, 503].includes(response.status)) throw new RenderableReadError(`answered ${response.status}`)
+      throw new Error(`answered ${response.status}`)
+    }
     if (!/^(text\/html|application\/xhtml\+xml|text\/plain)\b/i.test(type)) { await response.body.cancel(); throw new Error('not an HTML page') }
     if (Number(response.headers.get('content-length')) > MAX_BYTES) { await response.body.cancel(); throw new Error('page exceeds 2 MB') }
     const reader = response.body.getReader(); const chunks: Uint8Array[] = []; let length = 0
@@ -172,24 +217,40 @@ export async function readOfficialPage(url: string, sites: ReadonlySet<string>, 
     try { decoder = new TextDecoder(charset ?? 'utf-8') } catch { decoder = new TextDecoder('utf-8') }
     const text = decoder.decode(bytes)
     const $ = /^text\/plain/i.test(type) ? null : load(text)
-    const source = new URL(current)
-    const camarin = camarinPerformanceUrl(source)
-    const selected = $ && camarin ? selectedCamarinPerformance($, source) : null
+    const fanz = $ ? fanzLink($('a[href]').map((_, element) => $(element).attr('href')).get()) : false
+    const fanzJson = $?.('script#__NEXT_DATA__[type="application/json"]:not([src])').text() ?? ''
     // Cheerio's slim parser leaves the document title in place when optional head tags are omitted.
     const title = ($ && $('head > title, html > title').add($.root().children('title')).first().text().replace(/\s+/g, ' ').trim()) || null
+    const site = $?.('meta[property="og:site_name"]').first().attr('content')
+    const hasStyles = !!$?.('style, link[rel~="stylesheet"], link[as="style"]').length
     if ($) prepareVisibleDom($)
-    const h1 = $?.('h1').first().text().replace(/\s+/g, ' ').trim() || null
+    const headings = $?.('h1').map((_, element) => $(element).text().replace(/\s+/g, ' ').trim()).get() ?? []
     const visible = $ ? $.root().text() : text
     // An empty page (Incapsula's stub) or a short Cloudflare challenge page. A protection script alone proves nothing:
     // Imperva and Cloudflare inject theirs into real pages too.
     const shown = visible.replace(/\s+/g, ' ').trim().length
-    if (!shown || shown < CHALLENGE_TEXT && /<title>\s*Just a moment\.\.\.\s*<\/title>|cf[-_]chl/i.test(text)) {
-      throw new Error('the site shows a bot check or an empty page to automated readers; cite another official page')
+    if (!shown || challengeTitle(title) || shown < CHALLENGE_TEXT && /cf[-_]chl|incapsula incident id/i.test(text)) {
+      throw new RenderableReadError(UNREADABLE)
     }
-    return { visible, title, h1, ...(camarin ? { selected } : {}) }
+    const cards = $?.(FANZ_SINGLE_DATE)
+    const selected = selectedFanzPerformance(new URL(current), new URL(url), fanz, fanzJson,
+      { visible, singleDate: cards?.length === 1 ? cards.text() : '', rendered: false })
+    return { visible, ...identity(title, headings, site, hasStyles), ...(selected !== undefined ? { selected } : {}) }
   }
 }
 export type ReadPage = (url: string, sites: ReadonlySet<string>) => Promise<PageRead>
+export type RenderPage = (url: string, sites: ReadonlySet<string>, excerpts: readonly RegExp[]) => Promise<PageRead & { url: string }>
+export const FANZ_SINGLE_DATE = '[class*="styles_singleDateContainer__"]'
+const fanzLink = (links: readonly (string | undefined)[]) => links.some(link => /^https:\/\/(?:www\.)?fanz\.com\.ar\/?$/i.test(link ?? ''))
+
+export function renderedPageRead(requested: string, snapshot: { url: string; visible: string; title: string; headings: string[];
+  siteName: string | null; fanzLinks: string[]; fanzJson: string; singleDate: string; challenge: boolean }): PageRead & { url: string } {
+  const { url, visible, title, headings, siteName, fanzLinks, fanzJson, singleDate, challenge } = snapshot
+  if (challenge || challengeTitle(title) || !visible.trim()) throw new Error(UNREADABLE)
+  if (visible.length > MAX_BYTES) throw new Error('page exceeds 2 MB')
+  const selected = selectedFanzPerformance(new URL(url), new URL(requested), fanzLink(fanzLinks), fanzJson, { visible, singleDate, rendered: true })
+  return { url, visible, ...identity(title || null, headings, siteName), ...(selected !== undefined ? { selected } : {}) }
+}
 
 /** The candidate facts a page excerpt must back: its name, its BA date, and its BA time when it has one. */
 export type PageFacts = { name: string; date: string; time: string | null; sites: ReadonlySet<string> }
@@ -208,59 +269,74 @@ export function excerptFactsReason(excerpt: string, fields: readonly string[], f
   return null
 }
 
-/** The reasons official-page evidence doesn't verify now; empty when every page was fetched and backs its facts. */
-export const verifyOfficialPagesEffect = (evidence: readonly Evidence[], facts: PageFacts, readPage: ReadPage = readOfficialPage) => Effect.gen(function*() {
-  const pages = evidence.filter(isOfficialPage)
-  const texts = new Map<string, Promise<PageRead>>()
-  const reasons: string[] = []
+function pageReason({ visible, title, titleName, h1, selected, identityNeedsRender }: PageRead, quoted: RegExp, excerpt: string, fields: readonly string[], facts: PageFacts): string | null {
+  if (selected && quoted.test(normalizePageText(selected.text))) {
+    if (fields.some(field => field !== 'date' && field !== 'time')) return 'The selected performance excerpt can only support date and time'
+    // Only the browser can tell whether a Fanz picker or card is visible under the site's stylesheet.
+    if (!selected.confirmed) return MISSING_PERFORMANCE
+    if (selected.date !== facts.date) return `Official page excerpt does not state the selected performance date ${facts.date}`
+    if (fields.includes('time') && facts.time && (selected.time !== facts.time || !excerpt.includes(selected.time))) {
+      return `Official page excerpt does not state the performance start time ${facts.time}`
+    }
+    const selectedName = normalizeTitle(facts.name)
+    if (!selectedName || normalizeTitle(selected.title) !== selectedName) return `Official page selected performance is not for "${facts.name}"${pageTitleHint(selected.title)}`
+  } else if (selected !== undefined && fields.some(field => field === 'date' || field === 'time')) {
+    return MISSING_PERFORMANCE
+  } else if (!quoted.test(normalizePageText(visible))) {
+    return MISSING_EXCERPT
+  }
+  if (identityNeedsRender) return UNCONFIRMED_HEADING
   const name = nameText(facts.name)
-  for (const page of pages) {
-    if (!publicPageUrl(page.url)) { reasons.push(`Official page must be a public HTTPS address: ${page.url}`); continue }
+  if (name && nameText(h1 ?? titleName ?? title ?? '') === name) return null
+  const headings = [title && `page title: ${JSON.stringify(title.slice(0, 255))}`, h1 && `H1: ${JSON.stringify(h1.slice(0, 255))}`].filter(Boolean).join('; ')
+  return `Official page does not name "${facts.name}"${headings ? ` (${headings})` : ''}`
+}
+
+const readResult = (pending: Promise<PageRead>) => pending.then(value => ({ value }), (error: unknown) => ({ error }))
+const excerptPattern = (excerpt: string) => new RegExp(`(?<![\\p{L}\\p{N}])${excerpt.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\p{L}\\p{N}])`, 'u')
+
+/** The reasons official-page evidence doesn't verify now; empty when every page was fetched and backs its facts. */
+export const verifyOfficialPagesEffect = (evidence: readonly Evidence[], facts: PageFacts, readPage: ReadPage = readOfficialPage,
+  renderPage?: RenderPage) => Effect.gen(function*() {
+  const pages = evidence.filter(isOfficialPage)
+  const groups = new Map<string, Array<{ index: number; quoted: RegExp; check: (page: PageRead) => string | null }>>()
+  const reasons: Array<string | undefined> = Array(pages.length)
+  for (const [index, page] of pages.entries()) {
+    if (!publicPageUrl(page.url)) { reasons[index] = `Official page must be a public HTTPS address: ${page.url}`; continue }
     if (!officialPageAllowed(page.url, facts.sites)) {
-      reasons.push(`Official page must be on the venue's website, a site a cited post links to, the post-backed ticket site, or a known ticket seller: ${page.url}`)
+      reasons[index] = `Official page must be on the venue's website, a site a cited post links to, the post-backed ticket site, or a known ticket seller: ${page.url}`
       continue
     }
     const excerpt = normalizePageText(page.excerpt)
-    if (excerpt.length < MIN_EXCERPT) { reasons.push(`Official page excerpt is too short to verify: ${page.url}`); continue }
+    if (excerpt.length < MIN_EXCERPT) { reasons[index] = `Official page excerpt is too short to verify: ${page.url}`; continue }
     const missing = excerptFactsReason(excerpt, page.fields, facts)
-    if (missing) { reasons.push(`Official page excerpt ${missing}: ${page.url}`); continue }
-    if (!texts.has(page.url)) texts.set(page.url, readPage(page.url, facts.sites))
-    const text = yield* Effect.promise(() => texts.get(page.url)!.then(value => ({ value }), (error: unknown) => ({ error })))
-    if ('error' in text) {
-      reasons.push(`Official page could not be read: ${page.url} (${text.error instanceof Error ? text.error.message : String(text.error)})`)
-      continue
+    if (missing) { reasons[index] = `Official page excerpt ${missing}: ${page.url}`; continue }
+    const quoted = excerptPattern(excerpt)
+    const group = groups.get(page.url) ?? []
+    group.push({ index, quoted, check: value => pageReason(value, quoted, excerpt, page.fields, facts) })
+    groups.set(page.url, group)
+  }
+  for (const [url, group] of groups) {
+    const initial = yield* Effect.promise(() => readResult(readPage(url, facts.sites)))
+    let result = initial
+    let failures = 'value' in initial ? group.map(item => item.check(initial.value)) : []
+    if (renderPage && ('error' in initial ? initial.error instanceof RenderableReadError
+      : failures.some(reason => reason === MISSING_EXCERPT || reason === MISSING_PERFORMANCE || reason === UNCONFIRMED_HEADING))) {
+      const hydrated = yield* Effect.promise(() => readResult(renderPage(url, facts.sites, group.map(item => item.quoted)).then(rendered => {
+        requireOfficialPageUrl(rendered.url, facts.sites, rendered.url !== url)
+        if (!rendered.visible.trim() || challengeTitle(rendered.title)) throw new Error(UNREADABLE)
+        // A redirect or changed page cannot switch a recognized Fanz performance to generic page evidence.
+        return 'value' in initial && initial.value.selected !== undefined && rendered.selected === undefined
+          ? { ...rendered, selected: null } : rendered
+      })))
+      // Never combine an early static excerpt with another excerpt from the page after hydration.
+      result = hydrated
+      if ('value' in hydrated) failures = group.map(item => item.check(hydrated.value))
     }
-    const { visible, title, h1, selected } = text.value
-    const quoted = new RegExp(`(?<![\\p{L}\\p{N}])${excerpt.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\p{L}\\p{N}])`, 'u')
-    if (selected && quoted.test(normalizePageText(selected.text))) {
-      if (page.fields.some(field => field !== 'date' && field !== 'time')) {
-        reasons.push(`The selected performance excerpt can only support date and time: ${page.url}`)
-        continue
-      }
-      if (selected.date !== facts.date) {
-        reasons.push(`Official page excerpt does not state the selected performance date ${facts.date}: ${page.url}`)
-        continue
-      }
-      if (page.fields.includes('time') && facts.time && (selected.time !== facts.time || !excerpt.includes(selected.time))) {
-        reasons.push(`Official page excerpt does not state the performance start time ${facts.time}: ${page.url}`)
-        continue
-      }
-      const selectedName = normalizeTitle(facts.name)
-      if (!selectedName || normalizeTitle(selected.title) !== selectedName) reasons.push(`Official page selected performance is not for "${facts.name}"${pageTitleHint(selected.title)}: ${page.url}`)
-      continue
-    }
-    if ((selected !== undefined || camarinPerformanceUrl(new URL(page.url))) && page.fields.some(field => field === 'date' || field === 'time')) {
-      reasons.push(`Official page date or time evidence must quote the selected future performance: ${page.url}`)
-    } else if (!quoted.test(normalizePageText(visible))) {
-      reasons.push(`Official page evidence must be an excerpt of the page's visible text: ${page.url}`)
-    } else if (!name || (h1 ? nameText(h1) !== name : nameText(title ?? '') !== name)) {
-      // The first H1 is the page's identity when it has one; the <title> only stands in for a page without one.
-      const headings = [
-        title && `page title: ${JSON.stringify(title.slice(0, 255))}`,
-        h1 && `H1: ${JSON.stringify(h1.slice(0, 255))}`,
-      ].filter(Boolean).join('; ')
-      reasons.push(`Official page does not name "${facts.name}"${headings ? ` (${headings})` : ''}: ${page.url}`)
+    for (const [position, { index }] of group.entries()) {
+      if ('error' in result) reasons[index] = `Official page could not be read: ${url} (${result.error instanceof Error ? result.error.message : String(result.error)})`
+      else if (failures[position]) reasons[index] = `${failures[position]}: ${url}`
     }
   }
-  return reasons
+  return reasons.filter((reason): reason is string => reason !== undefined)
 })

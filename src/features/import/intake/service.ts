@@ -5,7 +5,7 @@ import { CURRENT_EMBEDDING_VERSION, embedEventWithDocument } from '#shared/lib/a
 import { buildDescriptionPresentationFields } from '#features/events/lib/description-presentation.server.ts'
 import { importTry, ImportOperationError } from '../core/effect-utils.ts'
 import { candidateError, decodeCandidate, isOfficialPage, type Candidate } from './schema.ts'
-import { officialSites, verifyOfficialPagesEffect, type ReadPage } from './official-page.ts'
+import { officialSites, verifyOfficialPagesEffect, type ReadPage, type RenderPage } from './official-page.ts'
 import { baDate, candidateStart, decideMatch, descriptionChanged, searchInputsChanged, validateEvidence, normalizeTitle, type CatalogMatch, type Observation } from './planning.ts'
 import type { IntakePlanRow, IntakeStore } from './store.ts'
 
@@ -38,14 +38,15 @@ export const readEvidenceEffect = Effect.fn('intake.evidence')(function*(store: 
   }, { concurrency: 2 })
 })
 
-export const previewCandidateEffect = Effect.fn('intake.preview')(function*(store: IntakeStore, id: string, now = new Date(), readPage?: ReadPage) {
+export const previewCandidateEffect = Effect.fn('intake.preview')(function*(store: IntakeStore, id: string, now = new Date(),
+  readPage?: ReadPage, renderPage?: RenderPage) {
   const row = yield* store.candidate(id)
   const candidate = yield* Effect.try({ try: () => decodeCandidate({ ...row.payload, expected_revision: row.revision }), catch: () => failure('Stored candidate is invalid') })
   const { observations, media } = yield* readEvidenceEffect(store, candidate)
   const reasons = validateEvidence(candidate, observations, media, now)
   if (candidate.evidence.some(isOfficialPage)) {
     const sites = yield* officialSitesEffect(store, candidate.venue_id, candidate.ticket_url, candidate.evidence, observations)
-    reasons.push(...yield* verifyOfficialPagesEffect(candidate.evidence, { name: candidate.name, date: candidate.date, time: candidate.time, sites }, readPage))
+    reasons.push(...yield* verifyOfficialPagesEffect(candidate.evidence, { name: candidate.name, date: candidate.date, time: candidate.time, sites }, readPage, renderPage))
   }
   // Changed source observations invalidate earlier evidence even if the candidate was not edited yet.
   const currentObservations = yield* Effect.forEach(observations, post => Effect.gen(function* () {
@@ -171,7 +172,7 @@ type Publishers = {
   readPage?: ReadPage;
 }
 export const commitPlanEffect = Effect.fn('intake.commit')(function*(store: IntakeStore, id: string,
-  publishers: Publishers = { embed: embedEventWithDocument, presentation: buildDescriptionPresentationFields }) {
+  publishers: Publishers = { embed: embedEventWithDocument, presentation: buildDescriptionPresentationFields }, renderPage?: RenderPage) {
   const plan = yield* store.plan(id)
   if (plan.receipt) return yield* store.replayReceipt(plan)
   const enabled = yield* store.publishingEnabled()
@@ -182,7 +183,7 @@ export const commitPlanEffect = Effect.fn('intake.commit')(function*(store: Inta
   if (plan.evidence.some(isOfficialPage)) {
     const observations = yield* store.observationsByIds([...new Set(plan.evidence.flatMap(item => isOfficialPage(item) ? [] : [item.observation_id]))])
     const sites = yield* officialSitesEffect(store, plan.payload.venue_id ?? null, plan.payload.ticket_url ?? null, plan.evidence, observations)
-    const pages = yield* verifyOfficialPagesEffect(plan.evidence, { ...planFacts(plan), sites }, publishers.readPage)
+    const pages = yield* verifyOfficialPagesEffect(plan.evidence, { ...planFacts(plan), sites }, publishers.readPage, renderPage)
     if (pages.length) return yield* failure(pages.join('; '))
   }
   if (plan.action !== 'link' && !plan.payload.embedding) {

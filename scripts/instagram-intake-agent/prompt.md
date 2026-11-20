@@ -33,7 +33,7 @@ Something that stops you is one of two kinds. Follow the runbook's "Blockers" se
 
 1. Run `preflight`. If setup is missing or disabled, don't collect; append a note saying what setup is required, and stop.
 2. Run `collect` to collect, or resume today's budgeted Apify run. While it answers `running`, wait in this session with `sleep` (a few minutes at a time) and run it again. Follow the runbook for a reservation without an Apify run ID.
-3. Append a note: the outcome, the run's charge, the month's spend against the cap, the coverage lines (dead, errored, uncovered, and at-ceiling accounts), and the `media` lists from the summary (`first_attempt_failed`, `retried_failed`, `expired`, and `deferred`, each with observation IDs and positions, and each failed entry's `reason`, plus any `media.retry.error`). Don't export or review anything.
+3. Append a note: the outcome, the run's measured `charged_usd` and the intake calendar month's measured `month.charged_usd` against `month.cap_usd` from the `collect` summary (label the total incomplete if `month.unmeasured_runs` is nonzero), Apify's separate account billing-cycle `apify_cycle.usage_usd` against `apify_cycle.limit_usd` (null means unavailable, not zero), the coverage lines (dead, errored, uncovered, and at-ceiling accounts), and the `media` lists from the summary (`first_attempt_failed`, `retried_failed`, `expired`, and `deferred`, each with observation IDs and positions, and each failed entry's `reason`, plus any `media.retry.error`). Don't export or review anything.
 
 ## Phase: review
 
@@ -68,7 +68,7 @@ Do no image work and change nothing in the catalog. Read today's notes from the 
      - Failed phases (when line 1 doesn't already name them), and dead, uncovered, or errored accounts (`coverage.dead_sources`, `uncovered_sources`, and `errored_sources`), as counts, with names only when there are 3 or fewer.
      - Posts still pending or deferred, and that the next run picks them up.
      - Each venue created with `distinct_from`: its name and the reason in a few words, so he can spot a wrong venue.
-     - Today's cost and the month's total against the cap, for example `US$0.65 today; US$2.00 of US$18 this month.`
+     - Today's cost, the intake month's total and cap, and Apify's account cycle usage and limit, for example `US$0.65 today; intake US$2.00 of US$18 this month; Apify US$3.00 of US$24 this cycle.`
    - Never list event names or dates, venues added or completed normally, linked evidence, held cases that wait on no one, skipped out-of-scope shows or parties, or statements that you verified your work.
    - Use Slack markdown only: bold and bullets. No headings, tables, or links.
 
@@ -77,7 +77,7 @@ Do no image work and change nothing in the catalog. Read today's notes from the 
    ```
    ✅ *Instagram intake, Nov 15:* 51 new events, 1 correction. No action needed.
    • 77 posts still unread; tomorrow's run picks them up.
-   • US$0.65 today; US$2.00 of US$18 this month.
+   • US$0.65 today; intake US$2.00 of US$18 this month; Apify US$3.00 of US$24 this cycle.
    ```
 
 Your final message isn't used; the file is the report.

@@ -495,7 +495,10 @@ describe.skipIf(bun)('the operator flow on D1', () => {
     const post = await observation(runId, 'Synthetic Jazz en Synthetic Venue, entradas en la web')
     const day = shiftDay(baToday(), 5)
     const url = 'https://teatro.example.org/obra/synthetic-jazz/'
-    let html = `<html><body><h1>Synthetic Jazz</h1><div>PRÓXIMAS FUNCIONES</div><div>${day}</div><div>21:00</div></body></html>`
+    const shell = '<html><body><h1>Synthetic Jazz</h1><div id="performances"></div></body></html>'
+    let html = shell
+    let rendered = `Synthetic Jazz\n${day} 21:00`
+    let renders = 0
     const readPage = async (requested: string, sites: ReadonlySet<string>) => {
       expect(requested).toBe(url)
       expect(sites.has('example.org')).toBe(true)
@@ -506,12 +509,15 @@ describe.skipIf(bun)('the operator flow on D1', () => {
       { observation_id: post, fields: ['name', 'venue'], excerpt: 'Synthetic Jazz en Synthetic Venue', media_id: null },
       { kind: 'official_page', url, fields: ['date', 'time'], excerpt: `${day} 21:00` },
     ] })))
-    const preview = await run(previewCandidateEffect(store, candidate, new Date(), readPage))
+    const renderPage = async () => { renders++; return { visible: rendered, title: null, h1: 'Synthetic Jazz', url } }
+    const preview = await run(previewCandidateEffect(store, candidate, new Date(), readPage, renderPage))
     expect(preview).toMatchObject({ action: 'create', reasons: [] })
+    expect(renders).toBe(1)
 
-    html = '<html><body>Funciones agotadas</body></html>'
-    expect(await fails(commitPlanEffect(store, preview.id, { ...publishers, readPage })))
+    rendered = 'Funciones agotadas'
+    expect(await fails(commitPlanEffect(store, preview.id, { ...publishers, readPage }, renderPage)))
       .toBe(`Official page evidence must be an excerpt of the page's visible text: ${url}`)
+    expect(renders).toBe(2)
     html = `<html><body><h1>Agenda</h1><p>Synthetic Jazz: ${day} 21:00</p></body></html>`
     expect(await fails(commitPlanEffect(store, preview.id, { ...publishers, readPage })))
       .toBe(`Official page does not name "Synthetic Jazz" (H1: "Agenda"): ${url}`)
