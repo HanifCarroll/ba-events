@@ -153,6 +153,26 @@ describe('buildEventJsonLd', () => {
 		expect(jsonLdFor({ source: 'ba-tourism', is_free: false }).offers).toBeUndefined();
 	});
 
+	it('uses credited organizer, performers, sale date, and doors without inventing a start', () => {
+		const facts = {
+			description_es: 'Solista Ana Nube, acompañada por Trío Sol.',
+			organizer_name: 'Asociación Sur', organizer_url: 'https://asociacion.example/',
+			performers: [{ name: 'Ana Nube' }, { name: 'Trío Sol', url: 'https://trio.example/' }],
+			offers_valid_from: '2026-08-12T19:00:00.000Z', doors_at: '2026-08-16T03:30:00.000Z',
+			time_tba: true, location_hidden: true,
+		};
+		const jsonLd = jsonLdFor(facts);
+		expect(jsonLd).toMatchObject({
+			startDate: '2026-08-15', doorTime: facts.doors_at,
+			organizer: { '@type': 'Organization', name: facts.organizer_name, url: facts.organizer_url },
+			performer: [{ '@type': 'Person', name: 'Ana Nube' }, { '@type': 'PerformingGroup', ...facts.performers[1] }],
+			offers: { validFrom: facts.offers_valid_from },
+		});
+		expect(jsonLdFor({ ...facts, ticket_url: null }).offers).toBeUndefined();
+		expect(jsonLdFor().offers).not.toHaveProperty('validFrom');
+		expect(jsonLdFor()).not.toHaveProperty('doorTime');
+	});
+
 	it('preserves explicit hours on Luma events spanning multiple days', () => {
 		const start = '2026-08-15T03:00:00.000Z', end = '2026-08-16T17:30:00.000Z';
 		expect(jsonLdFor({ source: 'luma', is_all_day: true, starts_at: start, ends_at: end }))

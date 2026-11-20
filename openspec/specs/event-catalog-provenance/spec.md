@@ -49,11 +49,12 @@ Time-TBA, location-TBA, missing price, missing description, and missing source d
 - **AND** canonical cards retain the source timestamps and time-TBA flag for their existing presentation rules
 
 ### Requirement: Event structured data reflects known catalog facts
-Event detail JSON-LD SHALL use recorded times, status, admission facts, and visible venue facts. It SHALL NOT supply an unknown performer, ticket sales start, ticket availability, or end date.
+Event detail JSON-LD SHALL use recorded times, status, admission facts, and visible venue facts. It SHALL include stored organizers, performers, door times, and sale opening times where applicable. It SHALL NOT infer credits from the venue or supply an unknown ticket availability or end date.
 
 #### Scenario: Event detail includes a confirmed venue
 - **WHEN** the event has a visible, confirmed venue
 - **THEN** the Place uses the stored name and address without placeholder text; a hidden or unconfirmed location does not expose its venue details
+- **AND** a venue does not stand in for a missing organizer
 
 #### Scenario: A scheduled or postponed event has known admission or a ticket link
 - **WHEN** a scheduled or postponed event has a usable ticket or registration link, or has a recorded price or free flag and is not pay-what-you-can
@@ -78,6 +79,11 @@ Event detail JSON-LD SHALL use recorded times, status, admission facts, and visi
 - **AND** a Luma event with known hours keeps its times even if flagged all-day because of its duration
 - **AND** cancellation and postponement map to their corresponding schema statuses without changing the date or location
 
+#### Scenario: A source states credits or door times
+- **WHEN** event details include a stored organizer, performer lineup, or door time
+- **THEN** the event page shows the credited people and identifies doors separately from the performance start
+- **AND** JSON-LD uses `doorTime` without treating it as the performance start, and includes a sale opening time only on an offer with a usable ticket or registration link
+
 ### Requirement: Source presentation preserves provenance
 Event detail and summaries SHALL distinguish BA Eventos pages, original event sources, and ticket links using the stored source fields. Sanitization or summary generation MUST NOT create a source URL.
 
@@ -101,6 +107,11 @@ The homepage SHALL load scheduled events with `events.scope = 'in'`, from the st
 - **THEN** the server SHALL use a cache key for the new local date
 - **AND** within that date, cached cards are fresh for 60 seconds and MAY be served for a further 300 seconds while a retained background refresh runs
 - **AND** a failed refresh MUST NOT be cached as a successful empty feed
+
+#### Scenario: An agenda event has doors but no known start
+- **WHEN** an upcoming occurrence has a door time and its start is time TBA
+- **THEN** the row shows localized door time instead of time TBA, and uses the door timestamp for ordering within the event's advertised Buenos Aires date
+- **AND** these choices do not change the stored start date or publish a guessed start
 
 #### Scenario: An agenda card has linked evidence
 - **WHEN** an event has a valid stored Instagram post URL linked through intake evidence

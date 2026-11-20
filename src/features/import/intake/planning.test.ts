@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { candidateError, decodeCandidate } from './schema.ts'
-import { candidateStart, canonicalTicket, decideMatch, validateEvidence, type Observation, type Media, type CatalogMatch } from './planning.ts'
+import { candidateDoors, candidateStart, canonicalTicket, decideMatch, validateEvidence, type Observation, type Media, type CatalogMatch } from './planning.ts'
 import { allowedInstagramMedia, fetchInstagramImage, mediaUrls } from './collection.ts'
 
 const id = '10000000-0000-4000-8000-000000000001'
@@ -32,6 +32,20 @@ describe('Instagram candidate publication rules', () => {
   it('rejects invalid calendar dates and retains the BA date when time is unknown', () => {
     expect(() => candidateStart({ ...candidate(), date: '2026-11-31' })).toThrow('Invalid calendar date')
     expect(candidateStart({ ...candidate(), time: null })).toBe('2026-11-20T03:00:00.000Z')
+  })
+  it('keeps an after-midnight door time distinct from an unknown start', () => {
+    const input = { ...candidate(), time: null, doors_time: '00:30', doors_date: '2026-11-21' }
+    expect(candidateStart(input)).toBe('2026-11-20T03:00:00.000Z')
+    expect(candidateDoors(input)).toBe('2026-11-21T03:30:00.000Z')
+    expect(validateEvidence(input, [post], [], now)).toContain('Missing Instagram evidence for doors_time')
+    expect(validateEvidence({ ...input, doors_date: '2026-11-23' }, [post], [], now)).toContain('Door time must be on the event date or an adjacent day')
+    expect(candidateDoors({ ...input, date: '2026-11-21', time: '01:00', doors_date: '2026-11-20', doors_time: '23:30' }))
+      .toBe('2026-11-21T02:30:00.000Z')
+  })
+  it('rejects credits that are not present in their cited caption', () => {
+    const input = { ...candidate(), performers: [{ name: 'Uncredited Band' }],
+      evidence: [{ ...candidate().evidence[0], fields: [...candidate().evidence[0].fields, 'performers' as const] }] }
+    expect(validateEvidence(input, [post], [], now)).toContain('Instagram evidence must name performers: Uncredited Band')
   })
   it('does not reinterpret conditional admission as free', () => {
     expect(validateEvidence({ ...candidate(), price_kind: 'conditional', price_ars: 0 }, [post], [], now)).toContain('Only a fixed price may set price_ars')

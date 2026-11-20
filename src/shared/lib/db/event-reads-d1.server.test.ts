@@ -151,6 +151,30 @@ describe('public event reads on D1', () => {
     await expect(getEventWithVenue(id())).rejects.toThrow('not found')
   })
 
+  it('does not substitute a venue with a website for an unstated organizer', async () => {
+    const bar = await venue('Bar Sintético', { address: 'Calle Falsa 123' })
+    const website = 'https://barsintetico.example'
+    await db.prepare('UPDATE venues SET website = ? WHERE id = ?').bind(website, bar).run()
+    const visible = await event('Concierto', { venue_id: bar })
+    const hidden = await event('Lugar privado', { venue_id: bar, location_hidden: true })
+    const detail = await Effect.runPromise(getEventDetailDataEffect(visible))
+    expect(detail.meta.jsonLd).not.toHaveProperty('organizer')
+    expect(detail.meta.jsonLd.location.name).toBe('Bar Sintético')
+    expect(JSON.stringify(await Effect.runPromise(getEventDetailDataEffect(hidden)))).not.toContain(website)
+  })
+
+  it('reads a previous advertised night whose doors are still ahead and exposes stated detail credits', async () => {
+    const window = homeWindow(new Date('2026-11-21T03:15:00.000Z'))
+    const id = await event('Noche sintética', { starts_at: '2026-11-20T03:00:00.000Z', scope: 'in', ticket_url: 'https://example.com/event' })
+    const doorsAt = '2026-11-21T03:30:00.000Z', validFrom = '2026-11-17T18:00:00.000Z'
+    await db.prepare('UPDATE events SET time_tba = 1, doors_at = ?, organizer_name = ?, performers = ?, offers_valid_from = ? WHERE id = ?')
+      .bind(doorsAt, 'Asociación Sur', JSON.stringify([{ name: 'Trío Sol' }]), validFrom, id).run()
+    expect((await getHomeAgendaEvents(window)).find(row => row.id === id)).toMatchObject({ time_tba: true, doors_at: doorsAt })
+    const detail = await Effect.runPromise(getEventDetailDataEffect(id))
+    expect(detail.meta.jsonLd).toMatchObject({ startDate: '2026-11-20', doorTime: doorsAt,
+      organizer: { name: 'Asociación Sur' }, performer: [{ name: 'Trío Sol' }], offers: { validFrom } })
+  })
+
   it('MCP get_event: displayable events only, with the public columns', async () => {
     const live = await event('Público', { scope: 'out' })
     const hidden = await event('Cancelado', { status: 'canceled' })

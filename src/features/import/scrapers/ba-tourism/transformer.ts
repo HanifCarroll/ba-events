@@ -50,6 +50,7 @@ export function transformBATourismEvent(
       link: normalizeUrl(event.moreInfoUrl),
       ticket_url: normalizeUrl(event.moreInfoUrl),
       source: 'ba-tourism',
+      ...(event.organizerName ? { organizer_name: event.organizerName } : {}),
       external_id: generateExternalId('ba-tourism', event.name, parsed.date),
       status: 'scheduled',
     }

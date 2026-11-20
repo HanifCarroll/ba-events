@@ -20,15 +20,15 @@ import { venueNameKey } from './venue-identity.ts'
 // ---------------------------------------------------------------------------------------------------------------------
 // Encoding
 
-const TIMESTAMPS = new Set(['starts_at', 'ends_at', 'enriched_at', 'created_at', 'updated_at', 'started_at', 'completed_at', 'reviewed_at'])
+const TIMESTAMPS = new Set(['starts_at', 'ends_at', 'enriched_at', 'created_at', 'updated_at', 'started_at', 'completed_at', 'reviewed_at', 'offers_valid_from', 'doors_at'])
 const BOOLEANS = new Set(['is_all_day', 'is_free', 'location_hidden', 'location_tba', 'description_unavailable', 'time_tba'])
-const JSON_COLUMNS = new Set(['categories', 'facets', 'enrichment_provenance', 'metadata', 'error_details', 'source_coordinates', 'source_event_ids'])
+const JSON_COLUMNS = new Set(['categories', 'facets', 'performers', 'enrichment_provenance', 'metadata', 'error_details', 'source_coordinates', 'source_event_ids'])
 
 const EVENT_COLUMNS = new Set(['name', 'starts_at', 'ends_at', 'is_all_day', 'venue_id', 'categories', 'price', 'is_free', 'image_url',
   'link', 'ticket_url', 'source', 'status', 'external_id', 'description_es', 'description_en', 'enrichment_status', 'enrichment_error',
   'enriched_at', 'location_hidden', 'location_tba', 'description_unavailable', 'description_display_es', 'description_display_en',
   'description_summary_es', 'description_summary_en', 'min_age', 'time_tba', 'search_document', 'facets', 'embedding_version',
-  'image_width', 'image_height', 'enrichment_provenance'])
+  'image_width', 'image_height', 'enrichment_provenance', 'organizer_name', 'organizer_url', 'performers', 'offers_valid_from', 'doors_at'])
 const SCRAPE_RUN_COLUMNS = new Set(['status', 'completed_at', 'error_message', 'error_details', 'events_fetched', 'events_inserted',
   'events_updated', 'events_skipped', 'venues_auto_created', 'enrichments_completed', 'enrichments_failed', 'metadata'])
 
@@ -76,7 +76,15 @@ const venueRow = Schema.Struct({
 })
 const venueWithCount = Schema.Struct({ ...venueRow.fields, event_count: Schema.Int })
 
+const detailFields = {
+  organizer_name: Text, organizer_url: Text, offers_valid_from: Text, doors_at: Text,
+  performers: Schema.NullOr(Schema.fromJsonString(Schema.Array(Schema.Struct({
+    name: Schema.String, url: Schema.optional(Schema.String),
+  })))),
+}
+
 const existingEventRow = Schema.Struct({
+  ...detailFields,
   id: Schema.String, external_id: Schema.String, name: Schema.String, description_es: Text, description_en: Text,
   starts_at: Schema.String, ends_at: Text, is_all_day: Bit, time_tba: Bit, venue_id: Text, categories: Strings, price: Price,
   is_free: Bit, min_age: Int, image_url: Text, image_width: Int, image_height: Int, link: Text, ticket_url: Text,
@@ -85,6 +93,7 @@ const existingEventRow = Schema.Struct({
 })
 
 const enrichmentRow = Schema.Struct({
+  ...detailFields,
   id: Schema.String, name: Schema.String, link: Text, source: Schema.String, categories: Strings, venue_id: Text,
   description_es: Text, description_en: Text, facets: Json, enrichment_status: Schema.String, price: Price, is_free: Bit,
   enrichment_provenance: Schema.NullOr(Json),
@@ -146,7 +155,7 @@ export async function syncVectorMetadata(vectors: Vectorize, rows: readonly Vect
 // ---------------------------------------------------------------------------------------------------------------------
 // The store
 
-const EXISTING_EVENT_COLUMNS = 'id, external_id, name, description_es, description_en, starts_at, ends_at, is_all_day, time_tba, venue_id, categories, price, is_free, min_age, image_url, image_width, image_height, link, ticket_url, status, location_hidden, location_tba, description_unavailable, facets, embedding_version'
+const EXISTING_EVENT_COLUMNS = 'id, external_id, name, description_es, description_en, starts_at, ends_at, is_all_day, time_tba, venue_id, categories, price, is_free, min_age, image_url, image_width, image_height, link, ticket_url, status, location_hidden, location_tba, description_unavailable, facets, embedding_version, organizer_name, organizer_url, performers, offers_valid_from, doors_at'
 
 function enrichmentWhere(query: { statuses?: string[]; startsAtFloor: string; retiredSources: readonly string[]; source?: string; createdAfter?: string }) {
   const clauses = [
@@ -294,7 +303,8 @@ export function d1Catalog(db: D1Database, vectors: Vectorize): CatalogStore {
 
     async eventsNeedingEnrichment(query) {
       const where = enrichmentWhere(query)
-      const { results } = await db.prepare(`SELECT id, name, link, source, categories, venue_id, description_es, description_en, facets, enrichment_status, price, is_free, enrichment_provenance
+      const { results } = await db.prepare(`SELECT id, name, link, source, categories, venue_id, description_es, description_en, facets, enrichment_status, price, is_free, enrichment_provenance,
+          organizer_name, organizer_url, performers, offers_valid_from, doors_at
         FROM events WHERE ${where.sql} ORDER BY starts_at LIMIT ?`).bind(...where.values, query.limit || 100).all()
       return results.map(row => decodeEnrichment(row) as EnrichmentRow)
     },

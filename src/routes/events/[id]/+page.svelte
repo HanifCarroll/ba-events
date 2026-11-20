@@ -9,14 +9,16 @@
 		ExternalLink,
 		Share2,
 		Check,
-		Ticket
+		Ticket,
+		UsersRound,
+		Mic2
 	} from 'lucide-svelte';
 	import SaveEventButton from '#features/events/components/SaveEventButton.svelte';
 	import EventArtwork from '#features/events/components/EventArtwork.svelte';
 	import { renderMarkdown } from '#features/events/lib/render-markdown.ts';
 	import { Button } from '#shared/ui/button/index.ts';
 	import { Badge } from '#shared/ui/badge/index.ts';
-	import { formatEventTime, formatShortDate, formatTime } from '#shared/lib/utils/formatting.ts';
+	import { formatDoorsTime, formatEventTime, formatShortDate } from '#shared/lib/utils/formatting.ts';
 	import { getEventUrl, resolveSiteUrl } from '#shared/lib/utils/url.ts';
 	import { openMapsUrl } from '#shared/lib/utils/maps.ts';
 	import { track } from '#shared/lib/analytics.ts';
@@ -50,9 +52,8 @@
 	);
 	const fromChat = $derived(isChatOverlay || page.url.searchParams.get('from') === 'chat');
 
-	const startDate = $derived(new Date(event.starts_at));
-	const dateStr = $derived(formatShortDate(startDate));
-	const timeStr = $derived(event.time_tba ? m.concierge_time_tba() : formatTime(startDate));
+	const dateStr = $derived(formatShortDate(event.starts_at));
+	const performerNames = $derived(event.performers?.map(({ name }) => name).join(', '));
 
 	const externalEventUrl = $derived(getExternalEventUrl(event));
 
@@ -234,9 +235,13 @@
 						<div class="flex items-start gap-3">
 							<Calendar class="mt-0.5 h-4 w-4 shrink-0 text-primary/70" aria-hidden="true" />
 							<dd>
-								{event.time_tba
-									? `${dateStr} · ${timeStr}`
-									: formatEventTime(event.starts_at, event.ends_at)}
+								{#if event.time_tba}
+									{dateStr} ·
+									{#if event.doors_at}<time datetime={event.doors_at}>{formatDoorsTime(event.doors_at)}</time>{:else}{m.concierge_time_tba()}{/if}
+								{:else}
+									{formatEventTime(event.starts_at, event.ends_at)}
+									{#if event.doors_at}<time class="block" datetime={event.doors_at}>{formatDoorsTime(event.doors_at)}</time>{/if}
+								{/if}
 							</dd>
 						</div>
 
@@ -255,6 +260,19 @@
 										{/if}
 									{/if}
 								</dd>
+							</div>
+						{/if}
+
+						{#if event.organizer_name}
+							<div class="flex items-start gap-3">
+								<UsersRound class="mt-0.5 h-4 w-4 shrink-0 text-primary/70" aria-hidden="true" />
+								<dd>{m.event_organized_by({ name: event.organizer_name })}</dd>
+							</div>
+						{/if}
+						{#if performerNames}
+							<div class="flex items-start gap-3">
+								<Mic2 class="mt-0.5 h-4 w-4 shrink-0 text-primary/70" aria-hidden="true" />
+								<dd>{m.event_with_performers({ names: performerNames })}</dd>
 							</div>
 						{/if}
 

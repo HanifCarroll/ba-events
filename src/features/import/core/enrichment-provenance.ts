@@ -2,9 +2,9 @@ import { AI_MODEL, EMBEDDING_MODEL } from '#shared/lib/ai/constants.ts'
 import { CURRENT_EMBEDDING_VERSION } from '#shared/lib/ai/embeddings.ts'
 
 // Bump when enrichment prompts, extraction schemas or orchestration change.
-export const ENRICHMENT_VERSION = 'event-enrichment-v2'
+export const ENRICHMENT_VERSION = 'event-enrichment-v3'
 // Covers catalog transformers, categorization and presentation generation.
-export const CATALOG_IMPORT_VERSION = 'catalog-import-v1'
+export const CATALOG_IMPORT_VERSION = 'catalog-import-v2'
 
 /** Stored in existing scrape-run metadata, even when unchanged events need no writes. */
 export interface CatalogImportProvenance {
@@ -39,6 +39,7 @@ export interface EnrichmentStageRecord {
 export interface EnrichmentProvenance {
   full?: EnrichmentStageRecord
   facets?: EnrichmentStageRecord
+  creditsBackfilledAt?: string
 }
 
 export function enrichmentStageRecord(
