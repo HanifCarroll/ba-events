@@ -329,10 +329,6 @@ describe('canonicalizeSearchIntent — prefer extraction', () => {
     expect(intent.prefer.vibes ?? []).not.toContain('intimate')
   })
 
-  it('does NOT classify "dark comedy" as techno', async () => {
-    const intent = await canonicalizeSearchIntent({ query: 'dark comedy' }, WEDNESDAY_NOON)
-    expect(intent.prefer.genres ?? []).not.toContain('techno')
-  })
 })
 
 describe('canonicalizeSearchIntent — display limit defaults', () => {

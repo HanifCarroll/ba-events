@@ -11,7 +11,7 @@ bun install --frozen-lockfile
 bun run cloudflare:ci
 ```
 
-`cloudflare:ci` generates translations, runs the Bun and Vitest suites, checks Svelte/TypeScript and Effect diagnostics, and checks whitespace. These checks use synthetic fixtures and do not require a real `.env` file. To compile the app without connecting to providers, use placeholder public settings:
+`cloudflare:ci` generates translations, runs the deterministic Vitest suite on Node, checks Svelte/TypeScript and Effect diagnostics, and checks whitespace. These checks use synthetic fixtures and do not require a real `.env` file. To compile the app without connecting to providers, use placeholder public settings:
 
 ```sh
 PUBLIC_POSTHOG_KEY= \

@@ -311,7 +311,7 @@ The browser SDK SHALL mask declared sensitive query names, strip captured URL fr
 - `src/features/chat/lib/delivery.test.ts`
 - `src/features/chat/api/turns.server.test.ts`
 - `src/features/chat/api/turn-authority.test.ts`
-- `src/features/chat/api/chat-durability.test.ts`
+- `src/routes/api/async-preparation.test.ts`
 - `src/features/chat/lib/canonical.test.ts`
 - `src/shared/lib/db/guest-conversations.test.ts`
 - `src/features/chat/lib/turn-lifecycle.test.ts`
@@ -319,7 +319,7 @@ The browser SDK SHALL mask declared sensitive query names, strip captured URL fr
 
 ### Verification command
 ```sh
-bunx vitest run src/features/chat/api/turns.server.test.ts src/features/chat/api/turn-authority.test.ts src/features/chat/api/chat-durability.test.ts src/features/chat/lib/canonical.test.ts src/features/chat/lib/turn-lifecycle.test.ts src/shared/lib/db/guest-conversations.test.ts
+bunx vitest run src/features/chat/api/turns.server.test.ts src/features/chat/api/turn-authority.test.ts src/routes/api/async-preparation.test.ts src/features/chat/lib/canonical.test.ts src/features/chat/lib/turn-lifecycle.test.ts src/shared/lib/db/guest-conversations.test.ts
 ```
 
 

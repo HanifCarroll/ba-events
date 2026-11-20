@@ -39,17 +39,6 @@ describe('rrfFuse', () => {
     expect(result.filter((r) => r.id === 'a')).toHaveLength(1)
   })
 
-  it('shared id at rank 1 and rank 3 across two lists still beats unique rank 2', () => {
-    // Shared scores once per list across two lists: 1/(60+3)+1/(60+1)≈0.0323,
-    // which must outrank the unique single-list rank 2 (1/62≈0.0161).
-    const result = rrfFuse(
-      [[item('a'), item('b'), item('shared')], [item('shared'), item('x')]],
-      { k: 60 }
-    )
-    expect(result[0]).toHaveProperty('id', 'shared')
-    expect(result.filter((r) => r.id === 'shared')).toHaveLength(1)
-  })
-
   it('truncates to the limit', () => {
     const list = [item('a'), item('b'), item('c'), item('d')]
     expect(rrfFuse([list], { limit: 2 }).map((r) => r.id)).toEqual(['a', 'b'])

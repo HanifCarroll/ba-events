@@ -39,7 +39,10 @@ describe('Reel project', () => {
   it('builds the cards from copy.md, escapes titles, and has no description or handle on the cards', () => {
     const files = reelProject(window, six, reelTiming(window, six, 120))
     expect(Object.keys(files).sort()).toEqual(['compositions/closing.html', 'compositions/cover.html', ...[1, 2, 3, 4, 5, 6].map(n => `compositions/e${n}.html`), 'hyperframes.json', 'index.html', 'meta.json'].sort())
-    expect(files['compositions/cover.html']).toContain('20 al 22 de noviembre')
+    const cover = files['compositions/cover.html']
+    for (const text of ['BA Eventos', '20 al 22 de noviembre', 'Este finde', 'en Buenos Aires']) {
+      expect(cover).toContain(text)
+    }
     expect(files['compositions/e1.html']).toContain('Sábado 21 · 21:00')
     expect(files['compositions/e1.html']).toContain('pill free tx">Gratis<')
     expect(files['compositions/e3.html']).toContain('Jazz &lt;en&gt; &quot;vivo&quot;')

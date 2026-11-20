@@ -93,7 +93,10 @@ it.each(Object.entries(coordinators))('imports and updates %s on D1 and Vectoriz
   await db.batch(['venue_review_queue', 'events', 'venues', 'import_blocklist'].map(table => db.prepare(`DELETE FROM ${table}`)))
   const { index, vectors } = fakeVectorize()
   await db.prepare("INSERT INTO import_blocklist (id, pattern, target_field, source) VALUES ('b', 'promo', 'event_name', 'all')").run()
-  const events = () => db.prepare('SELECT e.id, e.name, e.venue_id, e.location_hidden, e.location_tba, e.enrichment_status, e.search_document, e.embedding_version, e.categories, e.status, v.name AS venue_name FROM events e LEFT JOIN venues v ON v.id = e.venue_id ORDER BY e.starts_at').all<Record<string, unknown>>().then(r => r.results)
+  const events = () => db.prepare(`SELECT e.id, e.name, e.venue_id, e.location_hidden, e.location_tba,
+    e.description_es, e.description_en, e.categories, e.facets, e.enrichment_status, e.search_document,
+    e.embedding_version, e.status, v.name AS venue_name FROM events e LEFT JOIN venues v ON v.id = e.venue_id
+    ORDER BY e.starts_at`).all<Record<string, unknown>>().then(r => r.results)
 
   const first = await run(d1Catalog(db, index))
   let rows = await events()
@@ -113,6 +116,13 @@ it.each(Object.entries(coordinators))('imports and updates %s on D1 and Vectoriz
     assert.deepEqual(vector.metadata, { status: 'scheduled', starts_at: Date.parse((await db.prepare('SELECT starts_at FROM events WHERE id = ?').bind(row.id).first<string>('starts_at'))!) })
   }
 
+  const enriched = {
+    description_es: 'Resumen enriquecido.', description_en: 'Enriched summary.',
+    categories: '["arts"]', facets: '{"genres":["jazz"]}', enrichment_status: 'completed',
+  }
+  await db.prepare('UPDATE events SET description_es = ?, description_en = ?, categories = ?, facets = ?, enrichment_status = ? WHERE id = ?')
+    .bind(enriched.description_es, enriched.description_en, enriched.categories, enriched.facets, enriched.enrichment_status, hiddenEvent.id).run()
+
   // Each import starts with a fresh catalog, as the jobs Worker does.
   const embedsBefore = embeds
   const second = await run(d1Catalog(db, index))
@@ -125,6 +135,7 @@ it.each(Object.entries(coordinators))('imports and updates %s on D1 and Vectoriz
   rows = await events()
   assert.equal(rows.length, 3, 'still one row per event')
   const hidden = rows[1]
+  expect(hidden).toMatchObject(enriched)
   if (source === 'luma') {
     // Luma says the address is shared after registration: hidden, and the venue goes (PR #48).
     assert.equal(hidden.location_hidden, 1)

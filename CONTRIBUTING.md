@@ -17,7 +17,7 @@ Then run the [compile-only build](docs/getting-started.md#1-run-the-checks) with
 
 For UI changes, also inspect the affected Storybook stories and run the relevant browser checks from [the Storybook guide](docs/storybook.md). For database changes, include a migration and its rollback/compatibility notes. Do not run maintenance scripts against the hosted service.
 
-Keep changes small and describe the user-visible problem, resulting behavior, and checks performed. Follow the existing TypeScript and Svelte conventions. If behavior or a persisted contract changes, update the relevant specification under `openspec/specs/` alongside the code and deterministic tests. [The development guide](docs/development.md) explains the two test runners and canonical contracts.
+Keep changes small and describe the user-visible problem, resulting behavior, and checks performed. Follow the existing TypeScript and Svelte conventions. If behavior or a persisted contract changes, update the relevant specification under `openspec/specs/` alongside the code and deterministic tests. [The development guide](docs/development.md) explains the deterministic test suite and canonical contracts.
 
 AI/search changes need evidence beyond a passing unit suite. See [the AI release checklist](docs/ai-release-checklist.md) for frozen evaluations, quality review, and release decisions. Live evaluations and imports are opt-in and may spend provider credits. A pull request does not authorize a production deployment.
 
