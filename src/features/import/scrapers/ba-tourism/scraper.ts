@@ -193,15 +193,8 @@ export function parseBATourismEvents(html: string): BATourismEvent[] {
     // Use parsed address from donde text, or fall back to Google Maps link text
     const address = parsedAddress || mapsAddress
 
-    // Get "Más información" link
-    let moreInfoUrl = ''
-    $card.find('a').each((_, link) => {
-      const linkText = $(link).text().toLowerCase()
-      if (linkText.includes('más información')) {
-        moreInfoUrl = $(link).attr('href') || ''
-        return false // break
-      }
-    })
+    const moreInfoUrl = $card.find('.card-footer-landing-qhs a[href]').first().attr('href') ??
+      $card.find('a[href]').filter((_, link) => $(link).text().toLowerCase().includes('más información')).first().attr('href') ?? ''
 
     // Get description - find the longest paragraph after ¿Dónde? that's not a link
     let description = ''

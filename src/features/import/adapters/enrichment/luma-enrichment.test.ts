@@ -4,7 +4,7 @@ import { lumaEnrichmentAdapter } from './luma-enrichment.ts'
 const detail = { api_id: 'evt-synthetic', ...{
   event: { geo_address_info: { mode: 'shown', address: 'Synthetic Venue', full_address: 'Synthetic Venue, Calle 1' }, coordinate: { latitude: -34.6, longitude: -58.4 } },
   description_mirror: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Synthetic live jazz.' }] }] },
-  // Top-level hosts modeled on /event/get; all names and IDs here are synthetic.
+  // Sanitized /event/get projection: top-level hosts include api_id and a nullable username.
   hosts: [{ api_id: 'usr-synthetic', name: 'Colectivo Nube', username: 'colectivo_nube', avatar_url: 'https://example.com/avatar' },
     { api_id: 'usr-synthetic2', name: 'Segundo anfitrión', username: null }],
 } }
