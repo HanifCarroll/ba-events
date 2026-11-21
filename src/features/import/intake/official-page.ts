@@ -354,7 +354,9 @@ const DOORS_PAIR = new RegExp(`^(.+?) (?:puertas?|apertura(?: de puertas?)?|door
 type Clock = { hour: number; minute: number }
 const validClock = ({ hour, minute }: Clock) => hour >= 0 && hour <= 23 && minute <= 59
 const WEEKDAYS = 'lun(?:es)?|mar(?:tes)?|mie(?:rcoles)?|jue(?:ves)?|vie(?:rnes)?|sab(?:ado)?|dom(?:ingo)?'
-const WEEKDAY_NAME = new RegExp(String.raw`\b(?:${WEEKDAYS})\b`, 'g')
+const PLURAL_WEEKEND_DAYS = 'sabados|domingos'
+const WEEKDAY_NAME = new RegExp(String.raw`\b(?:${WEEKDAYS}|${PLURAL_WEEKEND_DAYS})\b`, 'g')
+const RUN_DATE = new RegExp(String.raw`\b(?:hasta|desde|al|todos|cada|${PLURAL_WEEKEND_DAYS}|los (?:dias )?(?:${WEEKDAYS}))\b`)
 const WEEKDAY_PREFIX = ['dom', 'lun', 'mar', 'mie', 'jue', 'vie', 'sab']
 function matchesWeekday(text: string, date: Date): boolean {
   // Strip full dates first so their abbreviated March (`mar`) isn't mistaken for a weekday.
@@ -380,6 +382,7 @@ export function excerptFactsReason(excerpt: string, fields: readonly string[], f
   const mentionsDoors = DOORS_WORD.test(excerpt)
   const pair = mentionsDoors ? doorsAndShow(excerpt) : null
   if (mentionsDoors && !pair) return DOORS_REASON
+  if (pair && RUN_DATE.test(pair.dateText)) return "states a date range or recurrence; cite the single occurrence's line"
   const schedule = pair?.dateText ?? excerpt
   if (CLOCK_LIST.test(schedule)) return pair ? DOORS_REASON : MULTIPLE_OCCURRENCES
   const [year, month, day] = facts.date.split('-').map(Number)

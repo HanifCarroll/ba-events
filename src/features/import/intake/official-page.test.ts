@@ -163,9 +163,12 @@ describe('official-page evidence', () => {
 
   it.each([
     ['Sábado 22 de noviembre 21:00', false],
+    ['Sábados 22 de noviembre 21:00', false],
     ['21:00 Mar. 22', false],
     ['Domingo 22 de noviembre 21:00', true],
+    ['Domingos 22 de noviembre 21:00', true],
     ['22 de noviembre 21:00', true],
+    ['Hasta el 22 de noviembre 21:00', true],
   ])('checks explicit weekdays on ordinary timing excerpts: %s', async (excerpt, matches) => {
     const date = '2026-11-22'
     for (const field of ['date', 'time'] as const) {
@@ -185,6 +188,32 @@ describe('official-page evidence', () => {
   })
 
   it.each([
+    ['Sábados hasta el 20 de diciembre', '2026-12-20'],
+    ['Hasta el 20 de diciembre', '2026-12-20'],
+    ['Desde el 20 de diciembre', '2026-12-20'],
+    ['Del 18 al 20 de diciembre', '2026-12-20'],
+    ['Al 20 de diciembre', '2026-12-20'],
+    ['Todos los jueves 17 de diciembre', '2026-12-17'],
+    ['Los jueves 17 de diciembre', '2026-12-17'],
+    ['Cada jueves 17 de diciembre', '2026-12-17'],
+    ['Sábados 19 de diciembre', '2026-12-19'],
+    ['Domingos 20 de diciembre', '2026-12-20'],
+  ])('holds a doors pair when the date text describes a run: %s', async (dateText, date) => {
+    const excerpt = `${dateText} - Puerta 20 hs | Show 21 hs`
+    expect(await Effect.runPromise(verifyOfficialPagesEffect([evidence(officialUrl, excerpt)], { ...facts, date },
+      readHtml(`<h1>${facts.name}</h1><p>${excerpt}</p>`))))
+      .toEqual([`Official page excerpt states a date range or recurrence; cite the single occurrence's line: ${officialUrl}`])
+  })
+
+  it('does not let a shortened quote remove the run marker from a doors pair', async () => {
+    const excerpt = 'el 20 de diciembre - Puerta 20 hs | Show 21 hs'
+    expect(await Effect.runPromise(verifyOfficialPagesEffect([evidence(officialUrl, excerpt)], { ...facts, date: '2026-12-20' },
+      readHtml(`<h1>${facts.name}</h1><p>Hasta ${excerpt}</p>`))))
+      .toEqual([`Official page excerpt states a date range or recurrence; cite the single occurrence's line: ${officialUrl}`])
+  })
+
+  it.each([
+    ['El 20 de diciembre - Puerta 20 hs | Show 21 hs', '2026-12-20'],
     ['Domingo 17 - Puerta 20 hs | Show 21 hs', '2027-01-17'],
     ['Mié. 17 MAR 2027 - Puerta 20 hs | Show 21 hs', '2027-03-17'],
   ])('accepts a doors pair with a matching weekday: %s', async (excerpt, date) => {
