@@ -121,10 +121,10 @@ export function d1Intake({ db, evidence, artwork, vectors }: IntakeBindings, sit
     // ---------------------------------------------------------------------------------------------------------------
     // Collection
 
-    policy: () => d1('intake.policy', async () => (await first<IntakePolicy>(db.prepare('SELECT * FROM intake_policy WHERE id = 1')))!),
+    policy: d1('intake.policy', async () => (await first<IntakePolicy>(db.prepare('SELECT * FROM intake_policy WHERE id = 1')))!),
 
     /** reserve_instagram_collection: at most one paid run per Buenos Aires date, inside the calendar month's cap. */
-    reserveCollection: () => d1('intake.reserve', async () => {
+    reserveCollection: d1('intake.reserve', async () => {
       const policy = (await first<IntakePolicy>(db.prepare('SELECT * FROM intake_policy WHERE id = 1')))!
       if (!policy.collection_enabled) throw new Error('Instagram collection is not enabled')
       const at = new Date()
@@ -201,7 +201,7 @@ export function d1Intake({ db, evidence, artwork, vectors }: IntakeBindings, sit
         .bind(crypto.randomUUID(), observationId, position, image.object_key, image.content_type, image.sha256).run()
     }),
 
-    unreviewedMedia: () => d1('intake.missing-media', async () => (await db.prepare(`SELECT o.id, o.media_urls,
+    unreviewedMedia: d1('intake.missing-media', async () => (await db.prepare(`SELECT o.id, o.media_urls,
         (SELECT json_group_array(m.position) FROM intake_media m WHERE m.observation_id = o.id) AS positions
       FROM intake_observations o WHERE o.reviewed_at IS NULL
         AND json_array_length(o.media_urls) > (SELECT count(*) FROM intake_media m WHERE m.observation_id = o.id)
@@ -211,23 +211,23 @@ export function d1Intake({ db, evidence, artwork, vectors }: IntakeBindings, sit
     // ---------------------------------------------------------------------------------------------------------------
     // Operator reads
 
-    enabledSourceCount: () => d1('intake.sources', async () => (await db.prepare('SELECT count(*) AS n FROM instagram_sources WHERE enabled = 1').first<{ n: number }>())!.n),
-    storageReady: () => d1('intake.buckets', async () => {
+    enabledSourceCount: d1('intake.sources', async () => (await db.prepare('SELECT count(*) AS n FROM instagram_sources WHERE enabled = 1').first<{ n: number }>())!.n),
+    storageReady: d1('intake.buckets', async () => {
       await Promise.all([evidence.list({ limit: 1 }), artwork.list({ limit: 1 })])
       return true
     }),
-    sources: () => d1('intake.sources', () => all(db.prepare('SELECT * FROM instagram_sources ORDER BY username'))),
+    sources: d1('intake.sources', () => all(db.prepare('SELECT * FROM instagram_sources ORDER BY username'))),
     upsertSource: source => d1('intake.source', async () => (await first(db.prepare(`INSERT INTO instagram_sources (username, authority, enabled, qualification)
       VALUES (?, ?, ?, ?) ON CONFLICT (username) DO UPDATE SET authority = excluded.authority, enabled = excluded.enabled, qualification = excluded.qualification
       RETURNING *`).bind(source.username, source.authority, bit(source.enabled), source.qualification)))!),
-    unreviewedObservations: () => d1('intake.read', () => all(db.prepare('SELECT * FROM intake_observations WHERE reviewed_at IS NULL ORDER BY observed_at'))),
+    unreviewedObservations: d1('intake.read', () => all(db.prepare('SELECT * FROM intake_observations WHERE reviewed_at IS NULL ORDER BY observed_at'))),
     mediaFor: id => d1('intake.media', () => all<Media & Row>(db.prepare('SELECT * FROM intake_media WHERE observation_id = ? ORDER BY position').bind(id))),
     evidenceBytes: key => d1('intake.download', async () => {
       const object = await evidence.get(key)
       if (!object) throw new Error('Evidence image not found')
       return new Uint8Array(await object.arrayBuffer())
     }),
-    candidates: () => d1('intake.read', () => all(db.prepare('SELECT * FROM intake_candidates ORDER BY updated_at'))),
+    candidates: d1('intake.read', () => all(db.prepare('SELECT * FROM intake_candidates ORDER BY updated_at'))),
     // Unicode case folding like ILIKE, which SQLite's LIKE lacks for accented letters; the venue list is small.
     lookupVenues: fragment => d1('intake.venues', async () => {
       const needle = fragment.toLowerCase()
@@ -308,7 +308,7 @@ export function d1Intake({ db, evidence, artwork, vectors }: IntakeBindings, sit
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`).bind(crypto.randomUUID(), plan.candidate_id, plan.revision, plan.action, plan.event_id,
       iso(plan.expected_event_updated_at), plan.artwork_media_id, plan.artwork_note ?? null, json(plan.payload), json(plan.evidence), json(plan.reasons))))!),
     plan: readPlan,
-    publishingEnabled: () => d1('intake.policy', async () => (await db.prepare('SELECT publishing_enabled FROM intake_policy WHERE id = 1')
+    publishingEnabled: d1('intake.policy', async () => (await db.prepare('SELECT publishing_enabled FROM intake_policy WHERE id = 1')
       .first<{ publishing_enabled: number }>())?.publishing_enabled === 1),
     /** check_intake_plan: the checks run as a batch of preconditions that writes nothing when they all pass. */
     checkPlan: id => d1('intake.check-plan', async () => {
@@ -449,7 +449,7 @@ export function d1Intake({ db, evidence, artwork, vectors }: IntakeBindings, sit
     // ---------------------------------------------------------------------------------------------------------------
     // Venues
 
-    allVenues: () => d1('intake.read', () => all<VenueRow>(db.prepare('SELECT id, name, address, neighborhood FROM venues ORDER BY id'))),
+    allVenues: d1('intake.read', () => all<VenueRow>(db.prepare('SELECT id, name, address, neighborhood FROM venues ORDER BY id'))),
     /** intake_similar_venues on the trigram port (delivery PR 03). */
     similarVenues: (name, threshold) => d1('intake.venue-similar', async () =>
       similarIntakeVenues(await all<VenueRow>(db.prepare('SELECT id, name, address, neighborhood FROM venues ORDER BY created_at, id')), name, threshold)),

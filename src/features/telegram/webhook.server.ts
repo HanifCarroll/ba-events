@@ -189,8 +189,8 @@ export function handleTelegramWebhookEffect(
         settle(conversationEffect),
         settle(rateLimitEffect),
       ], { concurrency: 'unbounded' })
-      if (!conversationResult.ok) return yield* Effect.fail(conversationResult.error)
-      if (!rateResult.ok) return yield* Effect.fail(rateResult.error)
+      if (!conversationResult.ok) return yield* conversationResult.error
+      if (!rateResult.ok) return yield* rateResult.error
       const conversation = conversationResult.value
       yield* promiseEffect(
         () => (dependencies.attachConversation ?? attachTelegramUpdateConversation)(
@@ -225,7 +225,7 @@ export function handleTelegramWebhookEffect(
               : {}),
           }
       const validatedPlaintext = parseTelegramPlaintextPayload(plaintext)
-      if (!validatedPlaintext) return yield* Effect.fail(webhookFailure('Invalid Telegram payload'))
+      if (!validatedPlaintext) return yield* webhookFailure('Invalid Telegram payload')
       const sealed = yield* Effect.tryPromise({
         try: () => Promise.resolve().then(() => sealTelegramEnvelope(
           validatedPlaintext,

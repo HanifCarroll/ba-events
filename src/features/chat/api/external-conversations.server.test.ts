@@ -18,7 +18,9 @@ const channel = 'telegram' as const
 
 describe('external conversations', () => {
   it('requires a hash and stores only a null-owner external identity', async () => {
-    await expect(getOrCreateExternalConversation({ channel, externalIdentityHash: 'raw-id' })).rejects.toThrow('Invalid external identity hash')
+    await expect(getOrCreateExternalConversation({ channel, externalIdentityHash: 'raw-id' })).rejects.toMatchObject({
+      _tag: 'ExternalConversationError', message: 'Invalid external identity hash',
+    })
     const input = { channel, externalIdentityHash: 'a'.repeat(64) }
     const created = await getOrCreateExternalConversation(input)
     expect(await getOrCreateExternalConversation(input)).toEqual(created)

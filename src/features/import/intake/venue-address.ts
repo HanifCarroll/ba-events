@@ -83,5 +83,5 @@ export function lookupUsig(address: string, key: string, explicit: boolean) {
     const area = Schema.decodeUnknownResult(usigArea)(await readUsig('https://ws.usig.buenosaires.gob.ar/datos_utiles',
       { calle: city[0].nombre_calle, altura: String(height) }))
     return area._tag === 'Success' ? barrio(area.success.barrio) : null
-  }).pipe(Effect.catch(() => Effect.succeed(null)))
+  }).pipe(Effect.orElseSucceed(() => null))
 }

@@ -73,7 +73,7 @@ const venueRow = Schema.Struct({
   enrichment_status: Schema.String, enrichment_error: Text, enriched_at: Text, address_check_status: Schema.String,
   created_at: Schema.String, updated_at: Schema.String,
 })
-const venueWithCount = Schema.Struct({ ...venueRow.fields, event_count: Schema.Number })
+const venueWithCount = Schema.Struct({ ...venueRow.fields, event_count: Schema.Finite })
 
 const existingEventRow = Schema.Struct({
   id: Schema.String, external_id: Schema.String, name: Schema.String, description_es: Text, description_en: Text,
@@ -251,7 +251,7 @@ export function d1Catalog(db: D1Database, vectors: Vectorize): CatalogStore {
 
     async venueReviewEventIds(id) {
       const ids = await db.prepare('SELECT source_event_ids FROM venue_review_queue WHERE id = ?').bind(id).first<string | null>('source_event_ids')
-      return ids ? Schema.decodeUnknownSync(Strings)(ids) as string[] : []
+      return ids ? Schema.decodeSync(Strings)(ids) as string[] : []
     },
 
     async setEventsVenue(eventIds, venueId) {

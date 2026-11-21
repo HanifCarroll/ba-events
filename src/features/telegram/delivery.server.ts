@@ -23,17 +23,17 @@ export function claimTelegramUpdateEffect(
   identityHash: string,
 ): Effect.Effect<TelegramDeliveryClaim, TelegramDeliveryError> {
   return Effect.gen(function* () {
-    if (!/^[a-f0-9]{64}$/.test(identityHash)) return yield* Effect.fail(deliveryFailure('Invalid Telegram identity hash'))
+    if (!/^[a-f0-9]{64}$/.test(identityHash)) return yield* deliveryFailure('Invalid Telegram identity hash')
     const envelopeKey = createTelegramEnvelopeKey()
     const now = new Date().toISOString()
     if (yield* d1Effect(() => d1.insertClaim(requireD1(), updateId, identityHash, envelopeKey, now), 'Failed to claim Telegram update')) {
       return { completed: false, envelopeKey, checkRateLimit: true }
     }
     const data = yield* d1Effect(() => d1.readClaim(requireD1(), updateId), 'Failed to read Telegram update claim')
-    if (!data) return yield* Effect.fail(deliveryFailure('Failed to read Telegram update claim'))
+    if (!data) return yield* deliveryFailure('Failed to read Telegram update claim')
     if (data.status === 'completed') return { completed: true }
-    if (data.identity_hash !== identityHash) return yield* Effect.fail(deliveryFailure('Telegram update identity mismatch'))
-    if (typeof data.envelope_key !== 'string') return yield* Effect.fail(deliveryFailure('Telegram update retry key is unavailable'))
+    if (data.identity_hash !== identityHash) return yield* deliveryFailure('Telegram update identity mismatch')
+    if (typeof data.envelope_key !== 'string') return yield* deliveryFailure('Telegram update retry key is unavailable')
     const retryKey = data.envelope_key
     yield* d1Effect(() => d1.renewClaim(requireD1(), updateId, identityHash, now), 'Failed to renew Telegram update claim')
     return { completed: false, envelopeKey: retryKey, checkRateLimit: data.status === 'failed' }
@@ -73,9 +73,9 @@ export function getTelegramUpdateEnvelopeKeyEffect(
 ): Effect.Effect<string | null, TelegramDeliveryError> {
   return Effect.gen(function* () {
     const data = yield* d1Effect(() => d1.readClaim(requireD1(), updateId), 'Telegram update envelope key unavailable')
-    if (!data) return yield* Effect.fail(deliveryFailure('Telegram update envelope key unavailable'))
+    if (!data) return yield* deliveryFailure('Telegram update envelope key unavailable')
     if (data.status === 'completed' && data.envelope_key == null) return null
-    if (typeof data.envelope_key !== 'string') return yield* Effect.fail(deliveryFailure('Telegram update envelope key unavailable'))
+    if (typeof data.envelope_key !== 'string') return yield* deliveryFailure('Telegram update envelope key unavailable')
     return data.envelope_key
   })
 }

@@ -75,7 +75,7 @@ export const resolveIntakeVenueEffect = Effect.fn('intake.venue')(function*(stor
   if (!key) return { outcome: 'rejected', reasons: ['Address needs a street name followed by a house number'] } satisfies VenueOutcome
   const locate = (given: string | null) => locateEffect(geocode, cityLookup, address, key, given, request.evidence)
   // Strict reads: a database outage must fail here rather than look like "no match" and create a duplicate.
-  const venues = yield* store.allVenues()
+  const venues = yield* store.allVenues
   const similar = yield* store.similarVenues(name, REVIEW_QUEUE_THRESHOLD)
   // Refuse an unusually large set of lookalikes rather than taking a partial match.
   if (similar.length >= 1000) return yield* failure('Too many similar venue names to check; use a more specific name')

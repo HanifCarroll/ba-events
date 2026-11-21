@@ -123,9 +123,9 @@ export function getConversation(event: RequestEvent, data: { id: string }) {
 /** Effect-native conversation creation program. */
 export function createConversationEffect(event: RequestEvent, data: ConversationInsert) {
   return Effect.gen(function* () {
-    if (data.id && !UUID_RE.test(data.id)) return yield* Effect.fail(persistenceFailure('Failed to create conversation'))
+    if (data.id && !UUID_RE.test(data.id)) return yield* persistenceFailure('Failed to create conversation')
     const userId = event.locals?.user?.id
-    if (!userId) return yield* Effect.fail(authFailure('Not authenticated'))
+    if (!userId) return yield* authFailure('Not authenticated')
     return yield* d1Effect(() => d1.createConversation(requireD1(), userId, data), 'Failed to create conversation')
   })
 }

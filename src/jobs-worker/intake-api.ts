@@ -109,7 +109,7 @@ const fetchStoredImage = Effect.fn('intake.fetchStoredImage')(function*(store: I
 const OPERATIONS: Record<string, Handler> = {
   preflight: (store, body, env) => fromBadRequest(() => strict(Empty, body)).pipe(Effect.andThen(() =>
     preflightEffect(store, { embedding: !!env.OPENAI_API_KEY, presentation: !!env.DEEPSEEK_API_KEY }))),
-  'sources/list': (store, body) => fromBadRequest(() => strict(Empty, body)).pipe(Effect.andThen(() => store.sources())),
+  'sources/list': (store, body) => fromBadRequest(() => strict(Empty, body)).pipe(Effect.andThen(store.sources)),
   source: (store, body) => decodeSource(body).pipe(Effect.flatMap(source => store.upsertSource(source))),
   // Hermes' bulk import (replaces import_sources.py): new usernames inserted disabled, existing ones untouched.
   sources: (_store, body, _env, db) => fromBadRequest(() => {
@@ -121,7 +121,7 @@ const OPERATIONS: Record<string, Handler> = {
     ? Effect.fail(new ImportOperationError({ operation: 'intake.input', message: 'Every qualification needs text' }))
     : importSourcesEffect(db, sources))),
   pending: (store, body) => fromBadRequest(() => strict(Empty, body)).pipe(Effect.andThen(() => pendingEffect(store))),
-  candidates: (store, body) => fromBadRequest(() => strict(Empty, body)).pipe(Effect.andThen(() => store.candidates())),
+  candidates: (store, body) => fromBadRequest(() => strict(Empty, body)).pipe(Effect.andThen(store.candidates)),
   held: (store, body) => fromBadRequest(() => strict(Empty, body)).pipe(Effect.andThen(() => heldBacklogEffect(store))),
   lookup: (store, body) => fromBadRequest(() => strict(Schema.Struct({ name: Schema.String }), body))
     .pipe(Effect.flatMap(({ name }) => lookupEffect(store, name))),
@@ -138,8 +138,8 @@ const OPERATIONS: Record<string, Handler> = {
   review: (store, body) => decodeReview(body).pipe(Effect.flatMap(review => store.reviewObservation(review.observation_id, review.note))),
 
   // `collect` runs Apify and normally downloads images on the operator's Mac.
-  'collection/policy': (store, body) => fromBadRequest(() => strict(Empty, body)).pipe(Effect.andThen(() => store.policy())),
-  'collection/reserve': (store, body) => fromBadRequest(() => strict(Empty, body)).pipe(Effect.andThen(() => store.reserveCollection())),
+  'collection/policy': (store, body) => fromBadRequest(() => strict(Empty, body)).pipe(Effect.andThen(store.policy)),
+  'collection/reserve': (store, body) => fromBadRequest(() => strict(Empty, body)).pipe(Effect.andThen(store.reserveCollection)),
   'collection/run': (store, body) => fromBadRequest(() => strict(RunPatch, body)).pipe(
     Effect.flatMap(({ id, patch }) => store.updateRun(id, patch)), Effect.map(month => ({ ok: true, ...(month ? { month } : {}) }))),
   'collection/latest': (store, body) => fromBadRequest(() => strict(Schema.Struct({ post_id: Text(100) }), body))
@@ -147,7 +147,7 @@ const OPERATIONS: Record<string, Handler> = {
   'collection/seen': (store, body) => fromBadRequest(() => strict(ById, body)).pipe(Effect.flatMap(({ id }) => store.touchObservation(id)), Effect.as({ ok: true })),
   'collection/observe': (store, body) => fromBadRequest(() => strict(Observation, body)).pipe(Effect.flatMap(row => store.upsertObservation({ ...row, media_urls: [...row.media_urls] }))),
   'collection/positions': (store, body) => fromBadRequest(() => strict(ById, body)).pipe(Effect.flatMap(({ id }) => store.mediaPositions(id))),
-  'collection/missing-media': (store, body) => fromBadRequest(() => strict(Empty, body)).pipe(Effect.andThen(() => store.unreviewedMedia())),
+  'collection/missing-media': (store, body) => fromBadRequest(() => strict(Empty, body)).pipe(Effect.andThen(store.unreviewedMedia)),
   'collection/fetch-media': (store, body) => fromBadRequest(() => strict(MediaPosition, body)).pipe(Effect.flatMap(item => fetchStoredImage(store, item))),
 }
 

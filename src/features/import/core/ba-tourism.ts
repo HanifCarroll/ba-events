@@ -330,7 +330,7 @@ export function processBATourismImportEffect(
       return Effect.catchEager(itemProgram, (error) => {
         console.error(`[ba-tourism] Error processing event ${transformed.name}:`, error)
         result.eventsSkipped++
-        return Effect.succeed(undefined)
+        return Effect.undefined
       })
     }, { concurrency: 1 })
 

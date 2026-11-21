@@ -229,7 +229,7 @@ describe('collect through the CLI client', () => {
   it('retries a missing image through the API into R2', async () => {
     await db.prepare("INSERT INTO instagram_sources (username, authority, enabled, qualification) VALUES ('synthetic_venue', 'venue', 1, 'Synthetic')").run()
     const store = remoteCollection(client())
-    const runId = (await Effect.runPromise(store.reserveCollection())).id
+    const runId = (await Effect.runPromise(store.reserveCollection)).id
     const flyer = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 7, 7, 7])
     const offline = async () => { throw new Error('offline') }
     const first = await Effect.runPromise(retainPostsEffect(store, runId, [{ id: 'p2', shortCode: 'sc2', ownerUsername: 'synthetic_venue',
@@ -239,6 +239,6 @@ describe('collect through the CLI client', () => {
     expect(retry).toEqual({ attempted: 1, retained: 1, failed: [], expired: [], deferred: [], serverFetched: [] })
     const saved = await db.prepare('SELECT object_key FROM intake_media').first<{ object_key: string }>()
     expect(env.INTAKE_EVIDENCE.objects.has(saved!.object_key)).toBe(true)
-    expect(await Effect.runPromise(store.unreviewedMedia())).toEqual([])
+    expect(await Effect.runPromise(store.unreviewedMedia)).toEqual([])
   })
 })
