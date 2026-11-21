@@ -15,7 +15,7 @@ const SHOWTIMES = `<html><head><title>Sala Sintética</title><script>var s = "LU
       LUNES 23 NOVIEMBRE
   </div>
   <div class="sp-funcion-hora">21:00</div>
-  <p hidden>MARTES 23 NOVIEMBRE 21:00</p><p style="display: none">MIÉRCOLES 25 NOVIEMBRE</p>
+  <p hidden>LUNES 23 DE NOVIEMBRE 21:00</p><p style="display: none">MIÉRCOLES 25 NOVIEMBRE</p>
   <p>Teatro&nbsp;Sint&eacute;tico, Pasaje Ficticio 1234</p>
 </body></html>`
 const evidence = (url: string, excerpt: string, fields: Array<'date' | 'time' | 'venue'> = ['date', 'time']) => ({ kind: 'official_page' as const, url, fields, excerpt })
@@ -36,7 +36,7 @@ describe('official-page evidence', () => {
     expect(text).toContain('LUNES 23 NOVIEMBRE')
     expect(text).toContain('Teatro\u00a0Sintético')
     expect(text).not.toContain('ENERO')
-    expect(text).not.toContain('MARTES')
+    expect(text).not.toContain('LUNES 23 DE NOVIEMBRE')
     expect(text).not.toContain('MIÉRCOLES')
     expect(text).not.toContain('Sala Sintética')
   })
@@ -53,7 +53,7 @@ describe('official-page evidence', () => {
 
   it('keeps token boundaries: "sábado 2 21:00" is not "sábado 22 1:00" or "12 21:00"', async () => {
     const page = readHtml('<h1>Forever Sintético</h1><p>sábado 22 1:00</p><p>viernes 12 21:00</p>')
-    const day2 = { ...facts, date: '2026-11-02' }
+    const day2 = { ...facts, date: '2026-05-02' }
     for (const excerpt of ['sábado 2 21:00', 'el 2 21:00 y más']) {
       expect(await Effect.runPromise(verifyOfficialPagesEffect([evidence('https://teatro.example.org/obra', excerpt)], day2, page)))
         .toEqual(["Official page evidence must be an excerpt of the page's visible text: https://teatro.example.org/obra"])
@@ -158,6 +158,20 @@ describe('official-page evidence', () => {
     expect(await verify(show)).toEqual([])
     for (const time of [doors, null]) {
       expect(await verify(time, ['date'])).toEqual([`Official page excerpt states the show starts at ${show}; set the candidate's start time to match: ${officialUrl}`])
+    }
+  })
+
+  it.each([
+    ['Sábado 22 de noviembre 21:00', false],
+    ['21:00 Mar. 22', false],
+    ['Domingo 22 de noviembre 21:00', true],
+    ['22 de noviembre 21:00', true],
+  ])('checks explicit weekdays on ordinary timing excerpts: %s', async (excerpt, matches) => {
+    const date = '2026-11-22'
+    for (const field of ['date', 'time'] as const) {
+      const reasons = await Effect.runPromise(verifyOfficialPagesEffect([evidence(officialUrl, excerpt, [field])], { ...facts, date },
+        readHtml(`<h1>${facts.name}</h1><p>${excerpt}</p>`)))
+      expect(reasons).toEqual(matches ? [] : [`Official page excerpt states a weekday that does not match ${date}: ${officialUrl}`])
     }
   })
 
@@ -481,7 +495,7 @@ describe('official-page evidence', () => {
   })
 
   it.each(['SUSPENDIDA', 'Cancelada', 'Réprogramadas', 'Se suspende la función', 'Se reprograma', 'Cancelación',
-    'Suspensión de la función', 'POSTERGADA'])('does not verify a calendar entry marked %s', async status => {
+    'Suspensión de la función', 'POSTERGADA', 'Se posterga la función', 'Función pospuesta', 'Se pospone la función'])('does not verify a calendar entry marked %s', async status => {
     const entry = (name: string, badge: string) => `<li><div class="calendar-hora">21:00 hs</div>
       <a href="/obra/sintetica/">${name}</a><span>${badge}</span></li>`
     const read = readHtml(`<h1>${facts.name}</h1><p>2026-11-23 21:00 | ${facts.name}</p>
@@ -567,8 +581,8 @@ describe('official-page evidence', () => {
   it('rejects an excerpt the page lacks, hidden text, a failed read, a private address, and a too-short excerpt', async () => {
     let reads = 0
     const reasons = await Effect.runPromise(verifyOfficialPagesEffect([
-      evidence('https://teatro.example.org/obra', 'MARTES 23 NOVIEMBRE 21:00'), // hidden on the page
-      evidence('https://teatro.example.org/obra', 'VIERNES 23 NOVIEMBRE 21:00'),
+      evidence('https://teatro.example.org/obra', 'LUNES 23 DE NOVIEMBRE 21:00'), // hidden on the page
+      evidence('https://teatro.example.org/obra', 'LUNES, 23 DE NOVIEMBRE 21:00'),
       evidence('https://down.example.org/obra', 'LUNES 23 NOVIEMBRE 21:00', ['date']),
       evidence('https://192.168.0.2/obra', 'LUNES 23 NOVIEMBRE', ['date']),
       evidence('https://teatro.example.org/obra', 'el 23', ['date']),
@@ -787,8 +801,8 @@ describe('official-page evidence', () => {
       })))
     const missing = [`Official page date or time evidence must quote the selected future performance: ${url}`]
     expect(await verify(line)).toEqual([])
-    expect(await verify(line, line, '22:00', facts.name, '2027-11-28'))
-      .toEqual([`Official page excerpt does not state the selected performance date 2027-11-28: ${url}`])
+    expect(await verify(line, line, '22:00', facts.name, '2037-11-28')) // Same weekday, but still the wrong year.
+      .toEqual([`Official page excerpt does not state the selected performance date 2037-11-28: ${url}`])
     expect(await verify('')).toEqual(missing) // CSS-hidden in static HTML, and unrelated body text cannot stand in for the rendered card
     expect(await verify(line, line, '23:15')).toEqual([`Official page excerpt does not state the time 23:15: ${url}`])
     expect((await verify(line, line, '22:00', 'Otra obra'))[0]).toContain('H1: "Otra obra"')

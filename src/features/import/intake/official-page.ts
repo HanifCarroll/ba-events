@@ -111,7 +111,7 @@ type PageRead = { visible: string; title: string | null; h1: string | null; h1Wi
   identityNeedsRender?: boolean; selected?: SelectedPerformance | null; calendar?: { host: string; entries: Performance[] } }
 
 const CALENDAR_CITATION = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2} \| .+$/
-const UNAVAILABLE_PERFORMANCE = /suspens|suspend|cancel|reprogram|postergad/
+const UNAVAILABLE_PERFORMANCE = /suspens|suspend|cancel|reprogram|posterg|pospue|pospon/
 const calendarHost = (hostname: string) => hostname.replace(/^www\./, '')
 
 /** Read the Cervantes calendar shape, with no guesses from neighboring shows or dates in the page's prose. */
@@ -430,10 +430,8 @@ export function excerptFactsReason(excerpt: string, fields: readonly string[], f
     if (monthNumber(name) !== month) return wrongMonth
   }
   for (const [number] of calendar.matchAll(/\b(?:19|20)\d{2}\b/g)) if (Number(number) !== year) return wrongYear
-  if (pair) {
-    if (!matchesWeekday(pair.dateText, new Date(`${facts.date}T00:00:00Z`))) return `states a weekday that does not match ${facts.date}`
-    return facts.time === pair.time ? null : `states the show starts at ${pair.time}; set the candidate's start time to match`
-  }
+  if (!matchesWeekday(calendar, new Date(`${facts.date}T00:00:00Z`))) return `states a weekday that does not match ${facts.date}`
+  if (pair) return facts.time === pair.time ? null : `states the show starts at ${pair.time}; set the candidate's start time to match`
   const start = starts[0]
   if (!start || !validClock(start)) {
     return facts.time ? `does not state the time ${facts.time}` : 'does not state a start time'

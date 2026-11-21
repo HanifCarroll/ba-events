@@ -64,7 +64,8 @@ export function allowedInstagramMedia(value: string): boolean {
 export const MAX_IMAGE_BYTES = 10 * 1024 * 1024
 class InstagramConnectionError extends Error {}
 const CONNECTION_ERRORS = new Set(['ConnectionRefused', 'FailedToOpenSocket', 'ECONNREFUSED', 'ENETUNREACH', 'EHOSTUNREACH',
-  'ENETDOWN', 'ECONNRESET', 'ENOTFOUND', 'EAI_AGAIN', 'ETIMEDOUT', 'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_HEADERS_TIMEOUT'])
+  'ENETDOWN', 'ECONNRESET', 'ENOTFOUND', 'EAI_AGAIN', 'ETIMEDOUT', 'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_HEADERS_TIMEOUT',
+  'ConnectionClosed', 'SocketClosed', 'ERR_SOCKET_CLOSED', 'UND_ERR_SOCKET'])
 const isTimeout = (error: unknown) => error instanceof Error && error.name === 'TimeoutError'
 const errorCode = (error: unknown) => typeof error === 'object' && error !== null && 'code' in error && typeof error.code === 'string' ? error.code : undefined
 

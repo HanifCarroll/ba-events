@@ -222,6 +222,23 @@ describe('retrying missing images of unreviewed observations', () => {
       ] })
   })
 
+  it.each(['ConnectionClosed', 'SocketClosed', 'ERR_SOCKET_CLOSED', 'UND_ERR_SOCKET', 'ECONNRESET'])('falls back on %s only before receiving headers', async code => {
+    const { db } = mediaDb([{ id: 'post', media_urls: [signed('headers', later), signed('body', later)] }], [])
+    const socket = Object.assign(new Error('connection closed'), { code })
+    const error = code === 'UND_ERR_SOCKET' ? new TypeError('fetch failed', { cause: socket }) : socket
+    const network: typeof fetch = async url => {
+      if (new URL(String(url)).pathname === '/v/headers.jpg') throw error
+      return new Response(new ReadableStream({ pull: controller => controller.error(error) }))
+    }
+    const fetchAndRetainImage = vi.fn((_id: string, _position: number) => Effect.succeed(null))
+    const result = await Effect.runPromise(retryMissingMediaEffect({ ...db, fetchAndRetainImage }, {
+      now, fetcher: url => fetchInstagramImage(url, network),
+    }))
+    expect(fetchAndRetainImage.mock.calls).toEqual([['post', 0]])
+    expect(result).toMatchObject({ retained: 1, serverFetched: [{ observation_id: 'post', position: 0 }],
+      failed: [{ observation_id: 'post', position: 1, reason: expect.stringContaining(code) }] })
+  })
+
   it('reads the hex expiry from a signed Instagram URL', () => {
     expect(signedUrlExpiry('https://scontent.cdninstagram.com/v/x.jpg?oe=691E1234')?.toISOString()).toBe('2025-11-19T18:53:40.000Z')
     expect(signedUrlExpiry('https://scontent.cdninstagram.com/v/x.jpg')).toBeNull()
