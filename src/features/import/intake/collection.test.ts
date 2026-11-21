@@ -185,9 +185,10 @@ describe('retrying missing images of unreviewed observations', () => {
     expect(result).toMatchObject({ attempted: 2, retained: 1, error: expect.stringContaining('deadline') })
   })
 
-  it('only asks the Worker for connection errors before HTTP, never for HTTP failures, body errors, or expiry', async () => {
+  it('asks the Worker for connection failures and timeouts before headers, never for HTTP responses, body failures, or expiry', async () => {
     const missing = [signed('refused', later), signed('unreachable', later), signed('403', later), signed('503', later),
-      signed('redirect', later), signed('bad-bytes', later), signed('broken-body', later), signed('timeout', later), signed('expired', earlier)]
+      signed('redirect', later), signed('bad-bytes', later), signed('broken-body', later), signed('timeout', later),
+      signed('node-headers-timeout', later), signed('body-timeout', later), signed('expired', earlier)]
     const { db } = mediaDb([{ id: 'post', media_urls: missing }], [])
     const socketError = Object.assign(new Error('connection refused'), { code: 'ConnectionRefused' })
     const upstream = async (url: string | URL | Request) => {
@@ -200,6 +201,8 @@ describe('retrying missing images of unreviewed observations', () => {
         case '/v/bad-bytes.jpg': return new Response('not an image')
         case '/v/broken-body.jpg': return new Response(new ReadableStream({ pull: controller => controller.error(socketError) }))
         case '/v/timeout.jpg': throw new DOMException('deadline', 'TimeoutError')
+        case '/v/node-headers-timeout.jpg': throw new TypeError('fetch failed', { cause: Object.assign(new Error('headers timeout'), { code: 'UND_ERR_HEADERS_TIMEOUT' }) })
+        case '/v/body-timeout.jpg': return new Response(new ReadableStream({ pull: controller => controller.error(new DOMException('deadline', 'TimeoutError')) }))
         default: throw new Error('Unexpected fetch')
       }
     }
@@ -208,13 +211,14 @@ describe('retrying missing images of unreviewed observations', () => {
     const result = await Effect.runPromise(retryMissingMediaEffect({ ...db, fetchAndRetainImage }, {
       now, fetcher: url => fetchInstagramImage(url, network as typeof fetch),
     }))
-    expect(fetchAndRetainImage.mock.calls).toEqual([['post', 0], ['post', 1]])
-    expect(network.mock.calls.map(([url]) => url)).not.toContain(missing[8])
-    expect(result).toMatchObject({ attempted: 8, retained: 2, serverFetched: [{ observation_id: 'post', position: 0 }, { observation_id: 'post', position: 1 }],
-      expired: [{ observation_id: 'post', position: 8 }], failed: [
+    const recovered = [0, 1, 7, 8]
+    expect(fetchAndRetainImage.mock.calls).toEqual(recovered.map(position => ['post', position]))
+    expect(network.mock.calls.map(([url]) => url)).not.toContain(missing[10])
+    expect(result).toMatchObject({ attempted: 10, retained: 4, serverFetched: recovered.map(position => ({ observation_id: 'post', position })),
+      expired: [{ observation_id: 'post', position: 10 }], failed: [
         { position: 2, reason: 'answered 403' }, { position: 3, reason: 'answered 503' }, { position: 4, reason: 'redirected' },
         { position: 5, reason: expect.stringContaining('not an image') }, { position: 6, reason: expect.stringContaining('connection refused') },
-        { position: 7, reason: 'timed out after 15 s' },
+        { position: 9, reason: 'timed out after 15 s' },
       ] })
   })
 

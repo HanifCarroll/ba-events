@@ -71,14 +71,8 @@ export function requireOfficialPageUrl(url: string, sites: ReadonlySet<string>, 
 export const normalizePageText = (value: string) => value.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replace(/\s+/gu, ' ').trim()
 /** Ordinary ticket-page titles can use a standalone Spanish `y` as an artist separator. */
 const nameText = (value: string) => normalizeTitle(value).split(' ').filter(word => word !== 'y').join(' ')
-const AGE_RATING = String.raw`(?:atp|apto todo publico|\+(?:13|16|18)|sam (?:13|16|18)|r(?:13|16|18))`
-const LEADING_AGE = new RegExp(`^${AGE_RATING} `)
-const TRAILING_AGE = new RegExp(` ${AGE_RATING}$`)
-function matchesHeading(heading: string, name: string): boolean {
-  if (nameText(heading) === name) return true
-  const text = normalizePageText(heading)
-  return nameText(text.replace(LEADING_AGE, '')) === name || nameText(text.replace(TRAILING_AGE, '')) === name
-}
+const AGE_RATING = /^(?:atp|apto todo publico|\+(?:13|16|18)|sam (?:13|16|18)|r(?:13|16|18))$/
+type Heading = { text: string; withoutRating?: string[] }
 const pageTitleHint = (title: string | null) => title ? ` (page title: ${JSON.stringify(title.slice(0, 255))})` : ''
 
 // React's inline reveal calls: `$RS("S:n","P:m")` moves a segment into a placeholder, `$RC("B:m","S:n")` into a boundary.
@@ -113,11 +107,12 @@ function revealStreamedSegments($: CheerioAPI) {
 
 type Performance = { text: string; date: string; time: string; title: string }
 type SelectedPerformance = Performance & { confirmed: boolean }
-type PageRead = { visible: string; title: string | null; h1: string | null; titleName?: string;
-  identityNeedsRender?: boolean; selected?: SelectedPerformance | null; calendar?: { site: string; entries: Performance[] } }
+type PageRead = { visible: string; title: string | null; h1: string | null; h1WithoutRating?: string[]; titleName?: string;
+  identityNeedsRender?: boolean; selected?: SelectedPerformance | null; calendar?: { host: string; entries: Performance[] } }
 
 const CALENDAR_CITATION = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2} \| .+$/
-const UNAVAILABLE_PERFORMANCE = /suspend|cancel|reprogram/
+const UNAVAILABLE_PERFORMANCE = /suspens|suspend|cancel|reprogram|postergad/
+const calendarHost = (hostname: string) => hostname.replace(/^www\./, '')
 
 /** Read the Cervantes calendar shape, with no guesses from neighboring shows or dates in the page's prose. */
 function calendarPerformances($: CheerioAPI, url: URL): Performance[] | undefined {
@@ -129,6 +124,9 @@ function calendarPerformances($: CheerioAPI, url: URL): Performance[] | undefine
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue
     const midnight = new Date(`${date}T00:00:00Z`)
     if (!Number.isFinite(midnight.getTime()) || !midnight.toISOString().startsWith(`${date}T`)) continue
+    const dayLabel = $(cell).clone()
+    dayLabel.find('li').remove()
+    if (!matchesWeekday(dayLabel.text(), midnight)) continue
     for (const entry of $(cell).find('li').toArray()) {
       if ($(entry).closest('td').get(0) !== cell) continue
       const own = (selector: string) => $(entry).find(selector).filter((_, node) => $(node).closest('li').get(0) === entry)
@@ -145,25 +143,46 @@ function calendarPerformances($: CheerioAPI, url: URL): Performance[] | undefine
       const ownText = $(entry).clone()
       ownText.find('li').remove()
       if (UNAVAILABLE_PERFORMANCE.test(normalizePageText(ownText.text()))) continue
+      // A weekday in the production title isn't a statement about the performance date.
+      const showHref = showLinks.attr('href')
+      ownText.find('a[href]').filter((_, link) => $(link).attr('href') === showHref).remove()
+      if (!matchesWeekday(ownText.text(), midnight)) continue
       performances.push({ date, time, title, text: `${date} ${time} | ${title}` })
     }
   }
   return performances
 }
 
-function identity(title: string | null, headings: readonly string[], siteName?: string | null, hasStyles = false) {
+function staticHeadings($: CheerioAPI): Heading[] {
+  return $('h1').toArray().map(element => {
+    const text = $(element).text().replace(/\s+/g, ' ').trim()
+    const parts = $(element).contents().toArray().map(node => ({ text: $(node).text().trim(), element: node.type === 'tag' })).filter(part => part.text)
+    const withoutRating: string[] = []
+    if (parts.length > 1) {
+      for (const index of [0, parts.length - 1]) {
+        if (parts[index].element && AGE_RATING.test(normalizePageText(parts[index].text))) {
+          withoutRating.push(parts.filter((_, offset) => offset !== index).map(part => part.text).join(' '))
+        }
+      }
+    }
+    return { text, withoutRating }
+  })
+}
+
+function identity(title: string | null, headings: readonly Heading[], siteName?: string | null, hasStyles = false) {
   const titleParts = title?.match(/^(.*) (?:-|\|) (.+)$/)
   const [left, right] = (titleParts?.slice(1) ?? []).map(normalizePageText)
   const site = normalizePageText(siteName ?? '')
-  const [first, next, ...later] = headings.filter(text => text.trim())
-  const heading = normalizePageText(first ?? '')
+  const [first, next, ...later] = headings.filter(({ text }) => text.trim())
+  const heading = normalizePageText(first?.text ?? '')
   const titleShow = heading === left ? right : heading === right ? left : undefined
   // Skip the first visible H1 only if it equals og:site_name or one side of the last " - " / " | " title separator and the next visible H1 equals the other side. The next H1 is then the identity; use the title only when no H1 remains.
-  const skip = !!heading && (heading === site || !!titleShow && normalizePageText(next ?? '') === titleShow)
+  const skip = !!heading && (heading === site || !!titleShow && normalizePageText(next?.text ?? '') === titleShow)
   const titleName = titleParts && site ? (site === right ? titleParts[1] : site === left ? titleParts[2] : undefined) : undefined
   // CSS can hide the apparently corroborating H1 or an intervening heading before it.
-  const identityNeedsRender = hasStyles && (skip || !!titleShow && later.some(text => normalizePageText(text) === titleShow))
-  return { title, h1: (skip ? next : first) ?? null, titleName, identityNeedsRender }
+  const identityNeedsRender = hasStyles && (skip || !!titleShow && later.some(({ text }) => normalizePageText(text) === titleShow))
+  const chosen = skip ? next : first
+  return { title, h1: chosen?.text ?? null, h1WithoutRating: chosen?.withoutRating, titleName, identityNeedsRender }
 }
 
 /** Use the matching Fanz event/date IDs to bind the start time, never JSON descriptions or other performances. */
@@ -281,7 +300,7 @@ export async function readOfficialPage(url: string, sites: ReadonlySet<string>, 
     const site = $?.('meta[property="og:site_name"]').first().attr('content')
     const hasStyles = !!$?.('style, link[rel~="stylesheet"], link[as="style"]').length
     if ($) prepareVisibleDom($)
-    const headings = $?.('h1').map((_, element) => $(element).text().replace(/\s+/g, ' ').trim()).get() ?? []
+    const headings = $ ? staticHeadings($) : []
     const visible = $ ? $.root().text() : text
     // An empty page (Incapsula's stub) or a short Cloudflare challenge page. A protection script alone proves nothing:
     // Imperva and Cloudflare inject theirs into real pages too.
@@ -294,7 +313,7 @@ export async function readOfficialPage(url: string, sites: ReadonlySet<string>, 
     const selected = selectedFanzPerformance(final, new URL(url), fanz, fanzJson,
       { visible, singleDate: cards?.length === 1 ? cards.text() : '', rendered: false })
     const entries = $ && selected === undefined ? calendarPerformances($, final) : undefined
-    const calendar = entries === undefined ? undefined : { site: siteOf(final.hostname), entries }
+    const calendar = entries === undefined ? undefined : { host: calendarHost(final.hostname), entries }
     return { visible, ...identity(title, headings, site, hasStyles), ...(selected !== undefined ? { selected } : {}), ...(calendar ? { calendar } : {}) }
   }
 }
@@ -309,7 +328,7 @@ export function renderedPageRead(requested: string, snapshot: { url: string; vis
   if (challenge || challengeTitle(title) || !visible.trim()) throw new Error(UNREADABLE)
   if (visible.length > MAX_BYTES) throw new Error('page exceeds 2 MB')
   const selected = selectedFanzPerformance(new URL(url), new URL(requested), fanzLink(fanzLinks), fanzJson, { visible, singleDate, rendered: true })
-  return { url, visible, ...identity(title || null, headings, siteName), ...(selected !== undefined ? { selected } : {}) }
+  return { url, visible, ...identity(title || null, headings.map(text => ({ text })), siteName), ...(selected !== undefined ? { selected } : {}) }
 }
 
 /** The candidate facts a page excerpt must back: its name, its BA date, and its BA time when it has one. */
@@ -335,6 +354,13 @@ const DOORS_PAIR = new RegExp(`^(.+?) (?:puertas?|apertura(?: de puertas?)?|door
 type Clock = { hour: number; minute: number }
 const validClock = ({ hour, minute }: Clock) => hour >= 0 && hour <= 23 && minute <= 59
 const WEEKDAYS = 'lun(?:es)?|mar(?:tes)?|mie(?:rcoles)?|jue(?:ves)?|vie(?:rnes)?|sab(?:ado)?|dom(?:ingo)?'
+const WEEKDAY_NAME = new RegExp(String.raw`\b(?:${WEEKDAYS})\b`, 'g')
+const WEEKDAY_PREFIX = ['dom', 'lun', 'mar', 'mie', 'jue', 'vie', 'sab']
+function matchesWeekday(text: string, date: Date): boolean {
+  // Strip full dates first so their abbreviated March (`mar`) isn't mistaken for a weekday.
+  const expected = WEEKDAY_PREFIX[date.getUTCDay()]
+  return [...normalizePageText(text).replace(DATE, ' ').matchAll(WEEKDAY_NAME)].every(([day]) => day.slice(0, 3) === expected)
+}
 const EXPLICIT_DAY_PREFIX = new RegExp(String.raw`\b(?:dia|${WEEKDAYS})[.,:]? (?:el )?$`)
 const DAY_ONLY = new RegExp(String.raw`\b(?:el|dia|${WEEKDAYS}|${MONTHS.join('|')})[.,:]? (\d{1,2})\b(?![./-]\d)`, 'g')
 const JOINED_DAYS = /\b\d{1,2}\b *(?:[,–—-]|y\b|o\b|al\b) *#|# *(?:[,–—-]|\by\b|\bo\b|\bal\b) *\d{1,2}\b(?! [a-z])/
@@ -404,7 +430,10 @@ export function excerptFactsReason(excerpt: string, fields: readonly string[], f
     if (monthNumber(name) !== month) return wrongMonth
   }
   for (const [number] of calendar.matchAll(/\b(?:19|20)\d{2}\b/g)) if (Number(number) !== year) return wrongYear
-  if (pair) return facts.time === pair.time ? null : `states the show starts at ${pair.time}; set the candidate's start time to match`
+  if (pair) {
+    if (!matchesWeekday(pair.dateText, new Date(`${facts.date}T00:00:00Z`))) return `states a weekday that does not match ${facts.date}`
+    return facts.time === pair.time ? null : `states the show starts at ${pair.time}; set the candidate's start time to match`
+  }
   const start = starts[0]
   if (!start || !validClock(start)) {
     return facts.time ? `does not state the time ${facts.time}` : 'does not state a start time'
@@ -432,12 +461,12 @@ function matchedDoorsReason(visible: string, quoted: RegExp, fields: readonly st
   return null
 }
 
-function pageReason({ visible, title, titleName, h1, selected, calendar, identityNeedsRender }: PageRead, quoted: RegExp, excerpt: string,
+function pageReason({ visible, title, titleName, h1, h1WithoutRating, selected, calendar, identityNeedsRender }: PageRead, quoted: RegExp, excerpt: string,
   fields: readonly string[], facts: PageFacts, missing: string | null): string | null {
   if (calendar) {
     if (fields.some(field => field !== 'date' && field !== 'time')) return 'A calendar performance excerpt can only support date and time'
     const venueHost = facts.venueWebsite && hostOf(facts.venueWebsite)
-    if (!venueHost || calendar.site !== siteOf(venueHost)) return "Official page calendar evidence must be on the selected venue's stored website"
+    if (!venueHost || calendar.host !== calendarHost(venueHost)) return "Official page calendar evidence must be on the selected venue's stored website"
     const name = normalizeTitle(facts.name)
     const match = calendar.entries.find(entry => normalizePageText(entry.text) === excerpt && entry.date === facts.date &&
       name && normalizeTitle(entry.title) === name)
@@ -469,7 +498,8 @@ function pageReason({ visible, title, titleName, h1, selected, calendar, identit
   }
   if (identityNeedsRender) return UNCONFIRMED_HEADING
   const name = nameText(facts.name)
-  if (name && (h1 ? matchesHeading(h1, name) : nameText(titleName ?? title ?? '') === name)) return null
+  if (name && nameText(h1 ?? titleName ?? title ?? '') === name) return null
+  if (name && h1 && h1WithoutRating?.some(heading => nameText(heading) === name)) return null
   const headings = [title && `page title: ${JSON.stringify(title.slice(0, 255))}`, h1 && `H1: ${JSON.stringify(h1.slice(0, 255))}`].filter(Boolean).join('; ')
   return `Official page does not name "${facts.name}"${headings ? ` (${headings})` : ''}`
 }

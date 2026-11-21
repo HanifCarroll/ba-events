@@ -64,7 +64,8 @@ export function allowedInstagramMedia(value: string): boolean {
 export const MAX_IMAGE_BYTES = 10 * 1024 * 1024
 class InstagramConnectionError extends Error {}
 const CONNECTION_ERRORS = new Set(['ConnectionRefused', 'FailedToOpenSocket', 'ECONNREFUSED', 'ENETUNREACH', 'EHOSTUNREACH',
-  'ENETDOWN', 'ECONNRESET', 'ENOTFOUND', 'EAI_AGAIN', 'UND_ERR_CONNECT_TIMEOUT'])
+  'ENETDOWN', 'ECONNRESET', 'ENOTFOUND', 'EAI_AGAIN', 'ETIMEDOUT', 'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_HEADERS_TIMEOUT'])
+const isTimeout = (error: unknown) => error instanceof Error && error.name === 'TimeoutError'
 const errorCode = (error: unknown) => typeof error === 'object' && error !== null && 'code' in error && typeof error.code === 'string' ? error.code : undefined
 
 /**
@@ -74,13 +75,17 @@ const errorCode = (error: unknown) => typeof error === 'object' && error !== nul
 export async function fetchInstagramImage(url: string, fetcher: typeof fetch = fetch) {
   if (!allowedInstagramMedia(url)) throw new Error('Unsupported Instagram media origin')
   let response: Response
+  const signal = AbortSignal.timeout(15000)
   try {
     // Manual, not 'error', so a redirect is named; it is still never followed.
-    response = await fetcher(url, { redirect: 'manual', signal: AbortSignal.timeout(15000), headers: { Accept: 'image/jpeg,image/png,image/webp' } })
+    response = await fetcher(url, { redirect: 'manual', signal, headers: { Accept: 'image/jpeg,image/png,image/webp' } })
   } catch (error) {
-    // Bun reports socket codes on the error itself; Node fetch wraps the underlying connection error.
+    // A timeout here is before headers. The separate body reader never raises a fallback error.
     const cause = error instanceof Error ? error.cause : undefined
-    if (CONNECTION_ERRORS.has(errorCode(error) ?? errorCode(cause) ?? '')) throw new InstagramConnectionError(downloadReason(error))
+    const reason = signal.aborted ? signal.reason : isTimeout(cause) ? cause : error
+    if (isTimeout(reason) || CONNECTION_ERRORS.has(errorCode(error) ?? errorCode(cause) ?? '')) {
+      throw new InstagramConnectionError(downloadReason(reason))
+    }
     throw new Error(downloadReason(error))
   }
   if (response.status >= 300 && response.status < 400) { await response.body?.cancel(); throw new Error('redirected') }
@@ -101,7 +106,7 @@ export async function fetchInstagramImage(url: string, fetcher: typeof fetch = f
   }
 }
 const downloadReason = (error: unknown) => {
-  if (error instanceof Error && error.name === 'TimeoutError') return 'timed out after 15 s'
+  if (isTimeout(error)) return 'timed out after 15 s'
   const code = errorCode(error) ?? (error instanceof Error ? errorCode(error.cause) : undefined)
   return `${error instanceof Error ? error.message : String(error)}${code ? ` (${code})` : ''}`
 }

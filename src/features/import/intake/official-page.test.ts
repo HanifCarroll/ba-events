@@ -162,6 +162,23 @@ describe('official-page evidence', () => {
   })
 
   it.each([
+    ['Jueves 17 - Puerta 20 hs | Show 21 hs', '2027-01-17'],
+    ['Jue. 17/01/2027 - Puerta 20 hs | Show 21 hs', '2027-01-17'],
+  ])('rejects a doors pair whose weekday contradicts the candidate date: %s', async (excerpt, date) => {
+    const read = readHtml(`<h1>${facts.name}</h1><p>${excerpt}</p>`)
+    expect(await Effect.runPromise(verifyOfficialPagesEffect([evidence(officialUrl, excerpt)], { ...facts, date }, read)))
+      .toEqual([`Official page excerpt states a weekday that does not match ${date}: ${officialUrl}`])
+  })
+
+  it.each([
+    ['Domingo 17 - Puerta 20 hs | Show 21 hs', '2027-01-17'],
+    ['Mié. 17 MAR 2027 - Puerta 20 hs | Show 21 hs', '2027-03-17'],
+  ])('accepts a doors pair with a matching weekday: %s', async (excerpt, date) => {
+    expect(await Effect.runPromise(verifyOfficialPagesEffect([evidence(officialUrl, excerpt)], { ...facts, date },
+      readHtml(`<h1>${facts.name}</h1><p>${excerpt}</p>`)))).toEqual([])
+  })
+
+  it.each([
     '21 hs | 22 hs',
     '21 hs | Inicio 22 hs',
   ])('still asks for a single occurrence from the unlabeled pair %s', async suffix => {
@@ -285,19 +302,32 @@ describe('official-page evidence', () => {
     ])
   })
 
-  it('ignores only a listed leading or trailing age rating on the identity H1', async () => {
+  it('ignores only a listed rating that is its own leading or trailing child of the identity H1', async () => {
     const show = '¡Órbita! Único show en Buenos Aires'
     const html = (heading: string) => `<h1>${heading}</h1><p>${officialQuote}</p>`
     expect(await verifyShow(show, html(`<span data-evt-title>${show}</span><span data-evt-age>ATP</span>`))).toEqual([])
     for (const rating of ['ATP', 'Apto todo público', '+13', '+16', '+18', 'SAM 13', 'SAM 16', 'SAM 18', 'R13', 'R16', 'R18']) {
-      expect(await verifyShow(show, html(`${rating} ${show}`)), rating).toEqual([])
-      expect(await verifyShow(show, html(`${show} ${rating}`)), rating).toEqual([])
+      expect(await verifyShow(show, html(`<span>${rating}</span> ${show}`)), rating).toEqual([])
+      expect(await verifyShow(show, html(`${show} <span>${rating}</span>`)), rating).toEqual([])
     }
-    for (const heading of ['Otra obra ATP', `${show} VIP`, '¡Órbita! ATP Único show en Buenos Aires']) {
+    for (const heading of ['Otra obra <span>ATP</span>', `${show} <span>VIP</span>`, `${show} ATP`, `ATP ${show}`,
+      `<span>${show} +18</span>`, `${show} <span>Clasificación ATP</span>`, '¡Órbita! <span>ATP</span> Único show en Buenos Aires']) {
       expect((await verifyShow(show, html(heading)))[0], heading).toContain('Official page does not name')
     }
     expect(await verifyShow(`${show} ATP`, html(`${show} ATP`))).toEqual([])
     expect((await verifyShow(show, `<title>${show} ATP</title><p>${officialQuote}</p>`))[0]).toContain('Official page does not name')
+  })
+
+  it('does not shorten a plain age-like title, including after browser rendering', async () => {
+    const name = 'Impro'
+    const heading = 'Impro +18'
+    const reason = `Official page does not name "${name}" (H1: "${heading}"): ${officialUrl}`
+    expect(await verifyShow(name, `<h1>${heading}</h1><p>${officialQuote}</p>`)).toEqual([reason])
+    expect(await verifyShow(heading, `<h1>${heading}</h1><p>${officialQuote}</p>`)).toEqual([])
+    const render = async () => renderedPageRead(officialUrl, { url: officialUrl, visible: `${heading}\n${officialQuote}`,
+      title: '', headings: [heading], siteName: null, fanzLinks: [], fanzJson: '', singleDate: '', challenge: false })
+    expect(await Effect.runPromise(verifyOfficialPagesEffect([evidence(officialUrl, officialQuote)], { ...facts, name },
+      readHtml(`<h1>${heading}</h1>`), render))).toEqual([reason])
   })
 
   it('uses a document title without head tags for the name, but never for the excerpt', async () => {
@@ -450,7 +480,8 @@ describe('official-page evidence', () => {
     expect(await verify(`2026-11-23 21:00 | ${facts.name}`, {}, ['venue'])).not.toEqual([])
   })
 
-  it.each(['SUSPENDIDA', 'Cancelada', 'Réprogramadas', 'Se suspende la función', 'Se reprograma', 'Cancelación'])('does not verify a calendar entry marked %s', async status => {
+  it.each(['SUSPENDIDA', 'Cancelada', 'Réprogramadas', 'Se suspende la función', 'Se reprograma', 'Cancelación',
+    'Suspensión de la función', 'POSTERGADA'])('does not verify a calendar entry marked %s', async status => {
     const entry = (name: string, badge: string) => `<li><div class="calendar-hora">21:00 hs</div>
       <a href="/obra/sintetica/">${name}</a><span>${badge}</span></li>`
     const read = readHtml(`<h1>${facts.name}</h1><p>2026-11-23 21:00 | ${facts.name}</p>
@@ -481,10 +512,23 @@ describe('official-page evidence', () => {
     ])
   })
 
-  it('binds a structured calendar to the stored venue website after any redirect', async () => {
-    const ownUrl = 'https://shows.teatro.example.org/calendario'
+  it('checks weekdays explicitly stated in a calendar day cell or performance row, not in the title', async () => {
+    const name = 'Domingo de fiesta'
+    const verify = (cellLabel: string, entryLabel: string) => Effect.runPromise(verifyOfficialPagesEffect(
+      [evidence(officialUrl, `2026-11-23 21:00 | ${name}`)], { ...facts, name },
+      readHtml(`<table><tr><td id="li-2026-11-23"><span>${cellLabel}</span><ul><li><span>${entryLabel}</span>
+        <div class="calendar-hora">21:00 hs</div><a href="/obra/domingo/">${name}</a></li></ul></td></tr></table>`)))
+    expect(await verify('Lunes 23', 'Lun.')).toEqual([])
+    expect(await verify('Jueves 23', 'Lunes')).not.toEqual([])
+    expect(await verify('Lunes 23', 'Domingo')).not.toEqual([])
+  })
+
+  it('binds a structured calendar to the stored venue host after redirects, not a sibling host', async () => {
+    const venueWebsite = 'https://www.sala-a.wordpress.com'
+    const ownUrl = 'https://sala-a.wordpress.com/calendario'
+    const siblingUrl = 'https://sala-b.wordpress.com/calendario'
     const otherUrl = 'https://tour.example.net/calendario'
-    const allowed = officialSites({ website: facts.venueWebsite, captions: [`Gira: ${otherUrl}`] })
+    const allowed = officialSites({ website: venueWebsite, captions: [`Gira: ${otherUrl}`] })
     const html = `<h1>${facts.name}</h1><p>2026-11-23 21:00 | ${facts.name}</p>
       <table><tr><td id="li-2026-11-23"><ul><li><div class="calendar-hora">21:00 hs</div>
       <a href="/obra/sintetica/">${facts.name}</a></li></ul></td></tr></table>`
@@ -494,9 +538,11 @@ describe('official-page evidence', () => {
       return Effect.runPromise(verifyOfficialPagesEffect([evidence(requested, `2026-11-23 21:00 | ${facts.name}`)],
         { ...facts, sites: allowed, venueWebsite }, (url, sites) => readOfficialPage(url, sites, fetcher)))
     }
-    expect(await verify(ownUrl, ownUrl, facts.venueWebsite)).toEqual([])
-    expect(await verify(otherUrl, ownUrl, facts.venueWebsite)).toEqual([])
-    for (const [requested, final, website] of [[otherUrl, otherUrl, facts.venueWebsite], [ownUrl, otherUrl, facts.venueWebsite], [ownUrl, ownUrl, undefined]] as const) {
+    expect(await verify(ownUrl, ownUrl, venueWebsite)).toEqual([])
+    expect(await verify(otherUrl, ownUrl, venueWebsite)).toEqual([])
+    expect(await verify(siblingUrl, ownUrl, venueWebsite)).toEqual([])
+    for (const [requested, final, website] of [[otherUrl, otherUrl, venueWebsite], [ownUrl, otherUrl, venueWebsite],
+      [siblingUrl, siblingUrl, venueWebsite], [ownUrl, siblingUrl, venueWebsite], [ownUrl, ownUrl, undefined]] as const) {
       expect(await verify(requested, final, website)).toEqual([`Official page calendar evidence must be on the selected venue's stored website: ${requested}`])
     }
   })
