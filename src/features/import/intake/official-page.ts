@@ -114,10 +114,10 @@ function revealStreamedSegments($: CheerioAPI) {
 type Performance = { text: string; date: string; time: string; title: string }
 type SelectedPerformance = Performance & { confirmed: boolean }
 type PageRead = { visible: string; title: string | null; h1: string | null; titleName?: string;
-  identityNeedsRender?: boolean; selected?: SelectedPerformance | null; calendar?: Performance[] }
+  identityNeedsRender?: boolean; selected?: SelectedPerformance | null; calendar?: { site: string; entries: Performance[] } }
 
 const CALENDAR_CITATION = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2} \| .+$/
-const UNAVAILABLE_PERFORMANCE = /\b(?:suspendid|cancelad|reprogramad)/
+const UNAVAILABLE_PERFORMANCE = /suspend|cancel|reprogram/
 
 /** Read the Cervantes calendar shape, with no guesses from neighboring shows or dates in the page's prose. */
 function calendarPerformances($: CheerioAPI, url: URL): Performance[] | undefined {
@@ -282,9 +282,11 @@ export async function readOfficialPage(url: string, sites: ReadonlySet<string>, 
       throw new RenderableReadError(UNREADABLE)
     }
     const cards = $?.(FANZ_SINGLE_DATE)
-    const selected = selectedFanzPerformance(new URL(current), new URL(url), fanz, fanzJson,
+    const final = new URL(current)
+    const selected = selectedFanzPerformance(final, new URL(url), fanz, fanzJson,
       { visible, singleDate: cards?.length === 1 ? cards.text() : '', rendered: false })
-    const calendar = $ && selected === undefined ? calendarPerformances($, new URL(current)) : undefined
+    const entries = $ && selected === undefined ? calendarPerformances($, final) : undefined
+    const calendar = entries === undefined ? undefined : { site: siteOf(final.hostname), entries }
     return { visible, ...identity(title, headings, site, hasStyles), ...(selected !== undefined ? { selected } : {}), ...(calendar ? { calendar } : {}) }
   }
 }
@@ -303,7 +305,7 @@ export function renderedPageRead(requested: string, snapshot: { url: string; vis
 }
 
 /** The candidate facts a page excerpt must back: its name, its BA date, and its BA time when it has one. */
-export type PageFacts = { name: string; date: string; time: string | null; sites: ReadonlySet<string> }
+export type PageFacts = { name: string; date: string; time: string | null; sites: ReadonlySet<string>; venueWebsite?: string | null }
 
 const MONTHS = ['ene(?:ro)?', 'feb(?:rero)?', 'mar(?:zo)?', 'abr(?:il)?', 'may(?:o)?', 'jun(?:io)?',
   'jul(?:io)?', 'ago(?:sto)?', 'sep(?:t(?:iembre)?)?|set(?:iembre)?', 'oct(?:ubre)?', 'nov(?:iembre)?', 'dic(?:iembre)?']
@@ -316,31 +318,44 @@ const CLOCK_LIST = new RegExp(String.raw`\b(?<!\d[:./-])(?:a las? ${CLOCK_VALUE}
 const MULTIPLE_OCCURRENCES = "lists multiple dates or start times; cite the single occurrence's line"
 const BARE_START_RANGE = new RegExp(String.raw`\b(?<!\d[:./-])(de )?(\d{1,2})(?: *[-–—] *| (?:a|hasta) (las? )?)(${CLOCK_VALUE})(?: ?(hs?|horas|[ap]\.? ?m))?\b(?![:.]\d)`, 'g')
 const CLOCK = /\b(?<!\d[:./])(?:(?<!\d-)|(?=\d{1,2}:))(?:(a las?) )?(\d{1,2})(?:([:.])(\d{2}))?(?: ?(?:([ap])\.? ?m\b\.?|(hs?|horas)\b\.?))?(?![\w:]|\.\d)/g
-const DOORS_LABEL = /\b(?:apertura(?: de puertas?)?|puertas?|doors)\s*:?\s*(?:de |a las? )?$/
-const SHOW_LABEL = /\b(?:show|inicio|funcion|comienza)\s*:?\s*$/
-type Clock = { hour: number; minute: number; role?: 'doors' | 'show' }
-const clockRole = (before: string): Clock['role'] => DOORS_LABEL.test(before) ? 'doors' : SHOW_LABEL.test(before) ? 'show' : undefined
-const minutesSinceMidnight = ({ hour, minute }: Clock) => hour * 60 + minute
+const DOORS_WORD = /\b(?:puertas?|apertura|abren|abre|doors|open)\b/
+const DOORS_REASON = "mentions a doors time; cite a line that states the show's start"
+const PAIR_CLOCK = String.raw`([01]?\d|2[0-3])(?::([0-5]\d)(?: ?(?:hs?|horas)\.?)?| ?(?:hs?|horas)\.?)`
+const LABEL_GAP = '(?: *: *| +)'
+const DOORS_PAIR = new RegExp(`^(.+?) (?:puertas?|apertura(?: de puertas?)?|doors)${LABEL_GAP}${PAIR_CLOCK}` +
+  ` *[|/–—-] *(?:show|inicio|funcion|comienza)${LABEL_GAP}${PAIR_CLOCK}$`)
+type Clock = { hour: number; minute: number }
 const validClock = ({ hour, minute }: Clock) => hour >= 0 && hour <= 23 && minute <= 59
 const WEEKDAYS = 'lun(?:es)?|mar(?:tes)?|mie(?:rcoles)?|jue(?:ves)?|vie(?:rnes)?|sab(?:ado)?|dom(?:ingo)?'
 const EXPLICIT_DAY_PREFIX = new RegExp(String.raw`\b(?:dia|${WEEKDAYS})[.,:]? (?:el )?$`)
 const DAY_ONLY = new RegExp(String.raw`\b(?:el|dia|${WEEKDAYS}|${MONTHS.join('|')})[.,:]? (\d{1,2})\b(?![./-]\d)`, 'g')
 const JOINED_DAYS = /\b\d{1,2}\b *(?:[,–—-]|y\b|o\b|al\b) *#|# *(?:[,–—-]|\by\b|\bo\b|\bal\b) *\d{1,2}\b(?! [a-z])/
 
+/** Doors mentions use one complete shape; never infer clock roles from nearby words. */
+function doorsAndShow(excerpt: string) {
+  const match = DOORS_PAIR.exec(excerpt)
+  if (!match) return null
+  const [, dateText, doorsHour, doorsMinute = '00', showHour, showMinute = '00'] = match
+  if (DOORS_WORD.test(dateText) || Number(showHour) * 60 + Number(showMinute) < Number(doorsHour) * 60 + Number(doorsMinute)) return null
+  return { dateText, time: `${showHour.padStart(2, '0')}:${showMinute}` }
+}
+
 /** Why a normalized excerpt doesn't state the facts it is cited for; null when it does. */
 export function excerptFactsReason(excerpt: string, fields: readonly string[], facts: PageFacts): string | null {
   if (!fields.includes('date') && !fields.includes('time')) return null
-  if (CLOCK_LIST.test(excerpt)) return MULTIPLE_OCCURRENCES
+  const mentionsDoors = DOORS_WORD.test(excerpt)
+  const pair = mentionsDoors ? doorsAndShow(excerpt) : null
+  if (mentionsDoors && !pair) return DOORS_REASON
+  const schedule = pair?.dateText ?? excerpt
+  if (CLOCK_LIST.test(schedule)) return pair ? DOORS_REASON : MULTIPLE_OCCURRENCES
   const [year, month, day] = facts.date.split('-').map(Number)
   const starts: Clock[] = []
-  let clockCount = 0
   let previousClockEnd: number | undefined
-  const afterHourRanges = excerpt.replace(BARE_START_RANGE, (token, from: string, start: string, at: string, end: string, unit: string, offset: number) => {
+  const afterHourRanges = schedule.replace(BARE_START_RANGE, (token, from: string, start: string, at: string, end: string, unit: string, offset: number) => {
     // Recognize an explicit calendar day before trying to parse a bare range start.
-    if (!from && (at || EXPLICIT_DAY_PREFIX.test(excerpt.slice(0, offset))) || !unit && !/[.:]/.test(end)) return token
+    if (!from && (at || EXPLICIT_DAY_PREFIX.test(schedule.slice(0, offset))) || !unit && !/[.:]/.test(end)) return token
     // Without an explicit meridiem on the start, don't infer it from the end.
-    starts.push({ hour: unit && /^[ap]/.test(unit) ? -1 : Number(start), minute: 0, role: clockRole(excerpt.slice(0, offset)) })
-    clockCount += 2
+    starts.push({ hour: unit && /^[ap]/.test(unit) ? -1 : Number(start), minute: 0 })
     return ' '
   })
   // Remove clock tokens before reading the calendar so hours and minutes cannot stand in for dates.
@@ -352,23 +367,17 @@ export function excerptFactsReason(excerpt: string, fields: readonly string[], f
     const betweenClocks = previousClockEnd === undefined ? null : afterHourRanges.slice(previousClockEnd, offset)
     const rangeEnd = betweenClocks !== null && (/^(?:\s*[-–—]\s*| (?:a|hasta)(?: las?)? )$/.test(betweenClocks) || !!prefix && betweenClocks === ' ')
     previousClockEnd = offset + token.length
-    clockCount++
-    if (!rangeEnd) starts.push({ hour: localHour, minute: Number(m ?? 0), role: clockRole(afterHourRanges.slice(0, offset)) })
+    if (!rangeEnd) starts.push({ hour: localHour, minute: Number(m ?? 0) })
     return ' '
   })
-  const doors = starts.find(clock => clock.role === 'doors')
-  const showStart = doors && clockCount === 2 && starts.length === 2 && starts.every(validClock)
-    ? starts.find(clock => clock.role === 'show') : undefined
   const dates = [...calendar.matchAll(DATE)]
   const partialCalendar = calendar.replace(DATE, '#')
   const contextualDays = [...partialCalendar.matchAll(DAY_ONLY)]
+  const dateCount = dates.length + contextualDays.length
   // Mark recognized dates so a shorthand list such as "20 y 21 de noviembre" also holds.
-  if ((starts.length > 1 && !showStart) || dates.length + contextualDays.length > 1 || JOINED_DAYS.test(partialCalendar.replace(DAY_ONLY, '#'))) {
-    return MULTIPLE_OCCURRENCES
-  }
-  if (doors && showStart && minutesSinceMidnight(showStart) < minutesSinceMidnight(doors)) {
-    return "puts the show clock before doors; cite a line that states the show's own date"
-  }
+  const joinedDays = JOINED_DAYS.test(partialCalendar.replace(DAY_ONLY, '#'))
+  if (pair && (starts.length || dateCount !== 1 || joinedDays)) return DOORS_REASON
+  if (starts.length > 1 || dateCount > 1 || joinedDays) return MULTIPLE_OCCURRENCES
   const groups = dates[0]?.groups
   const statedDay = groups?.isoDay ?? groups?.day ?? contextualDays[0]?.[1]
   if (Number(statedDay) !== day) return `does not state the day ${day}`
@@ -387,8 +396,8 @@ export function excerptFactsReason(excerpt: string, fields: readonly string[], f
     if (monthNumber(name) !== month) return wrongMonth
   }
   for (const [number] of calendar.matchAll(/\b(?:19|20)\d{2}\b/g)) if (Number(number) !== year) return wrongYear
-  const start = showStart ?? starts[0]
-  if (start?.role === 'doors') return "states only a doors time; cite the show's start"
+  if (pair) return facts.time === pair.time ? null : `states the show starts at ${pair.time}; set the candidate's start time to match`
+  const start = starts[0]
   if (!start || !validClock(start)) {
     return facts.time ? `does not state the time ${facts.time}` : 'does not state a start time'
   }
@@ -401,8 +410,10 @@ function pageReason({ visible, title, titleName, h1, selected, calendar, identit
   fields: readonly string[], facts: PageFacts, missing: string | null): string | null {
   if (calendar) {
     if (fields.some(field => field !== 'date' && field !== 'time')) return 'A calendar performance excerpt can only support date and time'
+    const venueHost = facts.venueWebsite && hostOf(facts.venueWebsite)
+    if (!venueHost || calendar.site !== siteOf(venueHost)) return "Official page calendar evidence must be on the selected venue's stored website"
     const name = normalizeTitle(facts.name)
-    const match = calendar.find(entry => normalizePageText(entry.text) === excerpt && entry.date === facts.date &&
+    const match = calendar.entries.find(entry => normalizePageText(entry.text) === excerpt && entry.date === facts.date &&
       name && normalizeTitle(entry.title) === name)
     if (!match) return 'Official page calendar evidence must quote the matching performance line (YYYY-MM-DD HH:mm | Show title)'
     return facts.time === match.time ? null : `Official page calendar performance starts at ${match.time}; set the candidate's start time to match`
@@ -450,8 +461,10 @@ export const verifyOfficialPagesEffect = (evidence: readonly Evidence[], facts: 
     const excerpt = normalizePageText(page.excerpt)
     if (excerpt.length < MIN_EXCERPT) { reasons[index] = `Official page excerpt is too short to verify: ${page.url}`; continue }
     const missing = excerptFactsReason(excerpt, page.fields, facts)
-    // A calendar citation has a fixed date/time prefix; the show title after `|` may itself contain dates or clocks.
-    if (missing && !CALENDAR_CITATION.test(excerpt)) { reasons[index] = `Official page excerpt ${missing}: ${page.url}`; continue }
+    // A calendar title can contain dates or clocks, but doors language never bypasses the strict pair rule.
+    if (missing && (missing === DOORS_REASON || !CALENDAR_CITATION.test(excerpt))) {
+      reasons[index] = `Official page excerpt ${missing}: ${page.url}`; continue
+    }
     const quoted = excerptPattern(excerpt)
     const group = groups.get(page.url) ?? []
     group.push({ index, quoted, check: value => pageReason(value, quoted, excerpt, page.fields, facts, missing) })
