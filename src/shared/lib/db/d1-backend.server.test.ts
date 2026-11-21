@@ -1,5 +1,5 @@
 import type { D1Database } from '@cloudflare/workers-types'
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { freshD1 } from '../../../../tests/support/d1.ts'
 import { useD1Binding } from './d1-binding.server.ts'
 import { checkRateLimitD1 } from './rate-limit-d1.server.ts'
@@ -20,7 +20,7 @@ let dispose: () => Promise<void>
 beforeAll(async () => { ({ db, dispose } = await freshD1()) }, 60_000)
 afterAll(async () => { await dispose() })
 beforeEach(() => useD1Binding({ DB: db }))
-afterEach(() => useD1Binding(undefined))
+afterEach(() => { useD1Binding(undefined); vi.restoreAllMocks() })
 
 const count = (sql: string, ...values: unknown[]) => db.prepare(`SELECT count(*) AS n FROM ${sql}`).bind(...values).first<number>('n')
 
@@ -49,6 +49,8 @@ describe('check_rate_limit on D1', () => {
 	})
 
 	it('keeps 50 an hour for chat and 10 a minute for the API, hashing the identifier', async () => {
+		// Keep each burst in one rate-limit window without changing the real D1 request timers.
+		vi.spyOn(Date, 'now').mockReturnValue(Date.UTC(2026, 10, 16, 15, 0, 30))
 		for (let i = 0; i < 50; i++) expect((await checkRateLimit('203.0.113.9')).success).toBe(true)
 		expect((await checkRateLimit('203.0.113.9')).success).toBe(false)
 		for (let i = 0; i < 10; i++) expect((await checkApiRateLimit('203.0.113.9')).success).toBe(true)
