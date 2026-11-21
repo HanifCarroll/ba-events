@@ -125,7 +125,7 @@ function mediaDb(observations: Array<{ id: string; media_urls: string[]; reviewe
     positions: media.filter(row => row.observation_id === item.id).map(row => row.position) })).filter(item => item.positions.length < item.media_urls.length))
   const retainImage = (observation_id: string, position: number) => Effect.sync(() => { media.push({ observation_id, position }) })
   const db = { unreviewedMedia, retainImage } satisfies Pick<CollectionStore, 'unreviewedMedia' | 'retainImage'>
-  return { db: db as CollectionStore, media }
+  return { db: db as unknown as CollectionStore, media }
 }
 const now = new Date('2026-11-16T12:00:00Z')
 const signed = (name: string, expiry: Date) => `https://scontent.cdninstagram.com/v/${name}.jpg?oh=sig&oe=${Math.floor(expiry.getTime() / 1000).toString(16)}`
