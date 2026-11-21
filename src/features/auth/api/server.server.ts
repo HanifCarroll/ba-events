@@ -51,9 +51,9 @@ function sessionUserIdEffect(event: RequestEvent, action: string) {
 export function deleteAccountEffect(event: RequestEvent, data: { userId: string }) {
 	return Effect.gen(function* () {
 		const userId = yield* sessionUserIdEffect(event, 'delete your account')
-		if (data.userId !== userId) return yield* Effect.fail(authFailure('Account changed during deletion'))
+		if (data.userId !== userId) return yield* authFailure('Account changed during deletion')
 		const db = d1Of(event)
-		if (!db) return yield* Effect.fail(authFailure('Missing DB binding'))
+		if (!db) return yield* authFailure('Missing DB binding')
 		yield* authEffect(() => d1UserStore(db).deleteAccount(userId), 'Failed to delete account')
 		return { success: true }
 	})
@@ -67,7 +67,7 @@ export function deleteAccount(event: RequestEvent, data: { userId: string }) {
 export function updateProfileEffect(event: RequestEvent, patch: ProfilePatch) {
 	const db = d1Of(event)
 	return Effect.gen(function* () {
-		if (!db) return yield* Effect.fail(authFailure('Missing DB binding'))
+		if (!db) return yield* authFailure('Missing DB binding')
 		const userId = yield* sessionUserIdEffect(event, 'update your profile')
 		yield* authEffect(() => d1UserStore(db).updateProfile(userId, patch), 'Failed to update profile')
 		return { success: true }

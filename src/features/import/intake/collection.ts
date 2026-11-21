@@ -16,8 +16,9 @@ export type Post = typeof PostSchema.Type
 const sha256 = async (value: string | Uint8Array<ArrayBuffer>) => [...new Uint8Array(await crypto.subtle.digest('SHA-256', typeof value === 'string' ? new TextEncoder().encode(value) : value))].map(byte => byte.toString(16).padStart(2, '0')).join('')
 const fail = (message: string) => new ImportOperationError({ operation: 'instagram.collection', message })
 const Run = Schema.Struct({ data: Schema.Struct({ id: Schema.String, status: Schema.String, defaultDatasetId: Schema.String,
-  usageTotalUsd: Schema.optional(Schema.Number) }) })
-const readRun = (value: unknown) => Schema.decodeUnknownSync(Run)(value).data
+  usageTotalUsd: Schema.optional(Schema.Finite) }) })
+const decodeRun = Schema.decodeUnknownEffect(Run)
+const decodePosts = Schema.decodeUnknownEffect(Schema.Array(PostSchema))
 
 export function mediaUrls(post: Post): string[] {
   const children = post.childPosts?.flatMap(child => [...(child.images ?? []), ...(child.displayUrl ? [child.displayUrl] : [])]) ?? []
@@ -145,7 +146,7 @@ const retainPositionEffect = Effect.fn('intake.retainPosition')(function*(store:
 export const RETAIN_CONCURRENCY = 6
 
 export const retainPostsEffect = Effect.fn('intake.retainPosts')(function*(store: CollectionStore, runId: string, raw: unknown, usernames: string[], ceiling: number, fetcher: typeof fetchInstagramImage = fetchInstagramImage) {
-  const posts = yield* Effect.try({ try: () => Schema.decodeUnknownSync(Schema.Array(PostSchema))(raw), catch: () => fail('Apify dataset has an invalid shape') })
+  const posts = yield* decodePosts(raw).pipe(Effect.mapError(() => fail('Apify dataset has an invalid shape')))
   let changed = 0; let unchanged = 0; const failures: string[] = []; const seen = new Set<string>(); const observationIds = new Set<string>()
   const mediaFailed: FailedMedia[] = []
   const serverFetched: MediaPosition[] = []
@@ -235,7 +236,7 @@ export const retryMissingMediaEffect = (store: CollectionStore,
   const { skip = new Set<string>(), fetcher = fetchInstagramImage, now = new Date(), cap = MEDIA_RETRY_CAP, deadlineMs = MEDIA_RETRY_DEADLINE_MS } = options
   const result: MediaRetry = { attempted: 0, retained: 0, failed: [], expired: [], deferred: [], serverFetched: [] }
   const pass = Effect.gen(function*() {
-    const pending = (yield* store.unreviewedMedia()).filter(row => !skip.has(row.id) && Array.isArray(row.media_urls) && row.media_urls.length)
+    const pending = (yield* store.unreviewedMedia).filter(row => !skip.has(row.id) && Array.isArray(row.media_urls) && row.media_urls.length)
     yield* retryPositionsEffect(store, pending, result, { fetcher, now, cap })
   })
   return pass.pipe(
@@ -275,14 +276,14 @@ const retryPositionsEffect = Effect.fn('intake.retryMissingMedia')(function*(sto
 })
 
 const limitsSchema = Schema.Struct({ data: Schema.Struct({
-  limits: Schema.Struct({ maxMonthlyUsageUsd: Schema.Number }), current: Schema.Struct({ monthlyUsageUsd: Schema.Number }),
+  limits: Schema.Struct({ maxMonthlyUsageUsd: Schema.Finite }), current: Schema.Struct({ monthlyUsageUsd: Schema.Finite }),
 }) })
 const apifyCycleEffect = Effect.fn('intake.apifyCycle')(function*(api: ApifyRequest) {
   const limits = yield* importTry('apify.limits', () => api('GET', 'users/me/limits'))
-  return yield* Effect.try({ try: () => {
-    const { limits: limit, current } = Schema.decodeUnknownSync(limitsSchema)(limits).data
-    return { limit_usd: limit.maxMonthlyUsageUsd, usage_usd: current.monthlyUsageUsd }
-  }, catch: () => fail('Could not verify the Apify monthly usage limit') })
+  const { data: { limits: limit, current } } = yield* Schema.decodeUnknownEffect(limitsSchema)(limits).pipe(
+    Effect.mapError(() => fail('Could not verify the Apify monthly usage limit')),
+  )
+  return { limit_usd: limit.maxMonthlyUsageUsd, usage_usd: current.monthlyUsageUsd }
 })
 
 /** The account usage limit caps new runs; the intake ledger separately caps its own calendar-month spend. */
@@ -293,9 +294,9 @@ const checkCreditEffect = Effect.fn('intake.checkCredit')(function*(api: ApifyRe
 
 export const collectInstagramEffect = Effect.fn('intake.collect')(function*(store: CollectionStore, api: ApifyRequest,
   fetcher: typeof fetchInstagramImage = fetchInstagramImage) {
-  const policy = yield* store.policy()
+  const policy = yield* store.policy
   if (!policy.collection_enabled) return yield* fail('Collection is disabled; finish deployment and configuration first')
-  const reservation = yield* store.reserveCollection()
+  const reservation = yield* store.reserveCollection
   let runId = reservation.apify_run_id
   if (reservation.fresh) {
     // Existing runs can still be retrieved when no credit remains for a new run.
@@ -304,13 +305,15 @@ export const collectInstagramEffect = Effect.fn('intake.collect')(function*(stor
       // A 200-account run took about 200 s, so 300 s would time out a ~160-source watchlist and waste the charged rows.
       maxTotalChargeUsd: Number(reservation.reserved_usd), build: reservation.actor_build, timeout: 1800, memory: 1024, restartOnError: false,
     }, reservation.input))
-    const run = yield* Effect.try({ try: () => readRun(started), catch: () => fail('Unknown Apify start result; reconcile the reserved run before retrying') })
+    const { data: run } = yield* decodeRun(started).pipe(
+      Effect.mapError(() => fail('Unknown Apify start result; reconcile the reserved run before retrying')),
+    )
     runId = run.id
     yield* store.updateRun(reservation.id, { apify_run_id: run.id, dataset_id: run.defaultDatasetId, state: 'started' })
   }
   if (!runId) return yield* fail('A previous run has an unknown start outcome; do not start another paid run')
   const status = yield* importTry('apify.status', () => api('GET', `actor-runs/${runId}`, { waitForFinish: 30 }))
-  const run = yield* Effect.try({ try: () => readRun(status), catch: () => fail('Invalid Apify run status') })
+  const { data: run } = yield* decodeRun(status).pipe(Effect.mapError(() => fail('Invalid Apify run status')))
   if (!['SUCCEEDED', 'FAILED', 'ABORTED', 'TIMED-OUT'].includes(run.status)) return { state: 'running', run_id: runId }
   if (run.status !== 'SUCCEEDED') {
     yield* store.updateRun(reservation.id, { state: 'failed', charged_usd: run.usageTotalUsd ?? null })

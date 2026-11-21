@@ -5,7 +5,9 @@ BA Eventos uses SvelteKit 3 RC, Svelte 5 runes, Vite 8, and TypeScript 6. Bun is
 ## Checks
 
 ```sh
-bun run paraglide:compile  # generate src/lib/paraglide before tests/type-check
+bunx svelte-kit sync       # generate the SvelteKit tsconfig before standalone lint
+bun run paraglide:compile  # generate src/lib/paraglide before lint and type checks
+bun run lint               # type-aware Effect rules; warnings fail the check
 bun run check
 bun run test               # deterministic Vitest suite
 bunx vitest run <path>     # focused Vitest suite (compile Paraglide first)
@@ -13,6 +15,8 @@ bunx tsc --noEmit
 ```
 
 `bun run test` runs Vitest on Node and is the same suite CI runs. Its `pretest` hook compiles Paraglide automatically. It includes `src/`, `tests/`, `scripts/`, and `evals/concierge/deterministic.test.ts`. Do not use the native `bun test` runner. A few suites launch isolated Bun fixtures with no `.env` access. Storybook and the generative workflow keep their own commands.
+
+Run `svelte-kit sync` before standalone lint on a fresh checkout. `bun run check` runs sync as part of the Svelte/TypeScript check before running Effect Oxlint and the existing Effect language-service diagnostics. CI runs it through `bun run cloudflare:ci`. The `effect-tsgo oxlint` wrapper uses the pinned native lint engine without patching dependencies or changing the project's TypeScript version. Lint covers repository-owned TypeScript, including `.svelte.ts`, and accepts `.svelte` files; the native type-aware rules do not currently analyze Svelte component scripts. `svelte-check` still checks those components. Generated declarations, Paraglide output, and the standalone `tests/` directory are excluded from lint targets. The fuzzing harness under `tests/` is checked separately in the generative workflow, not through the application TypeScript project.
 
 Unit tests do not require real provider credentials or staging bindings. Orchestration tests use synthetic repository fixtures.
 

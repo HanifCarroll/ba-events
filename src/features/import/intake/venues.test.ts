@@ -10,7 +10,7 @@ function fakeDb(venues: VenueRow[], options: { similar?: Record<string, number>;
   const inserts: Array<{ table: string; row: Record<string, unknown> }> = []
   const outage = () => Effect.fail(new ImportOperationError({ operation: 'venue-test', message: 'database unavailable' }))
   const db = {
-    allVenues: () => options.failReads ? outage() : Effect.succeed(venues.map(row => ({ ...row }))),
+    allVenues: Effect.suspend(() => options.failReads ? outage() : Effect.succeed(venues.map(row => ({ ...row })))),
     similarVenues: (name, threshold) => options.failReads ? outage() : Effect.succeed(venues.map(row => ({ ...row,
       similarity: row.name.toLowerCase() === name.toLowerCase() ? 1 : options.similar?.[row.id] ?? 0,
     })).filter(row => row.similarity >= threshold).sort((a, b) => b.similarity - a.similarity)),

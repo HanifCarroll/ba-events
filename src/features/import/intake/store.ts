@@ -44,8 +44,8 @@ export type MonthlyCharges = { charged_usd: number; unmeasured_runs: number }
 
 /** What `collect` needs: the collection reservation, observations and retained evidence images. */
 export interface CollectionStore {
-  policy(): Op<IntakePolicy>
-  reserveCollection(): Op<Reservation>
+  readonly policy: Op<IntakePolicy>
+  readonly reserveCollection: Op<Reservation>
   updateRun(id: string, patch: RunPatch): Op<MonthlyCharges | void>
   latestObservation(postId: string): Op<{ id: string; content_hash: string } | null>
   touchObservation(id: string): Op<void>
@@ -56,19 +56,19 @@ export interface CollectionStore {
   /** Remote fallback: null on retention, a reason on a CDN refusal, or an operation error on an API read/write failure. */
   fetchAndRetainImage?(observationId: string, position: number): Op<string | null>
   /** Unreviewed observations with fewer saved images than URLs, oldest first. */
-  unreviewedMedia(): Op<UnreviewedMedia[]>
+  readonly unreviewedMedia: Op<UnreviewedMedia[]>
 }
 
 export interface IntakeStore extends CollectionStore {
   // Operator reads
-  enabledSourceCount(): Op<number>
-  storageReady(): Op<boolean>
-  sources(): Op<Row[]>
+  readonly enabledSourceCount: Op<number>
+  readonly storageReady: Op<boolean>
+  readonly sources: Op<Row[]>
   upsertSource(source: Source): Op<Row>
-  unreviewedObservations(): Op<Row[]>
+  readonly unreviewedObservations: Op<Row[]>
   mediaFor(observationId: string): Op<Array<Media & Row>>
   evidenceBytes(objectKey: string): Op<Uint8Array>
-  candidates(): Op<Row[]>
+  readonly candidates: Op<Row[]>
   lookupVenues(fragment: string): Op<Row[]>
   lookupEvents(fragment: string): Op<Row[]>
   reviewObservation(id: string, note: string): Op<{ id: string; reviewed_at: string }>
@@ -91,7 +91,7 @@ export interface IntakeStore extends CollectionStore {
   artworkUrl(eventId: string, media: Media): string
   insertPlan(plan: PlanInsert): Op<IntakePlanRow>
   plan(id: string): Op<IntakePlanRow>
-  publishingEnabled(): Op<boolean>
+  readonly publishingEnabled: Op<boolean>
   /** check_intake_plan: fails with the reason a plan can't be committed now. */
   checkPlan(id: string): Op<void>
   preparePlan(id: string, payload: EventInsert): Op<void>
@@ -103,7 +103,7 @@ export interface IntakeStore extends CollectionStore {
   /** A retry of a committed plan: its receipt, after redoing any side effect the commit may have missed. */
   replayReceipt(plan: IntakePlanRow): Op<Row>
   // Venues
-  allVenues(): Op<VenueRow[]>
+  readonly allVenues: Op<VenueRow[]>
   similarVenues(name: string, threshold: number): Op<Array<VenueRow & { similarity: number }>>
   /** Fills only the listed fields that are still empty; returns the row if it changed. */
   completeVenue(id: string, fill: VenueFill): Op<VenueRow[]>

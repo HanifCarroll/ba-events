@@ -79,7 +79,7 @@ export function runTelegramHealthCheckEffect(
     const decision = telegramHealthDecision(webhookInfo, staleFailedUpdates, now)
     const parsed = parseTelegramWebhookInfo(webhookInfo)
     logger.info('[telegram] health check', { channel: 'telegram', phase: 'health-check', outcome: decision.healthy ? 'healthy' : 'unhealthy', pendingUpdateCount: parsed?.pending_update_count ?? null, recentWebhookError: decision.reason === 'recent_webhook_error', staleFailedUpdates, webhookStatus: decision.reason })
-    if (!decision.healthy) return yield* Effect.fail(new TelegramHealthError({ message: `Telegram health check failed: ${decision.reason}` }))
+    if (!decision.healthy) return yield* new TelegramHealthError({ message: `Telegram health check failed: ${decision.reason}` })
   })
 }
 

@@ -295,7 +295,7 @@ export function processLumaImportEffect(
       return Effect.catchEager(itemProgram, (error) => {
         console.error(`[luma] Error processing event ${transformed.name}:`, error)
         result.eventsSkipped++
-        return Effect.succeed(undefined)
+        return Effect.undefined
       })
     }, { concurrency: 1 })
 

@@ -73,7 +73,7 @@ describe.skipIf(bun)('reserve_instagram_collection on D1', () => {
   it('computes the incremental window from the last succeeded run: 2 hours before it, 7 days with none, never past 30 days', async () => {
     await source()
     const window = async () => {
-      const reserved = await run(store.reserveCollection())
+      const reserved = await run(store.reserveCollection)
       await db.prepare('DELETE FROM intake_runs WHERE id = ?').bind(reserved.id).run()
       return reserved.input.onlyPostsNewerThan as string
     }
@@ -91,28 +91,28 @@ describe.skipIf(bun)('reserve_instagram_collection on D1', () => {
   it('takes the ceiling and detail level from the policy and reserves one paid run per Buenos Aires date', async () => {
     await source(); await source('synthetic_off', 'venue', 0); await source('another_venue')
     await db.prepare("UPDATE intake_policy SET data_detail_level = 'basicData'").run()
-    const first = await run(store.reserveCollection())
+    const first = await run(store.reserveCollection)
     expect(first).toMatchObject({ fresh: true, actor_build: '0.0.679', local_date: baToday(), state: 'reserved', reserved_usd: 1.5,
       input: { username: ['another_venue', 'synthetic_venue'], resultsLimit: 20, dataDetailLevel: 'basicData', skipPinnedPosts: false, includeMusicData: false } })
-    const second = await run(store.reserveCollection())
+    const second = await run(store.reserveCollection)
     expect(second).toMatchObject({ fresh: false, id: first.id })
     expect((await db.prepare('SELECT count(*) AS n FROM intake_runs').first<{ n: number }>())!.n).toBe(1)
   })
 
   it('refuses a disabled switch, an exhausted month, and an empty or oversized watchlist', async () => {
     await db.prepare('UPDATE intake_policy SET collection_enabled = 0').run()
-    expect(await fails(store.reserveCollection())).toBe('Instagram collection is not enabled')
+    expect(await fails(store.reserveCollection)).toBe('Instagram collection is not enabled')
     await db.prepare('UPDATE intake_policy SET collection_enabled = 1').run()
-    expect(await fails(store.reserveCollection())).toBe('Source watchlist exceeds policy or is empty')
+    expect(await fails(store.reserveCollection)).toBe('Source watchlist exceeds policy or is empty')
     await source(); await source('second_venue')
     await db.prepare('UPDATE intake_policy SET max_sources = 1').run()
-    expect(await fails(store.reserveCollection())).toBe('Source watchlist exceeds policy or is empty')
+    expect(await fails(store.reserveCollection)).toBe('Source watchlist exceeds policy or is empty')
     await db.prepare('UPDATE intake_policy SET max_sources = 200').run()
     const today = baToday()
     if (today.slice(8) !== '01') { // a run earlier this month
       await db.prepare("INSERT INTO intake_runs (id, local_date, state, reserved_usd, charged_usd, input) VALUES (?, ?, 'succeeded', 5, 17, '{}')")
         .bind(id(), `${today.slice(0, 8)}01`).run()
-      expect(await fails(store.reserveCollection())).toBe('Monthly collection budget exhausted')
+      expect(await fails(store.reserveCollection)).toBe('Monthly collection budget exhausted')
     }
   })
 })
@@ -142,7 +142,7 @@ describe.skipIf(bun)('commit_intake_plan on D1', () => {
 
   it('is idempotent, keeps one identity across a reschedule, protects the correction, and rejects stale evidence without a receipt', async () => {
     await source()
-    const runId = (await run(store.reserveCollection())).id
+    const runId = (await run(store.reserveCollection)).id
     const venueId = await venue()
     const post = await observation(runId)
     const candidate = id(), event = id()
@@ -179,7 +179,7 @@ describe.skipIf(bun)('commit_intake_plan on D1', () => {
 
   it('refuses held, expired and superseded plans, curator corrections, and a duplicate that appeared after preview', async () => {
     await source(); await source('synthetic_curator', 'curator')
-    const runId = (await run(store.reserveCollection())).id
+    const runId = (await run(store.reserveCollection)).id
     const venueId = await venue()
     const post = await observation(runId)
     const curated = await observation(runId, 'Repost', 'curator-post', 'synthetic_curator')
@@ -212,7 +212,7 @@ describe.skipIf(bun)('commit_intake_plan on D1', () => {
 
   it('restores a missed vector when a committed plan is committed again', async () => {
     await source()
-    const runId = (await run(store.reserveCollection())).id
+    const runId = (await run(store.reserveCollection)).id
     const venueId = await venue()
     const post = await observation(runId)
     const candidate = id(), event = id()
@@ -232,7 +232,7 @@ describe.skipIf(bun)('commit_intake_plan on D1', () => {
   it.each([false, true])('queues a search repair after a reschedule reads stale vector values (earlier upsert succeeded: %s)', async succeeded => {
     await source()
     const venueId = await venue()
-    const post = await observation((await run(store.reserveCollection())).id)
+    const post = await observation((await run(store.reserveCollection)).id)
     const candidate = id(), event = id()
     await run(store.submitCandidate(candidate, 0, { name: 'A' } as never))
     await run(store.commitPlan(await plan(candidate, 1, 'create', event, body(venueId), [{ observation_id: post }])))
@@ -265,7 +265,7 @@ describe.skipIf(bun)('commit_intake_plan on D1', () => {
   it('does not replay a prepared vector superseded by nightly search repair', async () => {
     await source()
     const venueId = await venue()
-    const post = await observation((await run(store.reserveCollection())).id)
+    const post = await observation((await run(store.reserveCollection)).id)
     const candidate = id(), event = id()
     await run(store.submitCandidate(candidate, 0, { name: 'A' } as never))
     const created = await plan(candidate, 1, 'create', event, body(venueId, { embedding_version: 1 }), [{ observation_id: post }])
@@ -281,7 +281,7 @@ describe.skipIf(bun)('commit_intake_plan on D1', () => {
 
   it('never replaces a later correction\'s vector when an older plan is committed again', async () => {
     await source()
-    const runId = (await run(store.reserveCollection())).id
+    const runId = (await run(store.reserveCollection)).id
     const venueId = await venue()
     const post = await observation(runId)
     const candidate = id(), event = id()
@@ -311,14 +311,14 @@ describe.skipIf(bun)('the operator flow on D1', () => {
 
   it('submits, previews, commits with retained artwork in R2, and lists the held backlog', async () => {
     await source()
-    const runId = (await run(store.reserveCollection())).id
+    const runId = (await run(store.reserveCollection)).id
     const venueId = await venue()
     const post = await observation(runId, undefined, undefined, undefined, ['https://scontent.cdninstagram.com/v/flyer.jpg'])
     const image = await describeImage(new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3]))
-    expect(await run(store.unreviewedMedia())).toEqual([{ id: post, media_urls: ['https://scontent.cdninstagram.com/v/flyer.jpg'], positions: [] }])
+    expect(await run(store.unreviewedMedia)).toEqual([{ id: post, media_urls: ['https://scontent.cdninstagram.com/v/flyer.jpg'], positions: [] }])
     await run(store.retainImage(post, 0, image))
     expect(evidence.objects.has(image.object_key)).toBe(true)
-    expect(await run(store.unreviewedMedia())).toEqual([])
+    expect(await run(store.unreviewedMedia)).toEqual([])
     const media = await run(store.mediaFor(post))
     const candidate = id()
     await run(submitCandidateEffect(store, candidateInput(candidate, post, venueId, { artwork_media_id: media[0].id })))
@@ -344,7 +344,7 @@ describe.skipIf(bun)('the operator flow on D1', () => {
 
   it('holds an undecided artwork choice and persists the reason with a publishable plan', async () => {
     await source()
-    const post = await observation((await run(store.reserveCollection())).id)
+    const post = await observation((await run(store.reserveCollection)).id)
     const candidate = id(), venueId = await venue()
     const input = candidateInput(candidate, post, venueId, { artwork_note: '   ' })
     await run(submitCandidateEffect(store, input))
@@ -365,7 +365,7 @@ describe.skipIf(bun)('the operator flow on D1', () => {
   ])(
     'preserves search during an artwork-only update and repairs it once at night ($search)', async ({ search, version }) => {
     await source()
-    const runId = (await run(store.reserveCollection())).id
+    const runId = (await run(store.reserveCollection)).id
     const venueId = await venue()
     const post = await observation(runId, undefined, undefined, undefined, ['https://scontent.cdninstagram.com/v/flyer.jpg'])
     const image = await describeImage(new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 4, 5, 6]))
@@ -407,7 +407,7 @@ describe.skipIf(bun)('the operator flow on D1', () => {
 
   it('re-embeds changed search inputs without regenerating unchanged description presentation', async () => {
     await source()
-    const post = await observation((await run(store.reserveCollection())).id)
+    const post = await observation((await run(store.reserveCollection)).id)
     const candidate = id(), venueId = await venue(), event = id()
     const startsAt = new Date(`${shiftDay(baToday(), 5)}T21:00:00-03:00`).toISOString()
     await db.prepare(`INSERT INTO events (id, name, starts_at, venue_id, source, categories, description_es, description_summary_es, search_document)
@@ -440,7 +440,7 @@ describe.skipIf(bun)('the operator flow on D1', () => {
 
   it('refuses a candidate whose venue_id or target_event_id is not in the catalog, naming the ID, and stores nothing', async () => {
     await source()
-    const post = await observation((await run(store.reserveCollection())).id)
+    const post = await observation((await run(store.reserveCollection)).id)
     const missing = id(), candidate = id()
     expect(await fails(submitCandidateEffect(store, candidateInput(candidate, post, missing))))
       .toBe(`venue_id ${missing} is not a catalog venue; copy the ID from lookup`)
@@ -451,7 +451,7 @@ describe.skipIf(bun)('the operator flow on D1', () => {
 
   it('names the IDs in preview reasons for a deleted venue and for evidence pointing at two events', async () => {
     await source()
-    const post = await observation((await run(store.reserveCollection())).id)
+    const post = await observation((await run(store.reserveCollection)).id)
     const venueId = await venue()
     const at = new Date(`${shiftDay(baToday(), 5)}T21:00:00-03:00`).toISOString()
     const linked = id(), target = id(), candidate = id()
@@ -470,7 +470,7 @@ describe.skipIf(bun)('the operator flow on D1', () => {
 
   it('previews a same-day event at the venue as a link and commits it without a new event or vector', async () => {
     await source()
-    const runId = (await run(store.reserveCollection())).id
+    const runId = (await run(store.reserveCollection)).id
     const venueId = await venue()
     const post = await observation(runId)
     const day = shiftDay(baToday(), 5)
@@ -489,7 +489,7 @@ describe.skipIf(bun)('the operator flow on D1', () => {
 
   it('publishes a date and time that only the official page states, and refuses it once the page drops them', async () => {
     await source()
-    const runId = (await run(store.reserveCollection())).id
+    const runId = (await run(store.reserveCollection)).id
     const venueId = await venue()
     await db.prepare("UPDATE venues SET website = 'https://www.teatro.example.org' WHERE id = ?").bind(venueId).run()
     const post = await observation(runId, 'Synthetic Jazz en Synthetic Venue, entradas en la web')

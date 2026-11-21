@@ -177,7 +177,7 @@ export const commitPlanEffect = Effect.fn('intake.commit')(function*(store: Inta
   publishers: Publishers = { embed: embedEventWithDocument, presentation: buildDescriptionPresentationFields }, renderPage?: RenderPage) {
   const plan = yield* store.plan(id)
   if (plan.receipt) return yield* store.replayReceipt(plan)
-  const enabled = yield* store.publishingEnabled()
+  const enabled = yield* store.publishingEnabled
   if (!enabled || plan.action === 'held') return yield* failure('Publishing is disabled or this plan is held')
   // Run all stale-plan checks before provider calls or making artwork public.
   yield* store.checkPlan(id)

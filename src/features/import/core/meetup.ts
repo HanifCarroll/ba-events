@@ -295,7 +295,7 @@ function processMeetupBatchEffect(
       return Effect.catchEager(itemProgram, (error) => {
         logger.logError(`[meetup] Error processing event ${transformed.name}`, error)
         result.skipped++
-        return Effect.succeed(undefined)
+        return Effect.undefined
       })
     }, { concurrency: 1 })
 

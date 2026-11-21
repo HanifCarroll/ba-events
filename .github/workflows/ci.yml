@@ -32,7 +32,8 @@ jobs:
         with:
           bun-version: 1.3.14
       - run: bun install --frozen-lockfile
-      - run: bun run cloudflare:ci
+      - name: Run tests, type checks, and Effect lint
+        run: bun run cloudflare:ci
       - run: bun run build
         env:
           # Compile-only placeholders; CI never connects to a hosted project.

@@ -51,8 +51,8 @@ const op = <A>(operation: string, run: () => Promise<A>) => importTry(operation,
 
 export function remoteCollection(api: IntakeApi): CollectionStore {
   return {
-    policy: () => op('intake.policy', () => api.call<IntakePolicy>('collection/policy')),
-    reserveCollection: () => op('intake.reserve', () => api.call<Reservation>('collection/reserve')),
+    policy: op('intake.policy', () => api.call<IntakePolicy>('collection/policy')),
+    reserveCollection: op('intake.reserve', () => api.call<Reservation>('collection/reserve')),
     updateRun: (id, patch) => op(`intake.${patch.state}`, async () => (await api.call<{ month?: MonthlyCharges }>('collection/run', { id, patch })).month),
     latestObservation: postId => op('intake.latest', () => api.call<{ id: string; content_hash: string } | null>('collection/latest', { post_id: postId })),
     touchObservation: id => op('intake.seen', () => api.call('collection/seen', { id })).pipe(Effect.asVoid),
@@ -68,6 +68,6 @@ export function remoteCollection(api: IntakeApi): CollectionStore {
         throw error
       }
     }),
-    unreviewedMedia: () => op('intake.missing-media', () => api.call<UnreviewedMedia[]>('collection/missing-media')),
+    unreviewedMedia: op('intake.missing-media', () => api.call<UnreviewedMedia[]>('collection/missing-media')),
   }
 }

@@ -19,14 +19,15 @@ export const EVENT_COLUMNS = `e.id, e.name, e.description_es, e.description_en, 
 export const FROM_EVENTS = 'events e LEFT JOIN venues v ON v.id = e.venue_id'
 
 const text = Schema.NullOr(Schema.String)
-const integer = Schema.NullOr(Schema.Number)
+const integer = Schema.NullOr(Schema.Int)
+const price = Schema.NullOr(Schema.Finite)
 /** A row of EVENT_COLUMNS as D1 returns it, before decoding the public search projection. */
 const EventRow = Schema.Struct({
   id: Schema.String, name: Schema.String,
   description_es: text, description_en: text, description_display_es: text, description_display_en: text,
   description_summary_es: text, description_summary_en: text,
   starts_at: Schema.String, ends_at: text, is_all_day: Schema.BooleanFromBit, time_tba: Schema.BooleanFromBit,
-  venue_id: text, categories: Schema.fromJsonString(Schema.Array(Schema.String)), price: integer,
+  venue_id: text, categories: Schema.fromJsonString(Schema.Array(Schema.String)), price,
   is_free: Schema.BooleanFromBit, min_age: integer, image_url: text, image_width: integer, image_height: integer,
   link: text, ticket_url: text, source: Schema.String, external_id: text, status: Schema.String,
   location_hidden: Schema.NullOr(Schema.BooleanFromBit), location_tba: Schema.BooleanFromBit,

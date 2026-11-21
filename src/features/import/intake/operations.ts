@@ -6,10 +6,10 @@ import type { IntakeStore } from './store.ts'
 
 const invalid = (message: string) => new ImportOperationError({ operation: 'intake.input', message })
 const uuid = Schema.String.pipe(Schema.check(Schema.isPattern(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)))
-const strict = <S extends Schema.Top>(schema: S, input: unknown, message: string) => Effect.try({
-  try: () => Schema.decodeUnknownSync(schema as never, { onExcessProperty: 'error' })(input) as S['Type'],
-  catch: error => invalid(`${message}: ${error instanceof Error ? error.message : 'see docs/instagram-intake.md'}`),
-})
+const strict = <A>(schema: Schema.Decoder<A>, input: unknown, message: string) =>
+  Schema.decodeUnknownEffect(schema, { onExcessProperty: 'error' })(input).pipe(
+    Effect.mapError(error => invalid(`${message}: ${error.message}`)),
+  )
 
 export const ReviewSchema = Schema.Struct({ observation_id: uuid,
   note: Schema.String.pipe(Schema.check(Schema.isMinLength(1), Schema.isMaxLength(4000))) })
@@ -18,9 +18,9 @@ export const decodeReview = (input: unknown) => strict(ReviewSchema, input, 'Inv
 export const decodeId = (input: unknown) => strict(uuid, input, 'Invalid id')
 
 export const preflightEffect = Effect.fn('intake.preflight')(function*(store: IntakeStore, keys: { embedding: boolean; presentation: boolean }) {
-  const policy = yield* store.policy()
-  const sources = yield* store.enabledSourceCount()
-  const storage = yield* store.storageReady()
+  const policy = yield* store.policy
+  const sources = yield* store.enabledSourceCount
+  const storage = yield* store.storageReady
   return { schema_ready: true, storage_ready: storage, active_sources: sources,
     collection_enabled: policy.collection_enabled, publishing_enabled: policy.publishing_enabled,
     run_cap_usd: Number(policy.run_cap_usd), monthly_cap_usd: Number(policy.monthly_cap_usd),
@@ -31,7 +31,7 @@ export const preflightEffect = Effect.fn('intake.preflight')(function*(store: In
 
 /** Unreviewed observations, oldest first, each with its retained media rows. */
 export const pendingEffect = Effect.fn('intake.pending')(function*(store: IntakeStore) {
-  const observations = yield* store.unreviewedObservations()
+  const observations = yield* store.unreviewedObservations
   const records = []
   for (const observation of observations) records.push({ ...observation, media: yield* store.mediaFor(observation.id as string) })
   return records

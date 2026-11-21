@@ -85,7 +85,7 @@ export function runSharedChatTurnEffect(
                   resultCount: membership.status === 'complete' ? membership.savedIds.size : 0,
                 })
               })))
-            : Effect.succeed(undefined),
+            : Effect.undefined,
           ids.length
             ? Effect.tryPromise({
                 try: (fiberSignal) => fetchEventFacts(ids, input.abortSignal ? AbortSignal.any([input.abortSignal, fiberSignal]) : fiberSignal),

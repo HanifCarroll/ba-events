@@ -48,7 +48,7 @@ export function persistGuestChatDebugEffect(input: {
   lastUserText: string | null
 }): Effect.Effect<void, never> {
   const conversationId = input.conversationId
-  if (!conversationId) return Effect.succeed(undefined)
+  if (!conversationId) return Effect.undefined
 
   const program = Effect.tryPromise({
     try: () => runWithTimeout(() =>
@@ -97,7 +97,7 @@ export function upsertGuestChatDebugEffect(input: {
   messages: unknown
   lastUserText: string | null
 }): Effect.Effect<void, never> {
-  if (!input.conversationId) return Effect.succeed(undefined)
+  if (!input.conversationId) return Effect.undefined
 
   const now = new Date().toISOString()
   return Effect.match(Effect.tryPromise({
@@ -153,7 +153,7 @@ export function recordGuestRequestStartedEffect(input: {
   requestId: string
   conversationId: string | null
 }): Effect.Effect<void, never> {
-  if (!input.requestId) return Effect.succeed(undefined)
+  if (!input.requestId) return Effect.undefined
 
   const program = Effect.tryPromise({
     try: () => {
@@ -188,7 +188,7 @@ export function recordGuestRequestTerminalEffect(input: {
   errorType?: string | null
   providerRequestId?: string | null
 }): Effect.Effect<void, never> {
-  if (!input.requestId) return Effect.succeed(undefined)
+  if (!input.requestId) return Effect.undefined
 
   const program = Effect.tryPromise({
     try: () => {

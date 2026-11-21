@@ -121,10 +121,11 @@ describe('incremental Instagram collection', () => {
 
 /** The collection store's two media calls the retry makes, over in-memory observations and saved media. */
 function mediaDb(observations: Array<{ id: string; media_urls: string[]; reviewed_at?: string }>, media: Array<{ observation_id: string; position: number }>) {
-  const unreviewedMedia = () => Effect.succeed(observations.filter(item => !item.reviewed_at).map(item => ({ id: item.id, media_urls: item.media_urls,
+  const unreviewedMedia = Effect.sync(() => observations.filter(item => !item.reviewed_at).map(item => ({ id: item.id, media_urls: item.media_urls,
     positions: media.filter(row => row.observation_id === item.id).map(row => row.position) })).filter(item => item.positions.length < item.media_urls.length))
   const retainImage = (observation_id: string, position: number) => Effect.sync(() => { media.push({ observation_id, position }) })
-  return { db: { unreviewedMedia, retainImage } as unknown as CollectionStore, media }
+  const db = { unreviewedMedia, retainImage } satisfies Pick<CollectionStore, 'unreviewedMedia' | 'retainImage'>
+  return { db: db as unknown as CollectionStore, media }
 }
 const now = new Date('2026-11-16T12:00:00Z')
 const signed = (name: string, expiry: Date) => `https://scontent.cdninstagram.com/v/${name}.jpg?oh=sig&oe=${Math.floor(expiry.getTime() / 1000).toString(16)}`

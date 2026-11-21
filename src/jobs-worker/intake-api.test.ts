@@ -75,6 +75,20 @@ describe('intake API boundary', () => {
     expect((await call(`collection/media?observation_id=${crypto.randomUUID()}&position=0`, { method: 'PUT', body: 'GIF89a' })).status).toBe(400)
   })
 
+  it.each([
+    ['-1', 'Expected a value greater than or equal to 0'],
+    ['101', 'Expected a value less than or equal to 100'],
+    ['-1e309', 'Expected a value greater than or equal to 0'],
+    ['1e309', 'Expected a value less than or equal to 100'],
+    ['"invalid"', 'Expected number | null'],
+  ])('keeps the collection charge error and field path for %s', async (value, message) => {
+    const response = await call('collection/run', {
+      body: `{"id":"${crypto.randomUUID()}","patch":{"state":"failed","charged_usd":${value}}}`,
+    })
+    expect(response.status).toBe(400)
+    expect(await response.json()).toEqual({ error: `${message}\n  at ["patch"]["charged_usd"]` })
+  })
+
   it('reports operator refusals as 409 with their message', async () => {
     await db.prepare('UPDATE intake_policy SET collection_enabled = 0').run()
     expect(await (await call('collection/reserve')).json()).toEqual({ error: 'Instagram collection is not enabled' })
@@ -98,7 +112,7 @@ describe('Worker image fallback', () => {
   const observe = async (urls: string[]) => {
     await enableSource()
     const store = remoteCollection(client())
-    const run = await Effect.runPromise(store.reserveCollection())
+    const run = await Effect.runPromise(store.reserveCollection)
     return (await Effect.runPromise(store.upsertObservation({ run_id: run.id, post_id: 'p1', source_username: 'synthetic_venue',
       post_url: 'https://www.instagram.com/p/sc1/', caption: '', published_at: null, content_hash: '0'.repeat(64), media_urls: urls }))).id
   }
@@ -172,7 +186,7 @@ describe('Worker image fallback', () => {
   it('reports Worker saves from first attempts and retries and does not upload those bytes from the CLI', async () => {
     const olderId = await observe([storedUrl])
     const store = remoteCollection(client())
-    const run = await Effect.runPromise(store.reserveCollection())
+    const run = await Effect.runPromise(store.reserveCollection)
     await Effect.runPromise(store.updateRun(run.id, { state: 'started', apify_run_id: 'synthetic-run', dataset_id: 'synthetic-dataset' }))
     const newerUrl = 'https://scontent.cdninstagram.com/another.jpg'
     const apify: ApifyRequest = async (_method, path) => {
@@ -229,7 +243,7 @@ describe('collect through the CLI client', () => {
   it('retries a missing image through the API into R2', async () => {
     await db.prepare("INSERT INTO instagram_sources (username, authority, enabled, qualification) VALUES ('synthetic_venue', 'venue', 1, 'Synthetic')").run()
     const store = remoteCollection(client())
-    const runId = (await Effect.runPromise(store.reserveCollection())).id
+    const runId = (await Effect.runPromise(store.reserveCollection)).id
     const flyer = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 7, 7, 7])
     const offline = async () => { throw new Error('offline') }
     const first = await Effect.runPromise(retainPostsEffect(store, runId, [{ id: 'p2', shortCode: 'sc2', ownerUsername: 'synthetic_venue',
@@ -239,6 +253,6 @@ describe('collect through the CLI client', () => {
     expect(retry).toEqual({ attempted: 1, retained: 1, failed: [], expired: [], deferred: [], serverFetched: [] })
     const saved = await db.prepare('SELECT object_key FROM intake_media').first<{ object_key: string }>()
     expect(env.INTAKE_EVIDENCE.objects.has(saved!.object_key)).toBe(true)
-    expect(await Effect.runPromise(store.unreviewedMedia())).toEqual([])
+    expect(await Effect.runPromise(store.unreviewedMedia)).toEqual([])
   })
 })

@@ -381,7 +381,7 @@ export function processTelegramTurnEffect(
     const keyResult = yield* settle(service.getEnvelopeKey(payload.updateId))
     if (!keyResult.ok) {
       logTiming('envelope-key', envelopeStarted, 'error', payload.updateId)
-      return yield* Effect.fail(keyResult.error)
+      return yield* keyResult.error
     }
     logTiming('envelope-key', envelopeStarted, 'success', payload.updateId)
     if (keyResult.value == null) return
@@ -396,7 +396,7 @@ export function processTelegramTurnEffect(
       catch: (cause) => turnFailure('Invalid Telegram payload', cause),
     })
     const input = parseTelegramPlaintextPayload(opened)
-    if (!input) return yield* Effect.fail(turnFailure('Invalid Telegram payload'))
+    if (!input) return yield* turnFailure('Invalid Telegram payload')
     let locale = localeFrom(input.languageCode)
 
     let conversation: ExternalConversation | undefined
@@ -433,7 +433,7 @@ export function processTelegramTurnEffect(
         return
       }
 
-      if (!prompt) return yield* Effect.fail(turnFailure('Unknown Telegram prompt callback'))
+      if (!prompt) return yield* turnFailure('Unknown Telegram prompt callback')
       yield* Effect.tryPromise({
         try: () => answerCallbackBestEffort(
           input.callbackId!,
@@ -543,11 +543,11 @@ export function processTelegramTurnEffect(
     ], { concurrency: 'unbounded' })
     if (!metadataResult.ok) {
       logTiming('natural-turn-setup', setupStarted, 'error', payload.updateId)
-      return yield* Effect.fail(metadataResult.error)
+      return yield* metadataResult.error
     }
     if (!messagesResult.ok) {
       logTiming('natural-turn-setup', setupStarted, 'error', payload.updateId)
-      return yield* Effect.fail(messagesResult.error)
+      return yield* messagesResult.error
     }
     logTiming('natural-turn-setup', setupStarted, 'success', payload.updateId)
     const messages = messagesResult.value
@@ -623,7 +623,7 @@ export function processTelegramTurnEffect(
           catch: (cause) => turnFailure('Failed to finish Telegram progress drafts', cause),
         })
         draftsClosed = true
-        return yield* Effect.fail(userResult.error)
+        return yield* userResult.error
       }
       if (!agentResult.ok) {
         yield* Effect.tryPromise({
@@ -631,7 +631,7 @@ export function processTelegramTurnEffect(
           catch: (cause) => turnFailure('Failed to finish Telegram progress drafts', cause),
         })
         draftsClosed = true
-        return yield* Effect.fail(agentResult.error)
+        return yield* agentResult.error
       }
       yield* Effect.tryPromise({
         try: () => draftChain,
@@ -670,7 +670,7 @@ export function processTelegramTurnEffect(
       service.markFailed(payload.updateId, errorCode),
       { onFailure: () => undefined, onSuccess: () => undefined },
     )
-    return yield* Effect.fail(error)
+    return yield* error
   }))
   return Effect.scoped(handled)
 }

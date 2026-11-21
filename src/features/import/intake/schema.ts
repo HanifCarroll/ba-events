@@ -4,7 +4,7 @@ import { CATEGORIES } from '#shared/lib/types.ts'
 const text = (max: number) => Schema.String.pipe(Schema.check(Schema.isMaxLength(max)))
 const nonempty = (max: number) => text(max).pipe(Schema.check(Schema.isMinLength(1)))
 const uuid = Schema.String.pipe(Schema.check(Schema.isPattern(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)))
-const count = Schema.Number.pipe(Schema.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0)))
+const count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
 const fields = Schema.Array(Schema.Literals(['name', 'date', 'time', 'venue', 'price', 'status', 'description', 'ticket'])).pipe(Schema.check(Schema.isMinLength(1)))
 /** A caption excerpt (`media_id` null) or a retained image of an Instagram observation. */
 const PostEvidenceSchema = Schema.Struct({

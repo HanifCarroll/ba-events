@@ -227,7 +227,7 @@ function queueVenueForReviewEffect(
   }))
   return Effect.catchEager(queued, (error) => {
     console.error('[venue-settlement] Failed to queue venue for review:', error)
-    return Effect.succeed(undefined)
+    return Effect.undefined
   })
 }
 

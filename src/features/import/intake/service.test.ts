@@ -15,7 +15,7 @@ const receipt = { event_id: 'event', action: 'create' }
 const media = { id: 'media', observation_id: 'obs', position: 0, object_key: 'synthetic.jpg', content_type: 'image/jpeg', sha256: 'a'.repeat(64) }
 function commitStore(row = plan, overrides: Partial<IntakeStore> = {}): IntakeStore {
   return {
-    plan: () => Effect.succeed(row), publishingEnabled: () => Effect.succeed(true), checkPlan: () => Effect.void,
+    plan: () => Effect.succeed(row), publishingEnabled: Effect.succeed(true), checkPlan: () => Effect.void,
     eventVenue: () => Effect.succeed({ name: 'Synthetic Venue', neighborhood: 'Palermo' }),
     preparePlan: () => Effect.void, artworkMedia: () => Effect.succeed(media), publishArtwork: () => Effect.void,
     commitPlan: () => Effect.succeed(receipt), replayReceipt: () => Effect.succeed(receipt), ...overrides,
@@ -23,9 +23,9 @@ function commitStore(row = plan, overrides: Partial<IntakeStore> = {}): IntakeSt
 }
 function collectionStore(reservation: Partial<Reservation>, overrides: Partial<CollectionStore> = {}): CollectionStore {
   return {
-    policy: () => Effect.succeed({ collection_enabled: true, publishing_enabled: false, max_sources: 10,
+    policy: Effect.succeed({ collection_enabled: true, publishing_enabled: false, max_sources: 10,
       posts_per_source: 20, run_cap_usd: 2, monthly_cap_usd: 10, actor_build: '0.0.679', data_detail_level: 'basic' }),
-    reserveCollection: () => Effect.succeed({ id: 'run', fresh: false, apify_run_id: null, reserved_usd: 1.5,
+    reserveCollection: Effect.succeed({ id: 'run', fresh: false, apify_run_id: null, reserved_usd: 1.5,
       input: { username: ['a'], resultsLimit: 20 }, ...reservation }),
     updateRun: () => Effect.void, ...overrides,
   } as unknown as CollectionStore
@@ -174,7 +174,7 @@ describe('intake failure and retry orchestration', () => {
   })
 
   it('does no preparation or publication for a disabled workflow', async () => {
-    const db = commitStore(plan, { publishingEnabled: () => Effect.succeed(false), checkPlan: () => fail('unexpected plan check') })
+    const db = commitStore(plan, { publishingEnabled: Effect.succeed(false), checkPlan: () => fail('unexpected plan check') })
     await expect(Effect.runPromise(commitPlanEffect(db, 'plan'))).rejects.toThrow('disabled')
   })
   it('rejects changed evidence before provider calls or public image uploads', async () => {
@@ -194,7 +194,7 @@ describe('intake failure and retry orchestration', () => {
     expect(calls).toEqual(['artwork', 'artwork', 'commit'])
   })
   it('replays a receipt without publishing artwork again', async () => {
-    const db = commitStore({ ...plan, receipt }, { publishingEnabled: () => fail('unexpected policy read'), publishArtwork: () => fail('unexpected artwork upload') })
+    const db = commitStore({ ...plan, receipt }, { publishingEnabled: fail('unexpected policy read'), publishArtwork: () => fail('unexpected artwork upload') })
     expect(await Effect.runPromise(commitPlanEffect(db, 'plan'))).toEqual(receipt)
   })
   it('keeps unknown admission out of free/paid search claims while preparing publication', async () => {
@@ -236,20 +236,43 @@ describe('intake failure and retry orchestration', () => {
     expect(await Effect.runPromise(collectInstagramEffect(allowed, raised))).toEqual({ state: 'running', run_id: 'new-run' })
     expect(calls).toContain('POST actors/apify~instagram-post-scraper/runs')
   })
-  it('refuses a paid run when the Apify usage limit cannot be read', async () => {
+  it.each([null, Infinity])('refuses a paid run when Apify reports %s as the monthly usage limit', async (limit) => {
     const reservation = { fresh: true, id: 'run', reserved_usd: 1.5, actor_build: '0.0.679', input: { username: ['a'], resultsLimit: 20 }, apify_run_id: null }
     const db = collectionStore(reservation)
+    const calls: string[] = []
     const api: ApifyRequest = async (method, path) => {
-      if (method === 'GET' && path === 'users/me/limits') return { data: { limits: { maxMonthlyUsageUsd: null }, current: { monthlyUsageUsd: 3 } } }
+      calls.push(`${method} ${path}`)
+      if (method === 'GET' && path === 'users/me/limits') return { data: { limits: { maxMonthlyUsageUsd: limit }, current: { monthlyUsageUsd: 3 } } }
       throw new Error(`Unexpected ${method} ${path}`)
     }
     await expect(Effect.runPromise(collectInstagramEffect(db, api))).rejects.toThrow('Could not verify the Apify monthly usage limit')
+    expect(calls).toEqual(['GET users/me/limits'])
+  })
+  it('requires reconciliation when Apify starts a run but returns no valid run identity', async () => {
+    const calls: string[] = []
+    const writes: string[] = []
+    const db = collectionStore({ fresh: true }, {
+      updateRun: (_, patch) => Effect.sync(() => { writes.push(patch.state) }),
+    })
+    const api: ApifyRequest = async (method, path) => {
+      calls.push(`${method} ${path}`)
+      if (path === 'users/me/limits') {
+        return { data: { limits: { maxMonthlyUsageUsd: 19 }, current: { monthlyUsageUsd: 3 } } }
+      }
+      return { data: { status: 'RUNNING' } }
+    }
+    await expect(Effect.runPromise(collectInstagramEffect(db, api))).rejects.toMatchObject({
+      _tag: 'ImportOperationError', operation: 'instagram.collection',
+      message: 'Unknown Apify start result; reconcile the reserved run before retrying',
+    })
+    expect(calls).toEqual(['GET users/me/limits', 'POST actors/apify~instagram-post-scraper/runs'])
+    expect(writes).toEqual([])
   })
   it('returns the collection summary when the image retry fails after the run is marked succeeded', async () => {
     const calls: string[] = []
     const db = collectionStore({ apify_run_id: 'done-run' }, {
       updateRun: (_, patch) => Effect.sync(() => { calls.push(patch.state) }),
-      unreviewedMedia: () => Effect.sync(() => { calls.push('retry') }).pipe(Effect.andThen(fail('database unavailable'))),
+      unreviewedMedia: Effect.sync(() => { calls.push('retry') }).pipe(Effect.andThen(fail('database unavailable'))),
     })
     const api: ApifyRequest = async (_method, path) => path.startsWith('datasets/') ? []
       : { data: { id: 'done-run', status: 'SUCCEEDED', defaultDatasetId: 'dataset', usageTotalUsd: 0.5 } }
@@ -265,7 +288,7 @@ describe('intake failure and retry orchestration', () => {
     const base = collectionStore({ apify_run_id: 'done-run' })
     const stored: number[] = []; const fetched: string[] = []
     const store = { ...base,
-      unreviewedMedia: () => Effect.succeed([{ id: 'old', media_urls: [url('a'), url('b')], positions: [] }]),
+      unreviewedMedia: Effect.succeed([{ id: 'old', media_urls: [url('a'), url('b')], positions: [] }]),
       retainImage: (_id: string, position: number) => { stored.push(position)
         return Effect.fail(new ImportOperationError({ operation: 'intake.store-image', message: 'R2 unavailable' })) } }
     const api: ApifyRequest = async (_method, path) => path.startsWith('datasets/') ? []

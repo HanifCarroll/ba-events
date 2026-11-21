@@ -49,8 +49,8 @@ const JsonText = Schema.fromJsonString(Schema.Unknown)
 const messageRow = Schema.Struct({
 	id: Schema.String, conversation_id: Schema.String, parent_id: Text, client_message_id: Text,
 	role: Schema.Literals(['user', 'assistant', 'system']), content: Schema.String, visible_content: Schema.String,
-	execution_trace: JsonText, response_contract_version: Schema.Number, attached_data: Schema.NullOr(JsonText),
-	created_at: Schema.String, sequence_number: Schema.Number, turn_index: Schema.Number,
+	execution_trace: JsonText, response_contract_version: Schema.Int, attached_data: Schema.NullOr(JsonText),
+	created_at: Schema.String, sequence_number: Schema.Int, turn_index: Schema.Int,
 })
 const conversationRow = Schema.Struct({
 	id: Schema.String, user_id: Text, channel: Schema.Literals(['web', 'telegram']), external_identity_hash: Text,
@@ -61,7 +61,7 @@ const turnRow = Schema.Struct({
 	id: Schema.String, conversation_id: Schema.String, user_message_id: Schema.String, assistant_message_id: Text,
 	user_client_message_id: Schema.String, assistant_client_message_id: Schema.String, content: Schema.String,
 	locale: Schema.Literals(['en', 'es']), status: Schema.Literals(['pending', 'running', 'completed', 'failed', 'interrupted']),
-	claim_id: Text, claimed_until: Text, attempt_count: Schema.Number, last_error: Text,
+	claim_id: Text, claimed_until: Text, attempt_count: Schema.Int, last_error: Text,
 })
 
 const decodeMessageRow = Schema.decodeUnknownSync(messageRow)

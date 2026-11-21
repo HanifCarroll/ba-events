@@ -50,9 +50,9 @@ const telegramEnvelopeSchema = Schema.Struct({
   ok: Schema.Boolean,
   result: Schema.optional(Schema.Any),
   description: Schema.optional(Schema.String),
-  error_code: Schema.optional(Schema.Number),
+  error_code: Schema.optional(Schema.Int),
   parameters: Schema.optional(Schema.Struct({
-    retry_after: Schema.optional(Schema.Number),
+    retry_after: Schema.optional(Schema.Int),
   })),
 })
 

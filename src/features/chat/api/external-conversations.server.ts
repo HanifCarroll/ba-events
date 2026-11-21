@@ -47,12 +47,10 @@ export function getOrCreateExternalConversationEffect(
   },
 ): Effect.Effect<ExternalConversation, ExternalConversationError> {
   return Effect.gen(function* () {
-    let hash: string
-    try {
-      hash = requireIdentityHash(input.externalIdentityHash)
-    } catch {
-      return yield* Effect.fail(externalFailure('Invalid external identity hash'))
-    }
+    const hash = yield* Effect.try({
+      try: () => requireIdentityHash(input.externalIdentityHash),
+      catch: () => externalFailure('Invalid external identity hash'),
+    })
     return external(yield* d1Effect(() => d1.getOrCreateExternalConversation(requireD1(), input.channel, hash,
       input.title ?? 'New conversation', input.metadata ?? {}), 'Failed to create external conversation'))
   })
@@ -148,7 +146,7 @@ export function updateExternalConversationMetadataEffect(
   return Effect.gen(function* () {
     const current = yield* d1Effect(() => d1.getExternalConversation(requireD1(), input.channel, input.conversationId),
       'Failed to update external conversation metadata')
-    if (!current) return yield* Effect.fail(externalFailure('Failed to update external conversation metadata'))
+    if (!current) return yield* externalFailure('Failed to update external conversation metadata')
 
     const patchEntries = Object.entries(input.metadataPatch)
     if (
@@ -159,7 +157,7 @@ export function updateExternalConversationMetadataEffect(
           ['__proto__', 'constructor', 'prototype'].includes(key)
       )
     ) {
-      return yield* Effect.fail(externalFailure('Invalid external conversation metadata patch'))
+      return yield* externalFailure('Invalid external conversation metadata patch')
     }
     const metadata = {
       ...((current.metadata ?? {}) as Record<string, Json>),

@@ -16,7 +16,7 @@ const schema = Schema.Struct({
 		turnId: Schema.String, userClientMessageId: Schema.String, assistantClientMessageId: Schema.String,
 		claimId: Schema.String, userId: Schema.NullOr(Schema.String), content: Schema.String, locale: Schema.Literals(['en', 'es']) }),
 	identity: Schema.Struct({ turnId: Schema.String, attemptId: Schema.String, token: Schema.String }),
-	expiresAt: Schema.Number,
+	expiresAt: Schema.Int,
 })
 
 export function createClientDelivery(turn: ClientTurn): ClientDelivery {

@@ -107,7 +107,9 @@ export class GuestRetentionWorkflow extends WorkflowEntrypoint<JobsEnv, unknown>
   }
 }
 
-const checkSchema = Schema.Struct({ days: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 14 }))) })
+const decodeSourceCheck = Schema.decodeUnknownSync(Schema.Struct({
+  days: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 14 }))),
+}))
 
 /**
  * Manual, unscheduled source check (replaces `browser-acquisition-check`):
@@ -116,7 +118,7 @@ const checkSchema = Schema.Struct({ days: Schema.optional(Schema.Int.check(Schem
  */
 export class SourceCheckWorkflow extends WorkflowEntrypoint<JobsEnv, unknown> {
   async run(event: WorkflowEvent<unknown>, step: WorkflowStep) {
-    const { days = 1 } = Schema.decodeUnknownSync(checkSchema)(event.payload ?? {})
+    const { days = 1 } = decodeSourceCheck(event.payload ?? {})
     const day = (offset: number) => new Date(Date.now() - 3 * 3600_000 + offset * 86400_000).toISOString().slice(0, 10)
     const results = []
     for (const source of SOURCES) {
