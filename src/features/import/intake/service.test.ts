@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { Effect } from 'effect'
 import { collectInstagramEffect, type ApifyRequest } from './collection.ts'
 import { commitPlanEffect, readEvidenceEffect, previewCandidateEffect } from './service.ts'
+import { readOfficialPage } from './official-page.ts'
 import { decodeCandidate } from './schema.ts'
 import { ImportOperationError } from '../core/effect-utils.ts'
 import type { CollectionStore, IntakePlanRow, IntakeStore, Reservation } from './store.ts'
@@ -109,6 +110,44 @@ describe('intake failure and retry orchestration', () => {
     expect(inserted[0].reasons).toContain('Venue must be resolved before publishing')
     expect((inserted[0].reasons as string[]).some(reason => reason.startsWith('Possible venue'))).toBe(false)
     expect(preview).toMatchObject({ action: 'held', venue_name: 'Sala Sintética' })
+  })
+
+  it('uses the selected venue website to verify calendar evidence in preview and rechecks it at commit', async () => {
+    const venueId = '20000000-0000-4000-8000-000000000001'
+    const url = 'https://sala.example.org/calendario'
+    const post = { id: '30000000-0000-4000-8000-000000000001', post_id: 'post-1', source_username: 'synthetic',
+      caption: `Synthetic Jazz en Sala Sintética. Funciones: ${url}`, media_urls: [] }
+    const candidate = decodeCandidate({ id: '10000000-0000-4000-8000-000000000003', expected_revision: 1, intent: 'create', target_event_id: null,
+      name: 'Synthetic Jazz', date: '2026-11-20', time: '21:00', venue_name: 'Sala Sintética', venue_id: venueId,
+      description_es: null, description_en: null, categories: ['music'], status: 'scheduled', price_kind: 'unknown',
+      price_ars: null, price_note: null, ticket_url: null, artwork_media_id: null, artwork_note: 'No flyer on this post', issues: [], notes: '',
+      evidence: [{ observation_id: post.id, fields: ['name', 'venue'], excerpt: 'Synthetic Jazz en Sala Sintética', media_id: null },
+        { kind: 'official_page', url, fields: ['date', 'time'], excerpt: '2026-11-20 21:00 | Synthetic Jazz' }],
+    })
+    const html = `<table><tr><td id="li-2026-11-20"><ul><li><div class="calendar-hora">21:00 hs</div>
+      <a href="/obra/sintetica/">Synthetic Jazz</a></li></ul></td></tr></table>`
+    const fetcher: typeof fetch = async () => new Response(html, { headers: { 'content-type': 'text/html' } })
+    const readPage = (url: string, sites: ReadonlySet<string>) => readOfficialPage(url, sites, fetcher)
+    let website: string | null = 'https://www.sala.example.org'
+    let saved = plan
+    const db = commitStore(plan, {
+      candidate: () => Effect.succeed({ revision: 1, payload: candidate, id: candidate.id }),
+      venue: id => { expect(id).toBe(venueId); return Effect.succeed({ id, name: 'Sala Sintética', neighborhood: 'Palermo', website }) },
+      observationsByIds: () => Effect.succeed([post]), mediaForObservations: () => Effect.succeed([]),
+      sourceAuthorities: () => Effect.succeed([{ username: 'synthetic', authority: 'venue' }]),
+      latestObservation: () => Effect.succeed({ id: post.id, content_hash: 'synthetic' }),
+      linkedEventIds: () => Effect.succeed([]), eventsBetween: () => Effect.succeed([]),
+      insertPlan: row => Effect.sync(() => saved = { ...row, id: 'plan', receipt: null }),
+      plan: () => Effect.sync(() => saved),
+    })
+    const preview = await Effect.runPromise(previewCandidateEffect(db, candidate.id, new Date('2026-10-25'), readPage))
+    expect(preview).toMatchObject({ action: 'create', reasons: [] })
+    // The caption still authorizes a normal page on the old site, but not the calendar exception.
+    website = null
+    await expect(Effect.runPromise(commitPlanEffect(db, preview.id, {
+      readPage, embed: async () => { throw new Error('Unexpected embedding') },
+      presentation: async () => { throw new Error('Unexpected presentation') },
+    }))).rejects.toThrow("calendar evidence must be on the selected venue's stored website")
   })
 
   it('overlaps publication preparation but waits for both results before writing', async () => {

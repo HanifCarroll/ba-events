@@ -1,7 +1,7 @@
 /**
  * The operator CLI's HTTP client for the intake API on `baeventos-jobs` (src/jobs-worker/intake-api.ts), used when
  * `INTAKE_API_URL` and `INTAKE_API_TOKEN` are set. `remoteCollection` is the collection store over that API, so `collect`
- * keeps its Apify calls (the Mac's CLI login) and image downloads on the Mac and sends only rows and image bytes.
+ * keeps its Apify calls (the Mac's CLI login) and primary image downloads on the Mac.
  */
 import { Effect } from 'effect'
 import { importTry, ImportOperationError } from '../core/effect-utils.ts'
@@ -14,6 +14,10 @@ export type IntakeApi = {
   getMedia(objectKey: string): Promise<Uint8Array>
 }
 
+class IntakeApiError extends Error {
+  constructor(message: string, readonly status: number) { super(message) }
+}
+
 export function intakeApi(baseUrl: string, token: string, fetcher: typeof fetch = fetch): IntakeApi {
   const base = new URL(baseUrl)
   if (base.protocol !== 'https:' && !['localhost', '127.0.0.1'].includes(base.hostname)) throw new Error('INTAKE_API_URL must use https')
@@ -22,7 +26,7 @@ export function intakeApi(baseUrl: string, token: string, fetcher: typeof fetch 
   const answer = async (response: Response) => {
     const text = await response.text()
     const body = text ? JSON.parse(text) as unknown : null
-    if (!response.ok) throw new Error((body as { error?: string } | null)?.error ?? `Intake API answered ${response.status}`)
+    if (!response.ok) throw new IntakeApiError((body as { error?: string } | null)?.error ?? `Intake API answered ${response.status}`, response.status)
     return body
   }
   return {
@@ -57,6 +61,13 @@ export function remoteCollection(api: IntakeApi): CollectionStore {
     retainImage: (observationId, position, image) => op('intake.store-image', () => api.putMedia(observationId, position, image.bytes)).pipe(
       Effect.flatMap(stored => stored.object_key === image.object_key ? Effect.void
         : Effect.fail(new ImportOperationError({ operation: 'intake.store-image', message: 'Stored image hash differs from the download' })))),
+    fetchAndRetainImage: (observation_id, position) => op('intake.fetch-media', async () => {
+      try { await api.call('collection/fetch-media', { observation_id, position }); return null }
+      catch (error) {
+        if (error instanceof IntakeApiError && error.status === 422) return error.message
+        throw error
+      }
+    }),
     unreviewedMedia: () => op('intake.missing-media', () => api.call<UnreviewedMedia[]>('collection/missing-media')),
   }
 }

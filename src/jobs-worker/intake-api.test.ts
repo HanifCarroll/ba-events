@@ -4,11 +4,11 @@
  */
 import type { D1Database } from '@cloudflare/workers-types'
 import { Effect } from 'effect'
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { freshD1 } from '../../tests/support/d1.ts'
 import { fakeR2 } from '../../tests/support/r2.ts'
 import { fakeVectorize } from '../../tests/support/vectorize.ts'
-import { collectInstagramEffect, describeImage, retainPostsEffect, retryMissingMediaEffect, type ApifyRequest } from '#features/import/intake/collection.ts'
+import { collectInstagramEffect, describeImage, fetchInstagramImage, retainPostsEffect, retryMissingMediaEffect, type ApifyRequest } from '#features/import/intake/collection.ts'
 import { intakeApi, remoteCollection } from '#features/import/intake/client.ts'
 import { bearerMatches, handleIntakeRequest, type IntakeApiEnv } from './intake-api.ts'
 
@@ -18,6 +18,7 @@ let dispose: () => Promise<void>
 let env: IntakeApiEnv & { INTAKE_EVIDENCE: ReturnType<typeof fakeR2> }
 beforeAll(async () => { ({ db, dispose } = await freshD1()) }, 60_000)
 afterAll(async () => { await dispose?.() })
+afterEach(() => { vi.unstubAllGlobals() })
 beforeEach(async () => {
   await db.batch(['intake_media', 'intake_observations', 'intake_runs', 'instagram_sources'].map(table => db.prepare(`DELETE FROM ${table}`)))
   await db.prepare('UPDATE intake_policy SET collection_enabled = 1, publishing_enabled = 0').run()
@@ -89,6 +90,110 @@ describe('intake API boundary', () => {
   })
 })
 
+describe('Worker image fallback', () => {
+  const flyer = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 5, 5, 5])
+  const mediaPath = 'collection/fetch-media'
+  const storedUrl = 'https://instagram.synthetic.fna.fbcdn.net/flyer.jpg?oe=ffffffff'
+  const enableSource = () => db.prepare("INSERT INTO instagram_sources (username, authority, enabled, qualification) VALUES ('synthetic_venue', 'venue', 1, 'Synthetic')").run()
+  const observe = async (urls: string[]) => {
+    await enableSource()
+    const store = remoteCollection(client())
+    const run = await Effect.runPromise(store.reserveCollection())
+    return (await Effect.runPromise(store.upsertObservation({ run_id: run.id, post_id: 'p1', source_username: 'synthetic_venue',
+      post_url: 'https://www.instagram.com/p/sc1/', caption: '', published_at: null, content_hash: '0'.repeat(64), media_urls: urls }))).id
+  }
+
+  it('takes only an observation and position and retains the image from the selected stored URL', async () => {
+    const id = await observe(['https://scontent.cdninstagram.com/first.jpg', storedUrl])
+    const fetcher = vi.fn(async (_url: string, _init?: RequestInit) => new Response(flyer))
+    vi.stubGlobal('fetch', fetcher)
+    const position = { observation_id: id, position: 1 }
+    expect((await call(mediaPath, body({ ...position, url: 'https://scontent.cdninstagram.com/not-stored.jpg' }))).status).toBe(400)
+    expect((await call(mediaPath, body({ observation_id: id, position: '1' }))).status).toBe(400)
+    expect((await call(mediaPath, body({ observation_id: id, position: 30 }))).status).toBe(400)
+    expect((await call(mediaPath, body({ observation_id: id, position: 2 }))).status).toBe(409)
+    expect((await call(mediaPath, body({ ...position, observation_id: crypto.randomUUID() }))).status).toBe(409)
+    expect((await call(mediaPath, body(position), { ...env, DB_READ_ONLY: '1' })).status).toBe(503)
+    expect(fetcher).not.toHaveBeenCalled()
+    const response = await call(mediaPath, body(position))
+    expect(response.status).toBe(200)
+    const { object_key, sha256 } = await describeImage(flyer)
+    expect(await response.json()).toEqual({ object_key })
+    expect(fetcher).toHaveBeenCalledExactlyOnceWith(storedUrl, expect.objectContaining({ redirect: 'manual' }))
+    expect(await db.prepare('SELECT observation_id, position, content_type, sha256 FROM intake_media').first()).toEqual({
+      ...position, content_type: 'image/jpeg', sha256,
+    })
+    expect(await client().getMedia(object_key)).toEqual(flyer)
+  })
+
+  it('never fetches an expired URL or an unsupported HTTPS host, scheme, or origin', async () => {
+    const urls = ['https://127.0.0.1/flyer.jpg', 'https://sub.fbcdn.net.example.org/a', 'https://evenfbcdn.net/a',
+      'https://fbcdn.net/a', 'https://sub.cdninstagram.com@private.example.org/a', 'https://user:password@sub.cdninstagram.com/a',
+      'https://sub.cdninstagram.com:8443/a', 'http://sub.fbcdn.net/a', 'https://scontent.cdninstagram.com/a?oe=01']
+    const id = await observe(urls)
+    const fetcher = vi.fn(async () => new Response(flyer))
+    vi.stubGlobal('fetch', fetcher)
+    for (let position = 0; position < urls.length; position++) {
+      expect((await call(mediaPath, body({ observation_id: id, position }))).status, urls[position]).toBe(422)
+    }
+    expect(fetcher).not.toHaveBeenCalled()
+    expect(env.INTAKE_EVIDENCE.objects.size).toBe(0)
+  })
+
+  it('refuses redirects, non-images, and oversized streams without retaining anything', async () => {
+    const id = await observe([storedUrl])
+    const fetcher = vi.fn(async () => new Response(flyer))
+    vi.stubGlobal('fetch', fetcher)
+    for (const upstream of [new Response(null, { status: 302, headers: { location: 'https://different.fbcdn.net/a' } }),
+      new Response('<svg></svg>', { headers: { 'content-type': 'image/jpeg' } }),
+      new Response(new Uint8Array(10_485_761))]) {
+      fetcher.mockResolvedValueOnce(upstream)
+      expect((await call(mediaPath, body({ observation_id: id, position: 0 }))).status).toBe(422)
+    }
+    expect(fetcher).toHaveBeenCalledTimes(3)
+    expect(env.INTAKE_EVIDENCE.objects.size).toBe(0)
+    expect(await db.prepare('SELECT count(*) AS n FROM intake_media').first('n')).toBe(0)
+  })
+
+  it('reports a CDN refusal from the fallback and retries the next position', async () => {
+    const id = await observe([storedUrl, 'https://scontent.cdninstagram.com/next.jpg'])
+    const workerFetch = vi.fn(async () => new Response(flyer)).mockResolvedValueOnce(new Response(null, { status: 403 }))
+    vi.stubGlobal('fetch', workerFetch)
+    const directFetch: typeof fetch = async () => { throw Object.assign(new Error('unable to connect'), { code: 'ConnectionRefused' }) }
+    const retry = await Effect.runPromise(retryMissingMediaEffect(remoteCollection(client()), {
+      fetcher: url => fetchInstagramImage(url, directFetch),
+    }))
+    expect(retry).toMatchObject({ attempted: 2, retained: 1, failed: [
+      { observation_id: id, position: 0, reason: 'unable to connect (ConnectionRefused); Worker fallback: answered 403' },
+    ], serverFetched: [{ observation_id: id, position: 1 }] })
+    expect(retry.error).toBeUndefined()
+  })
+
+  it('reports Worker saves from first attempts and retries and does not upload those bytes from the CLI', async () => {
+    const olderId = await observe([storedUrl])
+    const store = remoteCollection(client())
+    const run = await Effect.runPromise(store.reserveCollection())
+    await Effect.runPromise(store.updateRun(run.id, { state: 'started', apify_run_id: 'synthetic-run', dataset_id: 'synthetic-dataset' }))
+    const newerUrl = 'https://scontent.cdninstagram.com/another.jpg'
+    const apify: ApifyRequest = async (_method, path) => {
+      if (path === 'actor-runs/synthetic-run') return { data: { id: 'synthetic-run', status: 'SUCCEEDED', defaultDatasetId: 'synthetic-dataset' } }
+      if (path === 'datasets/synthetic-dataset/items') return [{ id: 'p2', shortCode: 'sc2', ownerUsername: 'synthetic_venue', displayUrl: newerUrl }]
+      throw new Error(`Unexpected ${path}`)
+    }
+    const workerFetch = vi.fn(async (_url: string) => new Response(flyer))
+    vi.stubGlobal('fetch', workerFetch)
+    const directFetch = vi.fn<typeof fetch>(async () => { throw Object.assign(new Error('unable to connect'), { code: 'FailedToOpenSocket' }) })
+    const upload = vi.spyOn(store, 'retainImage')
+    const result = await Effect.runPromise(collectInstagramEffect(store, apify, url => fetchInstagramImage(url, directFetch)))
+    const newer = await Effect.runPromise(store.latestObservation('p2'))
+    expect(result).toMatchObject({ state: 'succeeded', media: { first_attempt_failed: [], retried_failed: [],
+      retry: { attempted: 1, retained: 1 }, server_fetched: [{ observation_id: newer?.id, position: 0 }, { observation_id: olderId, position: 0 }] } })
+    expect(workerFetch.mock.calls.map(([url]) => url)).toEqual([newerUrl, storedUrl])
+    expect(directFetch).toHaveBeenCalledTimes(2)
+    expect(upload).not.toHaveBeenCalled()
+  })
+})
+
 describe('collect through the CLI client', () => {
   it('reserves, retains posts and evidence images in R2, and resumes without a second paid run', async () => {
     await db.prepare("INSERT INTO instagram_sources (username, authority, enabled, qualification) VALUES ('synthetic_venue', 'venue', 1, 'Synthetic')").run()
@@ -131,7 +236,7 @@ describe('collect through the CLI client', () => {
       displayUrl: 'https://scontent.cdninstagram.com/v/later.jpg' }], ['synthetic_venue'], 20, offline))
     expect(first.mediaFailed).toHaveLength(1)
     const retry = await Effect.runPromise(retryMissingMediaEffect(store, { fetcher: async () => describeImage(flyer) }))
-    expect(retry).toEqual({ attempted: 1, retained: 1, failed: [], expired: [], deferred: [] })
+    expect(retry).toEqual({ attempted: 1, retained: 1, failed: [], expired: [], deferred: [], serverFetched: [] })
     const saved = await db.prepare('SELECT object_key FROM intake_media').first<{ object_key: string }>()
     expect(env.INTAKE_EVIDENCE.objects.has(saved!.object_key)).toBe(true)
     expect(await Effect.runPromise(store.unreviewedMedia())).toEqual([])

@@ -53,6 +53,8 @@ export interface CollectionStore {
   mediaPositions(observationId: string): Op<number[]>
   /** Keeps the bytes privately and records them as the observation's image at `position`. */
   retainImage(observationId: string, position: number, image: RetainedImage): Op<void>
+  /** Remote fallback: null on retention, a reason on a CDN refusal, or an operation error on an API read/write failure. */
+  fetchAndRetainImage?(observationId: string, position: number): Op<string | null>
   /** Unreviewed observations with fewer saved images than URLs, oldest first. */
   unreviewedMedia(): Op<UnreviewedMedia[]>
 }

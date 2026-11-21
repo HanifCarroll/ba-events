@@ -7,15 +7,15 @@
  * `PUT /intake/collection/media` stores an evidence image (the server checks its type and hash), and
  * `GET /intake/media/<sha256>.<ext>` reads one back for `export`. Errors are `{ "error": message }`: 400 invalid
  * input, 401 auth, 404 unknown path, 409 an operation that failed with a message the operator acts on (a stale plan, a
- * revision conflict, disabled publishing, a database error), 500 anything unexpected.
+ * revision conflict, disabled publishing, a database error), 422 a CDN image unavailable for fallback, 500 unexpected.
  */
 import { createHash, timingSafeEqual } from 'node:crypto'
 import type { D1Database, R2Bucket, Vectorize } from '@cloudflare/workers-types'
 import { Effect, Schema } from 'effect'
 import { boundD1Database } from '#shared/lib/db/d1.server.ts'
 import { isReadOnly } from '#shared/lib/db/read-only.ts'
-import { ImportOperationError } from '#features/import/core/effect-utils.ts'
-import { describeImage } from '#features/import/intake/collection.ts'
+import { importTry, ImportOperationError } from '#features/import/core/effect-utils.ts'
+import { describeImage, fetchInstagramImage, MAX_IMAGE_BYTES, signedUrlExpiry } from '#features/import/intake/collection.ts'
 import { decodeId, decodeReview, decodeSource, lookupEffect, pendingEffect, preflightEffect, publicReceipt } from '#features/import/intake/operations.ts'
 import type { RenderPage } from '#features/import/intake/official-page.ts'
 import { commitPlanEffect, previewCandidateEffect, submitCandidateEffect } from '#features/import/intake/service.ts'
@@ -68,6 +68,8 @@ const Text = (max: number) => Schema.String.pipe(Schema.check(Schema.isMaxLength
 // An empty Struct ignores excess keys even with onExcessProperty: 'error'; a record of Never refuses any key.
 const Empty = Schema.Record(Schema.String, Schema.Never)
 const ById = Schema.Struct({ id: Uuid })
+const MediaPosition = Schema.Struct({ observation_id: Uuid,
+  position: Schema.Int.pipe(Schema.check(Schema.isGreaterThanOrEqualTo(0), Schema.isLessThan(30))) })
 const RunPatch = Schema.Struct({ id: Uuid, patch: Schema.Union([
   Schema.Struct({ state: Schema.Literal('started'), apify_run_id: Text(100), dataset_id: Text(100) }),
   Schema.Struct({ state: Schema.Literal('failed'), charged_usd: Usd }),
@@ -88,6 +90,20 @@ type Handler = (store: IntakeStore, body: unknown, env: IntakeApiEnv, db: D1Data
 /** Runs a decoder; a BadRequest it throws becomes an `intake.input` failure (a 400). */
 const fromBadRequest = <A>(run: () => A) => Effect.try({ try: run, catch: error => new ImportOperationError({ operation: 'intake.input',
   message: error instanceof Error ? error.message : 'Invalid input' }) })
+
+const fetchStoredImage = Effect.fn('intake.fetchStoredImage')(function*(store: IntakeStore, { observation_id, position }: typeof MediaPosition.Type) {
+  const [observation] = yield* store.observationsByIds([observation_id])
+  const urls = observation?.media_urls
+  const url: unknown = Array.isArray(urls) ? urls[position] : undefined
+  if (typeof url !== 'string') return yield* new ImportOperationError({ operation: 'intake.observations', message: 'No stored URL at this observation position' })
+  const image = yield* importTry('intake.fetch-image', () => {
+    const expiry = signedUrlExpiry(url)
+    if (expiry && expiry.getTime() <= Date.now()) throw new Error('Stored Instagram media URL expired')
+    return fetchInstagramImage(url)
+  })
+  yield* store.retainImage(observation_id, position, image)
+  return { object_key: image.object_key }
+})
 
 /** Every JSON operation, by path below `/intake/`. */
 const OPERATIONS: Record<string, Handler> = {
@@ -121,7 +137,7 @@ const OPERATIONS: Record<string, Handler> = {
     Effect.flatMap(({ id }) => commitPlanEffect(store, id, undefined, renderPage)), Effect.map(publicReceipt)),
   review: (store, body) => decodeReview(body).pipe(Effect.flatMap(review => store.reviewObservation(review.observation_id, review.note))),
 
-  // `collect` runs Apify and downloads images on the operator's Mac; these are the store calls it makes.
+  // `collect` runs Apify and normally downloads images on the operator's Mac.
   'collection/policy': (store, body) => fromBadRequest(() => strict(Empty, body)).pipe(Effect.andThen(() => store.policy())),
   'collection/reserve': (store, body) => fromBadRequest(() => strict(Empty, body)).pipe(Effect.andThen(() => store.reserveCollection())),
   'collection/run': (store, body) => fromBadRequest(() => strict(RunPatch, body)).pipe(
@@ -132,13 +148,15 @@ const OPERATIONS: Record<string, Handler> = {
   'collection/observe': (store, body) => fromBadRequest(() => strict(Observation, body)).pipe(Effect.flatMap(row => store.upsertObservation({ ...row, media_urls: [...row.media_urls] }))),
   'collection/positions': (store, body) => fromBadRequest(() => strict(ById, body)).pipe(Effect.flatMap(({ id }) => store.mediaPositions(id))),
   'collection/missing-media': (store, body) => fromBadRequest(() => strict(Empty, body)).pipe(Effect.andThen(() => store.unreviewedMedia())),
+  'collection/fetch-media': (store, body) => fromBadRequest(() => strict(MediaPosition, body)).pipe(Effect.flatMap(item => fetchStoredImage(store, item))),
 }
 
 async function run(effect: Effect.Effect<unknown, ImportOperationError>): Promise<Response> {
   const result = await Effect.runPromise(Effect.result(effect))
   if (result._tag === 'Failure') {
     const error = result.failure
-    return json({ error: error.message }, error.operation === 'intake.input' ? 400 : 409)
+    const status = error.operation === 'intake.input' ? 400 : error.operation === 'intake.fetch-image' ? 422 : 409
+    return json({ error: error.message }, status)
   }
   return json(result.success ?? null)
 }
@@ -162,7 +180,7 @@ export async function handleIntakeRequest(request: Request, env: IntakeApiEnv, r
       const position = Number(url.searchParams.get('position'))
       if (!Number.isInteger(position) || position < 0 || position >= 30) throw new BadRequest('Invalid position')
       const declared = Number(request.headers.get('content-length'))
-      if (declared > 10_485_760) throw new BadRequest('Image exceeds limit')
+      if (declared > MAX_IMAGE_BYTES) throw new BadRequest('Image exceeds limit')
       const bytes = new Uint8Array(await request.arrayBuffer())
       const image = await describeImage(bytes).catch((error: Error) => { throw new BadRequest(error.message) })
       return run(store.retainImage(observationId, position, image).pipe(Effect.as({ object_key: image.object_key })))
