@@ -349,14 +349,18 @@ const DOORS_WORD = /\b(?:puertas?|apertura|abren|abre|ingreso|acceso|doors?|open
 const DOORS_REASON = "mentions a doors time; cite a line that states the show's start"
 const PAIR_CLOCK = String.raw`([01]?\d|2[0-3])(?::([0-5]\d)(?: ?(?:hs?|horas)\.?)?| ?(?:hs?|horas)\.?)`
 const LABEL_GAP = '(?: *: *| +)'
-const DOORS_PAIR = new RegExp(`^(.+?) (?:puertas?|apertura(?: de puertas?)?|doors)${LABEL_GAP}${PAIR_CLOCK}` +
+const DOORS_PAIR = new RegExp(String.raw`^(.*?)\b(?:puertas?|apertura(?: de puertas?)?|doors)${LABEL_GAP}${PAIR_CLOCK}` +
   ` *[|/–—-] *(?:show|inicio|funcion|comienza)${LABEL_GAP}${PAIR_CLOCK}$`)
 type Clock = { hour: number; minute: number }
 const validClock = ({ hour, minute }: Clock) => hour >= 0 && hour <= 23 && minute <= 59
 const WEEKDAYS = 'lun(?:es)?|mar(?:tes)?|mie(?:rcoles)?|jue(?:ves)?|vie(?:rnes)?|sab(?:ado)?|dom(?:ingo)?'
 const PLURAL_WEEKEND_DAYS = 'sabados|domingos'
 const WEEKDAY_NAME = new RegExp(String.raw`\b(?:${WEEKDAYS}|${PLURAL_WEEKEND_DAYS})\b`, 'g')
-const RUN_DATE = new RegExp(String.raw`\b(?:hasta|desde|al|todos|cada|${PLURAL_WEEKEND_DAYS}|los (?:dias )?(?:${WEEKDAYS}))\b`)
+const PAIR_DATE_SEPARATOR = '[ .,:|–-]'
+// A numeric month uses date separators, not a colon that could turn a clock into a date.
+const PAIR_DATE = new RegExp(String.raw`^${PAIR_DATE_SEPARATOR}*(?:(?<weekday>${WEEKDAYS})${PAIR_DATE_SEPARATOR}+)?(?<day>\d{1,2})` +
+  String.raw`(?:${PAIR_DATE_SEPARATOR}+(?:de +)?(?<monthName>${MONTHS.join('|')})|(?:[ .–-]+(?:de +)?| */ *)(?<month>\d{1,2}))` +
+  String.raw`(?:${PAIR_DATE_SEPARATOR}+(?:de +)?(?<year>\d{4})| */ *(?<slashYear>\d{4}|\d{2}))?${PAIR_DATE_SEPARATOR}*$`)
 const WEEKDAY_PREFIX = ['dom', 'lun', 'mar', 'mie', 'jue', 'vie', 'sab']
 function matchesWeekday(text: string, date: Date): boolean {
   // Strip full dates first so their abbreviated March (`mar`) isn't mistaken for a weekday.
@@ -372,25 +376,40 @@ function doorsAndShow(excerpt: string) {
   const match = DOORS_PAIR.exec(excerpt)
   if (!match) return null
   const [, dateText, doorsHour, doorsMinute = '00', showHour, showMinute = '00'] = match
-  if (DOORS_WORD.test(dateText) || Number(showHour) * 60 + Number(showMinute) < Number(doorsHour) * 60 + Number(doorsMinute)) return null
+  if (Number(showHour) * 60 + Number(showMinute) < Number(doorsHour) * 60 + Number(doorsMinute)) return null
   return { dateText, time: `${showHour.padStart(2, '0')}:${showMinute}` }
+}
+
+function pairDateReason(text: string, date: string): string | null {
+  const parts = PAIR_DATE.exec(text)?.groups
+  if (!parts) return "does not give a standalone date before doors; cite a line that states only the show's date and times"
+  const [year, month, day] = date.split('-').map(Number)
+  if (Number(parts.day) !== day) return `does not state the day ${day}`
+  if ((parts.monthName ? monthNumber(parts.monthName) : Number(parts.month)) !== month) {
+    return `does not state the month ${String(month).padStart(2, '0')}`
+  }
+  const statedYear = parts.year ?? parts.slashYear
+  if (statedYear && Number(statedYear) !== (statedYear.length === 2 ? year % 100 : year)) return `does not state the year ${year}`
+  if (parts.weekday && !matchesWeekday(parts.weekday, new Date(`${date}T00:00:00Z`))) return `states a weekday that does not match ${date}`
+  return null
 }
 
 /** Why a normalized excerpt doesn't state the facts it is cited for; null when it does. */
 export function excerptFactsReason(excerpt: string, fields: readonly string[], facts: PageFacts): string | null {
   if (!fields.includes('date') && !fields.includes('time')) return null
-  const mentionsDoors = DOORS_WORD.test(excerpt)
-  const pair = mentionsDoors ? doorsAndShow(excerpt) : null
-  if (mentionsDoors && !pair) return DOORS_REASON
-  if (pair && RUN_DATE.test(pair.dateText)) return "states a date range or recurrence; cite the single occurrence's line"
-  const schedule = pair?.dateText ?? excerpt
-  if (CLOCK_LIST.test(schedule)) return pair ? DOORS_REASON : MULTIPLE_OCCURRENCES
+  if (DOORS_WORD.test(excerpt)) {
+    const pair = doorsAndShow(excerpt)
+    if (!pair) return DOORS_REASON
+    return pairDateReason(pair.dateText, facts.date) ??
+      (facts.time === pair.time ? null : `states the show starts at ${pair.time}; set the candidate's start time to match`)
+  }
+  if (CLOCK_LIST.test(excerpt)) return MULTIPLE_OCCURRENCES
   const [year, month, day] = facts.date.split('-').map(Number)
   const starts: Clock[] = []
   let previousClockEnd: number | undefined
-  const afterHourRanges = schedule.replace(BARE_START_RANGE, (token, from: string, start: string, at: string, end: string, unit: string, offset: number) => {
+  const afterHourRanges = excerpt.replace(BARE_START_RANGE, (token, from: string, start: string, at: string, end: string, unit: string, offset: number) => {
     // Recognize an explicit calendar day before trying to parse a bare range start.
-    if (!from && (at || EXPLICIT_DAY_PREFIX.test(schedule.slice(0, offset))) || !unit && !/[.:]/.test(end)) return token
+    if (!from && (at || EXPLICIT_DAY_PREFIX.test(excerpt.slice(0, offset))) || !unit && !/[.:]/.test(end)) return token
     // Without an explicit meridiem on the start, don't infer it from the end.
     starts.push({ hour: unit && /^[ap]/.test(unit) ? -1 : Number(start), minute: 0 })
     return ' '
@@ -413,7 +432,6 @@ export function excerptFactsReason(excerpt: string, fields: readonly string[], f
   const dateCount = dates.length + contextualDays.length
   // Mark recognized dates so a shorthand list such as "20 y 21 de noviembre" also holds.
   const joinedDays = JOINED_DAYS.test(partialCalendar.replace(DAY_ONLY, '#'))
-  if (pair && (starts.length || dateCount !== 1 || joinedDays)) return DOORS_REASON
   if (starts.length > 1 || dateCount > 1 || joinedDays) return MULTIPLE_OCCURRENCES
   const groups = dates[0]?.groups
   const statedDay = groups?.isoDay ?? groups?.day ?? contextualDays[0]?.[1]
@@ -434,7 +452,6 @@ export function excerptFactsReason(excerpt: string, fields: readonly string[], f
   }
   for (const [number] of calendar.matchAll(/\b(?:19|20)\d{2}\b/g)) if (Number(number) !== year) return wrongYear
   if (!matchesWeekday(calendar, new Date(`${facts.date}T00:00:00Z`))) return `states a weekday that does not match ${facts.date}`
-  if (pair) return facts.time === pair.time ? null : `states the show starts at ${pair.time}; set the candidate's start time to match`
   const start = starts[0]
   if (!start || !validClock(start)) {
     return facts.time ? `does not state the time ${facts.time}` : 'does not state a start time'
