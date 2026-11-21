@@ -236,14 +236,17 @@ describe('intake failure and retry orchestration', () => {
     expect(await Effect.runPromise(collectInstagramEffect(allowed, raised))).toEqual({ state: 'running', run_id: 'new-run' })
     expect(calls).toContain('POST actors/apify~instagram-post-scraper/runs')
   })
-  it('refuses a paid run when the Apify usage limit cannot be read', async () => {
+  it.each([null, Infinity])('refuses a paid run when Apify reports %s as the monthly usage limit', async (limit) => {
     const reservation = { fresh: true, id: 'run', reserved_usd: 1.5, actor_build: '0.0.679', input: { username: ['a'], resultsLimit: 20 }, apify_run_id: null }
     const db = collectionStore(reservation)
+    const calls: string[] = []
     const api: ApifyRequest = async (method, path) => {
-      if (method === 'GET' && path === 'users/me/limits') return { data: { limits: { maxMonthlyUsageUsd: null }, current: { monthlyUsageUsd: 3 } } }
+      calls.push(`${method} ${path}`)
+      if (method === 'GET' && path === 'users/me/limits') return { data: { limits: { maxMonthlyUsageUsd: limit }, current: { monthlyUsageUsd: 3 } } }
       throw new Error(`Unexpected ${method} ${path}`)
     }
     await expect(Effect.runPromise(collectInstagramEffect(db, api))).rejects.toThrow('Could not verify the Apify monthly usage limit')
+    expect(calls).toEqual(['GET users/me/limits'])
   })
   it('requires reconciliation when Apify starts a run but returns no valid run identity', async () => {
     const calls: string[] = []

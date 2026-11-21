@@ -16,7 +16,7 @@ export type Post = typeof PostSchema.Type
 const sha256 = async (value: string | Uint8Array<ArrayBuffer>) => [...new Uint8Array(await crypto.subtle.digest('SHA-256', typeof value === 'string' ? new TextEncoder().encode(value) : value))].map(byte => byte.toString(16).padStart(2, '0')).join('')
 const fail = (message: string) => new ImportOperationError({ operation: 'instagram.collection', message })
 const Run = Schema.Struct({ data: Schema.Struct({ id: Schema.String, status: Schema.String, defaultDatasetId: Schema.String,
-  usageTotalUsd: Schema.optional(Schema.Number) }) })
+  usageTotalUsd: Schema.optional(Schema.Finite) }) })
 const decodeRun = Schema.decodeUnknownEffect(Run)
 const decodePosts = Schema.decodeUnknownEffect(Schema.Array(PostSchema))
 
@@ -276,7 +276,7 @@ const retryPositionsEffect = Effect.fn('intake.retryMissingMedia')(function*(sto
 })
 
 const limitsSchema = Schema.Struct({ data: Schema.Struct({
-  limits: Schema.Struct({ maxMonthlyUsageUsd: Schema.Number }), current: Schema.Struct({ monthlyUsageUsd: Schema.Number }),
+  limits: Schema.Struct({ maxMonthlyUsageUsd: Schema.Finite }), current: Schema.Struct({ monthlyUsageUsd: Schema.Finite }),
 }) })
 const apifyCycleEffect = Effect.fn('intake.apifyCycle')(function*(api: ApifyRequest) {
   const limits = yield* importTry('apify.limits', () => api('GET', 'users/me/limits'))

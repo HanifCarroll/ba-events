@@ -27,7 +27,7 @@ const addMessageInput = Schema.toStandardSchemaV1(Schema.Struct({
 	content: Schema.String,
 	visibleContent: Schema.optional(Schema.String),
 	executionTrace: Schema.optional(Schema.Any),
-	responseContractVersion: Schema.optional(Schema.Number),
+	responseContractVersion: Schema.optional(Schema.Finite),
 	attachedData: Schema.optional(Schema.Any),
 }))
 const updateMessageInput = Schema.toStandardSchemaV1(Schema.Struct({

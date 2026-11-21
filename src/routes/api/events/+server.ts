@@ -28,6 +28,7 @@ const eventName = Schema.String.pipe(
 const venueId = Schema.String.pipe(
 	Schema.refine((value): value is string => UUID_RE.test(value), { message: 'venue_id must be a valid UUID' })
 )
+const invalidPriceMessage = 'price must be a positive number'
 const url = (message: string) => Schema.String.pipe(
 	Schema.refine((value): value is string => {
 		try { new URL(value); return true } catch { return false }
@@ -54,8 +55,10 @@ const eventSubmissionSchema = Schema.Struct({
   is_all_day: Schema.optional(Schema.Boolean),
   venue_id: Schema.optional(Schema.NullOr(venueId)),
   categories: Schema.optional(Schema.Array(Schema.Literals(CATEGORIES))),
-  price: Schema.optional(Schema.NullOr(Schema.Number.pipe(
-	Schema.check(Schema.isGreaterThanOrEqualTo(0, { message: 'price must be a positive number' }))
+  // Keep the same field error for negative prices, including overflowed negative JSON numbers.
+  price: Schema.optional(Schema.NullOr(Schema.Number.check(
+    Schema.isGreaterThanOrEqualTo(0, { message: invalidPriceMessage }),
+    Schema.isFinite({ message: invalidPriceMessage }),
   ))),
   is_free: Schema.optional(Schema.Boolean),
   image_url: Schema.optional(Schema.NullOr(url('image_url must be a valid URL'))),

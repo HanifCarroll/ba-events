@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { decodeCandidate } from './schema.ts'
+import { candidateError, decodeCandidate } from './schema.ts'
 import { candidateStart, canonicalTicket, decideMatch, validateEvidence, type Observation, type Media, type CatalogMatch } from './planning.ts'
 import { allowedInstagramMedia, fetchInstagramImage, mediaUrls } from './collection.ts'
 
@@ -17,6 +17,18 @@ const existing: CatalogMatch = { id: eventId, name: 'Synthetic Jazz', starts_at:
 const now = new Date('2026-10-25T12:00:00Z')
 
 describe('Instagram candidate publication rules', () => {
+  it.each([
+    ['expected_revision', 1.5, 'Expected an integer'],
+    ['price_ars', -1, 'Expected a value greater than or equal to 0'],
+  ])('preserves the operator message for an invalid %s', (field, value, message) => {
+    const input = { ...candidate(), [field]: value }
+    expect.assertions(1)
+    try {
+      decodeCandidate(input)
+    } catch (error) {
+      expect(candidateError(error, input)).toBe(`Invalid candidate: ${field}: ${message}`)
+    }
+  })
   it('rejects invalid calendar dates and retains the BA date when time is unknown', () => {
     expect(() => candidateStart({ ...candidate(), date: '2026-11-31' })).toThrow('Invalid calendar date')
     expect(candidateStart({ ...candidate(), time: null })).toBe('2026-11-20T03:00:00.000Z')

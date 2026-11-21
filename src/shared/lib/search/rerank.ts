@@ -181,10 +181,10 @@ function isValidRerankData(
 const rerankResponseSchema = Schema.Struct({
   data: Schema.Array(Schema.Struct({
     index: Schema.Int,
-    relevance_score: Schema.Number,
+    relevance_score: Schema.Finite,
   })),
   model: Schema.optional(Schema.String),
-  usage: Schema.optional(Schema.Struct({ total_tokens: Schema.optional(Schema.Number) })),
+  usage: Schema.optional(Schema.Struct({ total_tokens: Schema.optional(Schema.Int) })),
 })
 
 class RerankError extends Error {

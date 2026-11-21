@@ -75,6 +75,20 @@ describe('intake API boundary', () => {
     expect((await call(`collection/media?observation_id=${crypto.randomUUID()}&position=0`, { method: 'PUT', body: 'GIF89a' })).status).toBe(400)
   })
 
+  it.each([
+    ['-1', 'Expected a value greater than or equal to 0'],
+    ['101', 'Expected a value less than or equal to 100'],
+    ['-1e309', 'Expected a value greater than or equal to 0'],
+    ['1e309', 'Expected a value less than or equal to 100'],
+    ['"invalid"', 'Expected number | null'],
+  ])('keeps the collection charge error and field path for %s', async (value, message) => {
+    const response = await call('collection/run', {
+      body: `{"id":"${crypto.randomUUID()}","patch":{"state":"failed","charged_usd":${value}}}`,
+    })
+    expect(response.status).toBe(400)
+    expect(await response.json()).toEqual({ error: `${message}\n  at ["patch"]["charged_usd"]` })
+  })
+
   it('reports operator refusals as 409 with their message', async () => {
     await db.prepare('UPDATE intake_policy SET collection_enabled = 0').run()
     expect(await (await call('collection/reserve')).json()).toEqual({ error: 'Instagram collection is not enabled' })

@@ -112,8 +112,7 @@ describe('Telegram Bot API client', () => {
     expect(apiError).toBeInstanceOf(TelegramApiError)
     expect(apiError.errorCode).toBe(429)
     expect(apiError.retryAfter).toBe(17)
-    expect(apiError.message).not.toContain(token)
-    expect(apiError.message).toContain('[REDACTED]')
+    expect(apiError.message).toBe('retry request with [REDACTED]')
   })
 
   it('redacts tokens from transport failures', async () => {

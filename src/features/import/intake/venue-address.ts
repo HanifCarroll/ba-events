@@ -42,7 +42,7 @@ export function municipalAddress(address: string, height: string, evidence: read
 }
 
 const usigAddresses = Schema.Struct({ direccionesNormalizadas: Schema.Array(Schema.Struct({
-  cod_partido: Schema.String, cod_calle: Schema.Number, nombre_calle: Schema.String, altura: Schema.NullOr(Schema.Number),
+  cod_partido: Schema.String, cod_calle: Schema.Int, nombre_calle: Schema.String, altura: Schema.NullOr(Schema.Int),
 })) })
 const usigArea = Schema.Struct({ barrio: Schema.String })
 const MAX_USIG_BYTES = 256 * 1024

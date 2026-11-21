@@ -66,18 +66,19 @@ const NullableBit = Schema.NullOr(Schema.BooleanFromBit)
 const Json = Schema.fromJsonString(Schema.Unknown)
 const Strings = Schema.fromJsonString(Schema.Array(Schema.String))
 const Text = Schema.NullOr(Schema.String)
-const Int = Schema.NullOr(Schema.Number)
+const Int = Schema.NullOr(Schema.Int)
+const Price = Schema.NullOr(Schema.Finite)
 
 const venueRow = Schema.Struct({
   id: Schema.String, name: Schema.String, neighborhood: Text, address: Text, website: Text, instagram_handle: Text, parent_id: Text,
   enrichment_status: Schema.String, enrichment_error: Text, enriched_at: Text, address_check_status: Schema.String,
   created_at: Schema.String, updated_at: Schema.String,
 })
-const venueWithCount = Schema.Struct({ ...venueRow.fields, event_count: Schema.Finite })
+const venueWithCount = Schema.Struct({ ...venueRow.fields, event_count: Schema.Int })
 
 const existingEventRow = Schema.Struct({
   id: Schema.String, external_id: Schema.String, name: Schema.String, description_es: Text, description_en: Text,
-  starts_at: Schema.String, ends_at: Text, is_all_day: Bit, time_tba: Bit, venue_id: Text, categories: Strings, price: Int,
+  starts_at: Schema.String, ends_at: Text, is_all_day: Bit, time_tba: Bit, venue_id: Text, categories: Strings, price: Price,
   is_free: Bit, min_age: Int, image_url: Text, image_width: Int, image_height: Int, link: Text, ticket_url: Text,
   status: Schema.String, location_hidden: NullableBit, location_tba: Bit, description_unavailable: Bit, facets: Json,
   embedding_version: Int,
@@ -85,7 +86,7 @@ const existingEventRow = Schema.Struct({
 
 const enrichmentRow = Schema.Struct({
   id: Schema.String, name: Schema.String, link: Text, source: Schema.String, categories: Strings, venue_id: Text,
-  description_es: Text, description_en: Text, facets: Json, enrichment_status: Schema.String, price: Int, is_free: Bit,
+  description_es: Text, description_en: Text, facets: Json, enrichment_status: Schema.String, price: Price, is_free: Bit,
   enrichment_provenance: Schema.NullOr(Json),
 })
 

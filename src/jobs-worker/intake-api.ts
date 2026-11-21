@@ -63,7 +63,8 @@ const strict = <S extends Schema.Top>(schema: S, input: unknown): S['Type'] => {
 
 const Uuid = Schema.String.pipe(Schema.check(Schema.isPattern(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)))
 const Iso = Schema.String.pipe(Schema.check(Schema.isPattern(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/)))
-const Usd = Schema.NullOr(Schema.Number.pipe(Schema.check(Schema.isGreaterThanOrEqualTo(0), Schema.isLessThanOrEqualTo(100))))
+// Run the range checks first to keep the API's lower/upper-bound messages for overflowed JSON numbers.
+const Usd = Schema.NullOr(Schema.Number.check(Schema.isGreaterThanOrEqualTo(0), Schema.isLessThanOrEqualTo(100), Schema.isFinite()))
 const Text = (max: number) => Schema.String.pipe(Schema.check(Schema.isMaxLength(max)))
 // An empty Struct ignores excess keys even with onExcessProperty: 'error'; a record of Never refuses any key.
 const Empty = Schema.Record(Schema.String, Schema.Never)

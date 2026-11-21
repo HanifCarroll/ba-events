@@ -278,7 +278,21 @@ describe('rerankEvents', () => {
     })
     expect(ordered.map((e) => e.id)).toEqual(['a', 'b'])
     expect(meta.status).toBe('failed')
-    expect(meta.error).toBeDefined()
+    expect(meta.error).toBe('Voyage rerank returned malformed data')
+  })
+
+  it('keeps the malformed-data fallback for a non-finite provider score', async () => {
+    vi.stubEnv('VOYAGE_API_KEY', 'test-key')
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(
+      '{"data":[{"index":0,"relevance_score":0.5},{"index":1,"relevance_score":1e309}]}',
+      { headers: { 'content-type': 'application/json' } }
+    )))
+
+    const { ordered, meta } = await rerankEvents([mkEvent('a'), mkEvent('b')], {
+      semanticQuery: 'jazz', prefer: {}, avoid: [],
+    })
+    expect(ordered.map((event) => event.id)).toEqual(['a', 'b'])
+    expect(meta).toMatchObject({ status: 'failed', error: 'Voyage rerank returned malformed data' })
   })
 
   it('returns input order with status empty_query for a single candidate', async () => {

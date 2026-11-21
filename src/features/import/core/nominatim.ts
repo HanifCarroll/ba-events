@@ -35,7 +35,7 @@ const nominatimExtratagsSchema = Schema.Struct({
 })
 
 const nominatimResultSchema = Schema.Struct({
-  place_id: Schema.optional(Schema.Number),
+  place_id: Schema.optional(Schema.Int),
   lat: Schema.String,
   lon: Schema.String,
   display_name: Schema.String,
