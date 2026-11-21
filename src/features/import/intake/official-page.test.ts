@@ -180,6 +180,9 @@ describe('official-page evidence', () => {
     ['ÁBRE 20 hs', '20:00'],
     ['ABREN 20 hs', '20:00'],
     ['OPEN 20:00', '20:00'],
+    ['Ingreso 20 hs', '20:00'],
+    ['Acceso 20 hs', '20:00'],
+    ['Door 20:00', '20:00'],
     ['Puertas 20 hs | Fin del show 23 hs', '23:00'],
     ['Puertas 20 hs | Fin Show 23 hs', '23:00'],
     ['Puertas 20 hs | Cierre Función 23 hs', '23:00'],
@@ -207,6 +210,39 @@ describe('official-page evidence', () => {
       expect(await Effect.runPromise(verifyOfficialPagesEffect([evidence(officialUrl, excerpt, [field])], { ...facts, time }, read)))
         .toEqual([`Official page excerpt mentions a doors time; cite a line that states the show's start: ${officialUrl}`])
     }
+  })
+
+  it.each([
+    '<p>Jueves 17 de diciembre - 20:00 hs (apertura de puertas) | Show 20:30 hs</p>',
+    '<p>Jueves 17 de diciembre - <span>20:00 hs</span>\n<span>(apertura de puertas) | Show 20:30 hs</span></p>',
+    '<div>Jueves 17 de diciembre -</div><div>20:00 hs (apertura de puertas) | Show 20:30 hs</div>',
+    '<p>Ingreso: Jueves 17 de diciembre - 20:00 hs</p>',
+    '<p>Jueves 17 de diciembre - 20:00 hs</p><p>Jueves 17 de diciembre - 20:00 hs (Acceso)</p>',
+  ])('holds a shortened quote when a matching page line mentions doors: %s', async html => {
+    const excerpt = 'Jueves 17 de diciembre - 20:00 hs'
+    const read = readHtml(`<h1>${facts.name}</h1>${html}`)
+    for (const field of ['date', 'time'] as const) {
+      expect(await Effect.runPromise(verifyOfficialPagesEffect([evidence(officialUrl, excerpt, [field])],
+        { ...facts, date: '2026-12-17', time: '20:00' }, read)))
+        .toEqual([`Official page excerpt mentions a doors time; cite a line that states the show's start: ${officialUrl}`])
+    }
+  })
+
+  it('checks the matched line after browser rendering, not just the static shell', async () => {
+    const excerpt = 'Jueves 17 de diciembre - 20:00 hs'
+    const render = async () => renderedPageRead(officialUrl, { url: officialUrl, title: facts.name, headings: [facts.name], siteName: null,
+      visible: `${facts.name}\n\n${excerpt} (apertura de puertas) | Show 20:30 hs`, challenge: false, fanzJson: '', fanzLinks: [], singleDate: '' })
+    expect(await Effect.runPromise(verifyOfficialPagesEffect([evidence(officialUrl, excerpt)],
+      { ...facts, date: '2026-12-17', time: '20:00' }, readHtml(`<h1>${facts.name}</h1>`), render)))
+      .toEqual([`Official page excerpt mentions a doors time; cite a line that states the show's start: ${officialUrl}`])
+  })
+
+  it('does not borrow opening words from an unrelated block or hidden annotation', async () => {
+    const excerpt = 'Jueves 17 de diciembre - 20:00 hs'
+    const html = `<h1>Open Mic</h1><nav>Puertas de la sala</nav><div><p>${excerpt}<span hidden>(apertura de puertas)</span></p>
+      <p>Acceso por calle lateral</p></div>`
+    expect(await Effect.runPromise(verifyOfficialPagesEffect([evidence(officialUrl, excerpt)],
+      { ...facts, name: 'Open Mic', date: '2026-12-17', time: '20:00' }, readHtml(html)))).toEqual([])
   })
 
   it('reads "20 hs" after a weekday as a clock, so a range end never becomes the start', async () => {
@@ -432,6 +468,17 @@ describe('official-page evidence', () => {
       expect(await Effect.runPromise(verifyOfficialPagesEffect([evidence(officialUrl, `2026-11-23 21:00 | ${facts.name}`, ['date'])],
         { ...facts, time }, read))).toEqual([`Official page calendar performance starts at 21:00; set the candidate's start time to match: ${officialUrl}`])
     }
+  })
+
+  it.each(['Open Mic', 'Abre el telón', 'Apertura', 'Puertas adentro'])('treats doors words as title text only in a structured calendar: %s', async name => {
+    const excerpt = `2026-11-23 21:00 | ${name}`
+    const html = `<table><tr><td id="li-2026-11-23"><ul><li><div class="calendar-hora">21:00 hs</div>
+      <a href="/obra/sintetica/">${name}</a></li></ul></td></tr></table>`
+    const verify = (html: string) => Effect.runPromise(verifyOfficialPagesEffect([evidence(officialUrl, excerpt)], { ...facts, name }, readHtml(html)))
+    expect(await verify(html)).toEqual([])
+    expect(await verify(`<h1>${name}</h1><p>${excerpt}</p>`)).toEqual([
+      `Official page excerpt mentions a doors time; cite a line that states the show's start: ${officialUrl}`,
+    ])
   })
 
   it('binds a structured calendar to the stored venue website after any redirect', async () => {

@@ -220,12 +220,20 @@ export function visibleText(html: string): string {
   return $.root().text()
 }
 
+// Static HTML has no computed layout. Keep line breaks at common block boundaries and explicit <br>s.
+const LINE_ELEMENTS = 'address, article, aside, blockquote, br, caption, dd, details, div, dl, dt, fieldset, figcaption, figure, footer, form, ' +
+  'h1, h2, h3, h4, h5, h6, header, hr, li, main, menu, nav, ol, option, p, pre, section, summary, table, td, th, tr, ul'
+
 function prepareVisibleDom($: CheerioAPI) {
   revealStreamedSegments($)
   $('head, title, script, style, noscript, template, svg, iframe, [hidden], [aria-hidden="true"]').remove()
   $('[style]').filter((_, element) => /display\s*:\s*none|visibility\s*:\s*hidden|(?:^|;)\s*opacity\s*:\s*0(?:\.0+)?(?=\s|;|!|$)/i.test($(element).attr('style') ?? '')).remove()
-  // A space at every element boundary: <span>LUNES</span><span>23</span> reads "LUNES 23", never "LUNES23".
+  // Source formatting is not a visible line break. Preserve spaces between adjacent inline elements.
+  $('*').add($.root()).contents().each((_, node) => {
+    if (node.type === 'text') node.data = node.data.replace(/[\r\n]+/g, ' ')
+  })
   $('*').each((_, element) => { $(element).prepend(' ').append(' ') })
+  $(LINE_ELEMENTS).before('\n').after('\n')
 }
 
 /** GET with no cookies or credentials, manual redirects re-checked hop by hop, a time limit and a size limit. */
@@ -318,7 +326,7 @@ const CLOCK_LIST = new RegExp(String.raw`\b(?<!\d[:./-])(?:a las? ${CLOCK_VALUE}
 const MULTIPLE_OCCURRENCES = "lists multiple dates or start times; cite the single occurrence's line"
 const BARE_START_RANGE = new RegExp(String.raw`\b(?<!\d[:./-])(de )?(\d{1,2})(?: *[-–—] *| (?:a|hasta) (las? )?)(${CLOCK_VALUE})(?: ?(hs?|horas|[ap]\.? ?m))?\b(?![:.]\d)`, 'g')
 const CLOCK = /\b(?<!\d[:./])(?:(?<!\d-)|(?=\d{1,2}:))(?:(a las?) )?(\d{1,2})(?:([:.])(\d{2}))?(?: ?(?:([ap])\.? ?m\b\.?|(hs?|horas)\b\.?))?(?![\w:]|\.\d)/g
-const DOORS_WORD = /\b(?:puertas?|apertura|abren|abre|doors|open)\b/
+const DOORS_WORD = /\b(?:puertas?|apertura|abren|abre|ingreso|acceso|doors?|open)\b/
 const DOORS_REASON = "mentions a doors time; cite a line that states the show's start"
 const PAIR_CLOCK = String.raw`([01]?\d|2[0-3])(?::([0-5]\d)(?: ?(?:hs?|horas)\.?)?| ?(?:hs?|horas)\.?)`
 const LABEL_GAP = '(?: *: *| +)'
@@ -406,6 +414,24 @@ export function excerptFactsReason(excerpt: string, fields: readonly string[], f
   return null
 }
 
+/** Check every occurrence, including cross-line excerpts, against the complete lines it touches. */
+function matchedDoorsReason(visible: string, quoted: RegExp, fields: readonly string[], facts: PageFacts): string | null {
+  const lines = visible.split(/\r\n?|\n/).map(normalizePageText).filter(Boolean)
+  let first = 0, offset = 0
+  // Lookahead includes overlapping matches so an unmarked copy of a quote never masks a marked one.
+  for (const { 1: text, index } of lines.join(' ').matchAll(new RegExp(`(?=(${quoted.source}))`, 'gu'))) {
+    while (offset + lines[first].length <= index) offset += lines[first++].length + 1
+    let last = first, end = offset + lines[first].length
+    while (end < index + text.length) end += lines[++last].length + 1
+    const context = lines.slice(first, last + 1).join(' ')
+    if (DOORS_WORD.test(context)) {
+      const reason = excerptFactsReason(context, fields, facts)
+      if (reason) return reason
+    }
+  }
+  return null
+}
+
 function pageReason({ visible, title, titleName, h1, selected, calendar, identityNeedsRender }: PageRead, quoted: RegExp, excerpt: string,
   fields: readonly string[], facts: PageFacts, missing: string | null): string | null {
   if (calendar) {
@@ -420,6 +446,7 @@ function pageReason({ visible, title, titleName, h1, selected, calendar, identit
   }
   if (missing) return `Official page excerpt ${missing}`
   const timingEvidence = fields.some(field => field === 'date' || field === 'time')
+  const normalizedVisible = normalizePageText(visible)
   if (selected === null && timingEvidence) return INVALID_FANZ_SELECTION
   if (selected && quoted.test(normalizePageText(selected.text))) {
     if (fields.some(field => field !== 'date' && field !== 'time')) return 'The selected performance excerpt can only support date and time'
@@ -433,8 +460,12 @@ function pageReason({ visible, title, titleName, h1, selected, calendar, identit
     if (!selectedName || normalizeTitle(selected.title) !== selectedName) return `Official page selected performance is not for "${facts.name}"${pageTitleHint(selected.title)}`
   } else if (selected && timingEvidence) {
     return MISSING_PERFORMANCE
-  } else if (!quoted.test(normalizePageText(visible))) {
+  } else if (!quoted.test(normalizedVisible)) {
     return MISSING_EXCERPT
+  }
+  if (timingEvidence && DOORS_WORD.test(normalizedVisible)) {
+    const reason = matchedDoorsReason(visible, quoted, fields, facts)
+    if (reason) return `Official page excerpt ${reason}`
   }
   if (identityNeedsRender) return UNCONFIRMED_HEADING
   const name = nameText(facts.name)
@@ -461,8 +492,8 @@ export const verifyOfficialPagesEffect = (evidence: readonly Evidence[], facts: 
     const excerpt = normalizePageText(page.excerpt)
     if (excerpt.length < MIN_EXCERPT) { reasons[index] = `Official page excerpt is too short to verify: ${page.url}`; continue }
     const missing = excerptFactsReason(excerpt, page.fields, facts)
-    // A calendar title can contain dates or clocks, but doors language never bypasses the strict pair rule.
-    if (missing && (missing === DOORS_REASON || !CALENDAR_CITATION.test(excerpt))) {
+    // Calendar titles can contain dates, clocks, and doors words; defer those citations until the page type is known.
+    if (missing && !CALENDAR_CITATION.test(excerpt)) {
       reasons[index] = `Official page excerpt ${missing}: ${page.url}`; continue
     }
     const quoted = excerptPattern(excerpt)
