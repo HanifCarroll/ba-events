@@ -71,6 +71,14 @@ export function requireOfficialPageUrl(url: string, sites: ReadonlySet<string>, 
 export const normalizePageText = (value: string) => value.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replace(/\s+/gu, ' ').trim()
 /** Ordinary ticket-page titles can use a standalone Spanish `y` as an artist separator. */
 const nameText = (value: string) => normalizeTitle(value).split(' ').filter(word => word !== 'y').join(' ')
+const AGE_RATING = String.raw`(?:atp|apto todo publico|\+(?:13|16|18)|sam (?:13|16|18)|r(?:13|16|18))`
+const LEADING_AGE = new RegExp(`^${AGE_RATING} `)
+const TRAILING_AGE = new RegExp(` ${AGE_RATING}$`)
+function matchesHeading(heading: string, name: string): boolean {
+  if (nameText(heading) === name) return true
+  const text = normalizePageText(heading)
+  return nameText(text.replace(LEADING_AGE, '')) === name || nameText(text.replace(TRAILING_AGE, '')) === name
+}
 const pageTitleHint = (title: string | null) => title ? ` (page title: ${JSON.stringify(title.slice(0, 255))})` : ''
 
 // React's inline reveal calls: `$RS("S:n","P:m")` moves a segment into a placeholder, `$RC("B:m","S:n")` into a boundary.
@@ -103,9 +111,40 @@ function revealStreamedSegments($: CheerioAPI) {
   }
 }
 
-type SelectedPerformance = { text: string; date: string; time: string; title: string; confirmed: boolean }
+type Performance = { text: string; date: string; time: string; title: string }
+type SelectedPerformance = Performance & { confirmed: boolean }
 type PageRead = { visible: string; title: string | null; h1: string | null; titleName?: string;
-  identityNeedsRender?: boolean; selected?: SelectedPerformance | null }
+  identityNeedsRender?: boolean; selected?: SelectedPerformance | null; calendar?: Performance[] }
+
+const CALENDAR_CITATION = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2} \| .+$/
+
+/** Read the Cervantes calendar shape, with no guesses from neighboring shows or dates in the page's prose. */
+function calendarPerformances($: CheerioAPI, url: URL): Performance[] | undefined {
+  const dayCells = $('table td[id^="li-"]')
+  if (!dayCells.find('li .calendar-hora').length) return undefined
+  const performances: Performance[] = []
+  for (const cell of dayCells.toArray()) {
+    const date = $(cell).attr('id')!.slice(3)
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue
+    const midnight = new Date(`${date}T00:00:00Z`)
+    if (!Number.isFinite(midnight.getTime()) || !midnight.toISOString().startsWith(`${date}T`)) continue
+    for (const entry of $(cell).find('li').toArray()) {
+      if ($(entry).closest('td').get(0) !== cell) continue
+      const own = (selector: string) => $(entry).find(selector).filter((_, node) => $(node).closest('li').get(0) === entry)
+      const starts = own('.calendar-hora')
+      const time = starts.length === 1 ? /^((?:[01]\d|2[0-3]):[0-5]\d)(?:\s*hs?\.?)?$/i.exec(starts.text().trim())?.[1] : undefined
+      const showLinks = own('a[href]').filter((_, link) => {
+        try {
+          const target = new URL($(link).attr('href')!, url)
+          return publicPageUrl(target.href) && siteOf(target.hostname) === siteOf(url.hostname) && /^\/obra\/[^/]+\/?$/.test(target.pathname)
+        } catch { return false }
+      })
+      const title = showLinks.length === 1 ? showLinks.text().replace(/\s+/g, ' ').trim() : ''
+      if (time && title) performances.push({ date, time, title, text: `${date} ${time} | ${title}` })
+    }
+  }
+  return performances
+}
 
 function identity(title: string | null, headings: readonly string[], siteName?: string | null, hasStyles = false) {
   const titleParts = title?.match(/^(.*) (?:-|\|) (.+)$/)
@@ -240,7 +279,8 @@ export async function readOfficialPage(url: string, sites: ReadonlySet<string>, 
     const cards = $?.(FANZ_SINGLE_DATE)
     const selected = selectedFanzPerformance(new URL(current), new URL(url), fanz, fanzJson,
       { visible, singleDate: cards?.length === 1 ? cards.text() : '', rendered: false })
-    return { visible, ...identity(title, headings, site, hasStyles), ...(selected !== undefined ? { selected } : {}) }
+    const calendar = $ && selected === undefined ? calendarPerformances($, new URL(current)) : undefined
+    return { visible, ...identity(title, headings, site, hasStyles), ...(selected !== undefined ? { selected } : {}), ...(calendar ? { calendar } : {}) }
   }
 }
 export type ReadPage = (url: string, sites: ReadonlySet<string>) => Promise<PageRead>
@@ -271,6 +311,10 @@ const CLOCK_LIST = new RegExp(String.raw`\b(?<!\d[:./-])(?:a las? ${CLOCK_VALUE}
 const MULTIPLE_OCCURRENCES = "lists multiple dates or start times; cite the single occurrence's line"
 const BARE_START_RANGE = new RegExp(String.raw`\b(?<!\d[:./-])(de )?(\d{1,2})(?: *[-–—] *| (?:a|hasta) (las? )?)(${CLOCK_VALUE})(?: ?(hs?|horas|[ap]\.? ?m))?\b(?![:.]\d)`, 'g')
 const CLOCK = /\b(?<!\d[:./])(?:(?<!\d-)|(?=\d{1,2}:))(?:(a las?) )?(\d{1,2})(?:([:.])(\d{2}))?(?: ?(?:([ap])\.? ?m\b\.?|(hs?|horas)\b\.?))?(?![\w:]|\.\d)/g
+const DOORS_LABEL = /\b(?:apertura de puertas?|puertas?|doors)\s*:?\s*$/
+const SHOW_LABEL = /\b(?:show|inicio|funcion|comienza)\s*:?\s*$/
+type Clock = { hour: number; minute: number; role?: 'doors' | 'show' }
+const validClock = ({ hour, minute }: Clock) => hour >= 0 && hour <= 23 && minute <= 59
 const WEEKDAYS = 'lun(?:es)?|mar(?:tes)?|mie(?:rcoles)?|jue(?:ves)?|vie(?:rnes)?|sab(?:ado)?|dom(?:ingo)?'
 const EXPLICIT_DAY_PREFIX = new RegExp(String.raw`\b(?:dia|${WEEKDAYS})[.,:]? (?:el )?$`)
 const DAY_ONLY = new RegExp(String.raw`\b(?:el|dia|${WEEKDAYS}|${MONTHS.join('|')})[.,:]? (\d{1,2})\b(?![./-]\d)`, 'g')
@@ -281,13 +325,15 @@ export function excerptFactsReason(excerpt: string, fields: readonly string[], f
   if (!fields.includes('date') && !fields.includes('time')) return null
   if (CLOCK_LIST.test(excerpt)) return MULTIPLE_OCCURRENCES
   const [year, month, day] = facts.date.split('-').map(Number)
-  const starts: Array<[number, number]> = []
+  const starts: Clock[] = []
+  let clockCount = 0
   let previousClockEnd: number | undefined
   const afterHourRanges = excerpt.replace(BARE_START_RANGE, (token, from: string, start: string, at: string, end: string, unit: string, offset: number) => {
     // Recognize an explicit calendar day before trying to parse a bare range start.
     if (!from && (at || EXPLICIT_DAY_PREFIX.test(excerpt.slice(0, offset))) || !unit && !/[.:]/.test(end)) return token
     // Without an explicit meridiem on the start, don't infer it from the end.
-    starts.push([unit && /^[ap]/.test(unit) ? -1 : Number(start), 0])
+    starts.push({ hour: unit && /^[ap]/.test(unit) ? -1 : Number(start), minute: 0 })
+    clockCount += 2
     return ' '
   })
   // Remove clock tokens before reading the calendar so hours and minutes cannot stand in for dates.
@@ -299,14 +345,20 @@ export function excerptFactsReason(excerpt: string, fields: readonly string[], f
     const betweenClocks = previousClockEnd === undefined ? null : afterHourRanges.slice(previousClockEnd, offset)
     const rangeEnd = betweenClocks !== null && (/^(?:\s*[-–—]\s*| (?:a|hasta)(?: las?)? )$/.test(betweenClocks) || !!prefix && betweenClocks === ' ')
     previousClockEnd = offset + token.length
-    if (!rangeEnd) starts.push([localHour, Number(m ?? 0)])
+    clockCount++
+    if (!rangeEnd) {
+      const before = afterHourRanges.slice(0, offset)
+      starts.push({ hour: localHour, minute: Number(m ?? 0), role: DOORS_LABEL.test(before) ? 'doors' : SHOW_LABEL.test(before) ? 'show' : undefined })
+    }
     return ' '
   })
+  const showStart = clockCount === 2 && starts.length === 2 && starts.every(validClock) && starts.some(clock => clock.role === 'doors')
+    ? starts.find(clock => clock.role === 'show') : undefined
   const dates = [...calendar.matchAll(DATE)]
   const partialCalendar = calendar.replace(DATE, '#')
   const contextualDays = [...partialCalendar.matchAll(DAY_ONLY)]
   // Mark recognized dates so a shorthand list such as "20 y 21 de noviembre" also holds.
-  if (starts.length > 1 || dates.length + contextualDays.length > 1 || JOINED_DAYS.test(partialCalendar.replace(DAY_ONLY, '#'))) {
+  if ((starts.length > 1 && !showStart) || dates.length + contextualDays.length > 1 || JOINED_DAYS.test(partialCalendar.replace(DAY_ONLY, '#'))) {
     return MULTIPLE_OCCURRENCES
   }
   const groups = dates[0]?.groups
@@ -327,16 +379,25 @@ export function excerptFactsReason(excerpt: string, fields: readonly string[], f
     if (monthNumber(name) !== month) return wrongMonth
   }
   for (const [number] of calendar.matchAll(/\b(?:19|20)\d{2}\b/g)) if (Number(number) !== year) return wrongYear
-  const start = starts[0]
-  if (!start || start[0] < 0 || start[0] > 23 || start[1] > 59) {
+  const start = showStart ?? starts[0]
+  if (!start || !validClock(start)) {
     return facts.time ? `does not state the time ${facts.time}` : 'does not state a start time'
   }
   const [hour, minute] = facts.time?.split(':').map(Number) ?? []
-  if (facts.time && (start[0] !== hour || start[1] !== minute)) return `does not state the time ${facts.time}`
+  if (facts.time && (start.hour !== hour || start.minute !== minute)) return `does not state the time ${facts.time}`
   return null
 }
 
-function pageReason({ visible, title, titleName, h1, selected, identityNeedsRender }: PageRead, quoted: RegExp, excerpt: string, fields: readonly string[], facts: PageFacts): string | null {
+function pageReason({ visible, title, titleName, h1, selected, calendar, identityNeedsRender }: PageRead, quoted: RegExp, excerpt: string,
+  fields: readonly string[], facts: PageFacts, missing: string | null): string | null {
+  if (calendar) {
+    if (fields.some(field => field !== 'date' && field !== 'time')) return 'A calendar performance excerpt can only support date and time'
+    const name = normalizeTitle(facts.name)
+    const match = calendar.some(entry => normalizePageText(entry.text) === excerpt && entry.date === facts.date &&
+      (!facts.time || entry.time === facts.time) && name && normalizeTitle(entry.title) === name)
+    return match ? null : 'Official page calendar evidence must quote the matching performance line (YYYY-MM-DD HH:mm | Show title)'
+  }
+  if (missing) return `Official page excerpt ${missing}`
   const timingEvidence = fields.some(field => field === 'date' || field === 'time')
   if (selected === null && timingEvidence) return INVALID_FANZ_SELECTION
   if (selected && quoted.test(normalizePageText(selected.text))) {
@@ -356,7 +417,7 @@ function pageReason({ visible, title, titleName, h1, selected, identityNeedsRend
   }
   if (identityNeedsRender) return UNCONFIRMED_HEADING
   const name = nameText(facts.name)
-  if (name && nameText(h1 ?? titleName ?? title ?? '') === name) return null
+  if (name && (h1 ? matchesHeading(h1, name) : nameText(titleName ?? title ?? '') === name)) return null
   const headings = [title && `page title: ${JSON.stringify(title.slice(0, 255))}`, h1 && `H1: ${JSON.stringify(h1.slice(0, 255))}`].filter(Boolean).join('; ')
   return `Official page does not name "${facts.name}"${headings ? ` (${headings})` : ''}`
 }
@@ -379,10 +440,11 @@ export const verifyOfficialPagesEffect = (evidence: readonly Evidence[], facts: 
     const excerpt = normalizePageText(page.excerpt)
     if (excerpt.length < MIN_EXCERPT) { reasons[index] = `Official page excerpt is too short to verify: ${page.url}`; continue }
     const missing = excerptFactsReason(excerpt, page.fields, facts)
-    if (missing) { reasons[index] = `Official page excerpt ${missing}: ${page.url}`; continue }
+    // A calendar citation has a fixed date/time prefix; the show title after `|` may itself contain dates or clocks.
+    if (missing && !CALENDAR_CITATION.test(excerpt)) { reasons[index] = `Official page excerpt ${missing}: ${page.url}`; continue }
     const quoted = excerptPattern(excerpt)
     const group = groups.get(page.url) ?? []
-    group.push({ index, quoted, check: value => pageReason(value, quoted, excerpt, page.fields, facts) })
+    group.push({ index, quoted, check: value => pageReason(value, quoted, excerpt, page.fields, facts, missing) })
     groups.set(page.url, group)
   }
   for (const [url, group] of groups) {

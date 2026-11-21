@@ -61,6 +61,12 @@ export function allowedInstagramMedia(value: string): boolean {
   } catch { return false }
 }
 
+export const MAX_IMAGE_BYTES = 10 * 1024 * 1024
+class InstagramConnectionError extends Error {}
+const CONNECTION_ERRORS = new Set(['ConnectionRefused', 'FailedToOpenSocket', 'ECONNREFUSED', 'ENETUNREACH', 'EHOSTUNREACH',
+  'ENETDOWN', 'ECONNRESET', 'ENOTFOUND', 'EAI_AGAIN', 'UND_ERR_CONNECT_TIMEOUT'])
+const errorCode = (error: unknown) => typeof error === 'object' && error !== null && 'code' in error && typeof error.code === 'string' ? error.code : undefined
+
 /**
  * Direct network adapter: no redirects, credentials, SVG or unbounded downloads. Its error message is the short reason
  * `collect` reports for a failed image (`answered 403`, `timed out after 15 s`, `redirected`, ...).
@@ -71,15 +77,20 @@ export async function fetchInstagramImage(url: string, fetcher: typeof fetch = f
   try {
     // Manual, not 'error', so a redirect is named; it is still never followed.
     response = await fetcher(url, { redirect: 'manual', signal: AbortSignal.timeout(15000), headers: { Accept: 'image/jpeg,image/png,image/webp' } })
-  } catch (error) { throw new Error(downloadReason(error)) }
+  } catch (error) {
+    // Bun reports socket codes on the error itself; Node fetch wraps the underlying connection error.
+    const cause = error instanceof Error ? error.cause : undefined
+    if (CONNECTION_ERRORS.has(errorCode(error) ?? errorCode(cause) ?? '')) throw new InstagramConnectionError(downloadReason(error))
+    throw new Error(downloadReason(error))
+  }
   if (response.status >= 300 && response.status < 400) { await response.body?.cancel(); throw new Error('redirected') }
   if (!response.ok || !response.body) { await response.body?.cancel(); throw new Error(`answered ${response.status}`) }
-  if (Number(response.headers.get('content-length')) > 10485760) { await response.body.cancel(); throw new Error('over 10 MB') }
+  if (Number(response.headers.get('content-length')) > MAX_IMAGE_BYTES) { await response.body.cancel(); throw new Error('over 10 MB') }
   const reader = response.body.getReader(); const chunks: Uint8Array[] = []; let length = 0
   try {
     for (;;) {
       const { done, value } = await reader.read(); if (done) break
-      length += value.byteLength; if (length > 10485760) throw new Error('over 10 MB')
+      length += value.byteLength; if (length > MAX_IMAGE_BYTES) throw new Error('over 10 MB')
       chunks.push(value)
     }
   } catch (error) { throw new Error(downloadReason(error)) } finally { await reader.cancel().catch(() => {}) }
@@ -91,13 +102,13 @@ export async function fetchInstagramImage(url: string, fetcher: typeof fetch = f
 }
 const downloadReason = (error: unknown) => {
   if (error instanceof Error && error.name === 'TimeoutError') return 'timed out after 15 s'
-  const code = (error as { code?: unknown } | null)?.code
-  return `${error instanceof Error ? error.message : String(error)}${typeof code === 'string' ? ` (${code})` : ''}`
+  const code = errorCode(error) ?? (error instanceof Error ? errorCode(error.cause) : undefined)
+  return `${error instanceof Error ? error.message : String(error)}${code ? ` (${code})` : ''}`
 }
 
 /** Evidence image identity from its bytes alone: JPEG, PNG or WebP by magic number, keyed by its sha256. */
 export async function describeImage(bytes: Uint8Array<ArrayBuffer>) {
-  if (bytes.byteLength > 10485760) throw new Error('Image exceeds limit')
+  if (bytes.byteLength > MAX_IMAGE_BYTES) throw new Error('Image exceeds limit')
   const type = bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff ? 'jpeg' :
     bytes[0] === 137 && String.fromCharCode(...bytes.slice(1, 4)) === 'PNG' ? 'png' :
     String.fromCharCode(...bytes.slice(0, 4)) === 'RIFF' && String.fromCharCode(...bytes.slice(8, 12)) === 'WEBP' ? 'webp' : null
@@ -106,12 +117,23 @@ export async function describeImage(bytes: Uint8Array<ArrayBuffer>) {
   return { bytes, content_type: `image/${type}`, sha256: hash, object_key: `${hash}.${type === 'jpeg' ? 'jpg' : type}` }
 }
 
-/** Saves one image of an observation. Idempotent: evidence is keyed by content hash and `intake_media` by (observation_id, position). */
-const retainImageEffect = (store: CollectionStore, observationId: string, position: number, url: string, fetcher: typeof fetchInstagramImage) =>
-  Effect.gen(function*() {
-    const image = yield* importTry('intake.image', () => fetcher(url))
-    yield* store.retainImage(observationId, position, image)
-  })
+/** Retain one position; download failures are per-image, but API/storage failures can stop the retry pass. */
+const retainPositionEffect = Effect.fn('intake.retainPosition')(function*(store: CollectionStore, item: MediaPosition, url: string,
+  fetcher: typeof fetchInstagramImage, now = new Date()) {
+  const { observation_id: id, position } = item
+  const image = yield* Effect.result(importTry('intake.image', () => fetcher(url)))
+  if (image._tag === 'Success') {
+    yield* store.retainImage(id, position, image.success)
+    return { status: 'direct' } as const
+  }
+  const { cause, message } = image.failure
+  const expiry = signedUrlExpiry(url)
+  if (store.fetchAndRetainImage && cause instanceof InstagramConnectionError && (!expiry || expiry > now)) {
+    const reason = yield* store.fetchAndRetainImage(id, position)
+    return reason === null ? { status: 'server' } as const : { status: 'failed', reason: `${message}; Worker fallback: ${reason}` } as const
+  }
+  return { status: 'failed', reason: message } as const
+})
 
 // Posts saved at once. Sequential saving took 30+ minutes for a normal day of ~300 posts (mostly image round trips).
 export const RETAIN_CONCURRENCY = 6
@@ -120,6 +142,7 @@ export const retainPostsEffect = Effect.fn('intake.retainPosts')(function*(store
   const posts = yield* Effect.try({ try: () => Schema.decodeUnknownSync(Schema.Array(PostSchema))(raw), catch: () => fail('Apify dataset has an invalid shape') })
   let changed = 0; let unchanged = 0; const failures: string[] = []; const seen = new Set<string>(); const observationIds = new Set<string>()
   const mediaFailed: FailedMedia[] = []
+  const serverFetched: MediaPosition[] = []
   const coverage = sourceCoverage(posts, usernames, ceiling)
   if (coverage.dead_sources.length) failures.push(`Sources not found or restricted (consider disabling): ${coverage.dead_sources.map(s => s.username).join(', ')}`)
   if (coverage.errored_sources.length) failures.push(`Sources returned errors: ${coverage.errored_sources.map(s => `${s.username} (${s.reason})`).join(', ')}`)
@@ -153,19 +176,23 @@ export const retainPostsEffect = Effect.fn('intake.retainPosts')(function*(store
     }
     const saved = yield* store.mediaPositions(observationId)
     const failed: FailedMedia[] = []
+    const fetched: MediaPosition[] = []
     // A post's images stay sequential; RETAIN_CONCURRENCY posts at a time already bounds parallel downloads and uploads.
     for (let position = 0; position < urls.length; position++) {
       if (saved.includes(position)) continue
-      const image = yield* Effect.result(retainImageEffect(store, observationId, position, urls[position], fetcher))
-      if (image._tag === 'Failure') failed.push({ observation_id: observationId, position, reason: image.failure.message })
+      const item = { observation_id: observationId, position }
+      const image = yield* Effect.result(retainPositionEffect(store, item, urls[position], fetcher))
+      if (image._tag === 'Failure') failed.push({ ...item, reason: image.failure.message })
+      else if (image.success.status === 'failed') failed.push({ ...item, reason: image.success.reason })
+      else if (image.success.status === 'server') fetched.push(item)
     }
-    return { observationId, fresh, failed }
+    return { observationId, fresh, failed, fetched }
   }), { concurrency: RETAIN_CONCURRENCY })
-  for (const { observationId, fresh, failed } of retained) {
+  for (const { observationId, fresh, failed, fetched } of retained) {
     if (fresh) changed++; else unchanged++
-    observationIds.add(observationId); mediaFailed.push(...failed)
+    observationIds.add(observationId); mediaFailed.push(...failed); serverFetched.push(...fetched)
   }
-  return { posts: seen.size, changed, unchanged, failures, coverage, observationIds, mediaFailed }
+  return { posts: seen.size, changed, unchanged, failures, coverage, observationIds, mediaFailed, serverFetched }
 })
 
 /** Instagram's signed CDN URLs carry their expiry as `oe`, hex Unix seconds. Null when absent or unreadable. */
@@ -187,7 +214,7 @@ export type FailedMedia = MediaPosition & { reason: string }
  * `expired`: positions whose stored URL expired (or is unreadable); nobody can recover them. `deferred`: left by the cap.
  */
 type MediaRetry = { attempted: number; retained: number; failed: FailedMedia[]; expired: Array<MediaPosition & { expired_at: string | null }>;
-  deferred: MediaPosition[]; error?: string }
+  deferred: MediaPosition[]; serverFetched: MediaPosition[]; error?: string }
 
 /**
  * Collection only fetches posts newer than the last run, so an image that failed to save would never come back in a
@@ -200,7 +227,7 @@ type MediaRetry = { attempted: number; retained: number; failed: FailedMedia[]; 
 export const retryMissingMediaEffect = (store: CollectionStore,
   options: { skip?: ReadonlySet<string>; fetcher?: typeof fetchInstagramImage; now?: Date; cap?: number; deadlineMs?: number } = {}) => {
   const { skip = new Set<string>(), fetcher = fetchInstagramImage, now = new Date(), cap = MEDIA_RETRY_CAP, deadlineMs = MEDIA_RETRY_DEADLINE_MS } = options
-  const result: MediaRetry = { attempted: 0, retained: 0, failed: [], expired: [], deferred: [] }
+  const result: MediaRetry = { attempted: 0, retained: 0, failed: [], expired: [], deferred: [], serverFetched: [] }
   const pass = Effect.gen(function*() {
     const pending = (yield* store.unreviewedMedia()).filter(row => !skip.has(row.id) && Array.isArray(row.media_urls) && row.media_urls.length)
     yield* retryPositionsEffect(store, pending, result, { fetcher, now, cap })
@@ -233,10 +260,9 @@ const retryPositionsEffect = Effect.fn('intake.retryMissingMedia')(function*(sto
       }
       if (result.attempted >= cap) { result.deferred.push(item); continue }
       result.attempted++
-      // Only the download is caught: a storage failure ends the pass, and the outer boundary names it in `error`.
-      const image = yield* Effect.result(importTry('intake.image', () => fetcher(url)))
-      if (image._tag === 'Failure') { result.failed.push({ ...item, reason: image.failure.message }); continue }
-      yield* store.retainImage(observation.id, position, image.success)
+      const image = yield* retainPositionEffect(store, item, url, fetcher, now)
+      if (image.status === 'failed') { result.failed.push({ ...item, reason: image.reason }); continue }
+      if (image.status === 'server') result.serverFetched.push(item)
       result.retained++
     }
   }
@@ -290,7 +316,7 @@ export const collectInstagramEffect = Effect.fn('intake.collect')(function*(stor
     if (!Array.isArray(page) || offset >= 10000) return yield* fail('Dataset incomplete or larger than the supported bound')
     items.push(...page); if (page.length < 500) break
   }
-  const { observationIds, mediaFailed, ...result } = yield* retainPostsEffect(store, reservation.id, items, reservation.input.username, Number(reservation.input.resultsLimit), fetcher)
+  const { observationIds, mediaFailed, serverFetched, ...result } = yield* retainPostsEffect(store, reservation.id, items, reservation.input.username, Number(reservation.input.resultsLimit), fetcher)
   const charged_usd = run.usageTotalUsd ?? null
   const month = yield* store.updateRun(reservation.id, { state: 'succeeded', charged_usd, completed_at: new Date().toISOString() })
   // After the run is recorded, so a failed retry can't leave it unfinished. Posts in today's dataset were just tried with
@@ -306,5 +332,6 @@ export const collectInstagramEffect = Effect.fn('intake.collect')(function*(stor
       first_attempt_failed: mediaFailed, // today's posts; the next collect retries them, so not a fix yet
       retry: { attempted: retry.attempted, retained: retry.retained, ...(retry.error ? { error: retry.error } : {}) },
       retried_failed: retry.failed, expired: retry.expired, deferred: retry.deferred,
+      server_fetched: [...serverFetched, ...retry.serverFetched],
     } }
 })
