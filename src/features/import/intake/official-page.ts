@@ -117,6 +117,7 @@ type PageRead = { visible: string; title: string | null; h1: string | null; titl
   identityNeedsRender?: boolean; selected?: SelectedPerformance | null; calendar?: Performance[] }
 
 const CALENDAR_CITATION = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2} \| .+$/
+const UNAVAILABLE_PERFORMANCE = /\b(?:suspendid|cancelad|reprogramad)/
 
 /** Read the Cervantes calendar shape, with no guesses from neighboring shows or dates in the page's prose. */
 function calendarPerformances($: CheerioAPI, url: URL): Performance[] | undefined {
@@ -140,7 +141,11 @@ function calendarPerformances($: CheerioAPI, url: URL): Performance[] | undefine
         } catch { return false }
       })
       const title = showLinks.length === 1 ? showLinks.text().replace(/\s+/g, ' ').trim() : ''
-      if (time && title) performances.push({ date, time, title, text: `${date} ${time} | ${title}` })
+      if (!time || !title) continue
+      const ownText = $(entry).clone()
+      ownText.find('li').remove()
+      if (UNAVAILABLE_PERFORMANCE.test(normalizePageText(ownText.text()))) continue
+      performances.push({ date, time, title, text: `${date} ${time} | ${title}` })
     }
   }
   return performances
@@ -311,9 +316,11 @@ const CLOCK_LIST = new RegExp(String.raw`\b(?<!\d[:./-])(?:a las? ${CLOCK_VALUE}
 const MULTIPLE_OCCURRENCES = "lists multiple dates or start times; cite the single occurrence's line"
 const BARE_START_RANGE = new RegExp(String.raw`\b(?<!\d[:./-])(de )?(\d{1,2})(?: *[-–—] *| (?:a|hasta) (las? )?)(${CLOCK_VALUE})(?: ?(hs?|horas|[ap]\.? ?m))?\b(?![:.]\d)`, 'g')
 const CLOCK = /\b(?<!\d[:./])(?:(?<!\d-)|(?=\d{1,2}:))(?:(a las?) )?(\d{1,2})(?:([:.])(\d{2}))?(?: ?(?:([ap])\.? ?m\b\.?|(hs?|horas)\b\.?))?(?![\w:]|\.\d)/g
-const DOORS_LABEL = /\b(?:apertura de puertas?|puertas?|doors)\s*:?\s*$/
+const DOORS_LABEL = /\b(?:apertura(?: de puertas?)?|puertas?|doors)\s*:?\s*(?:de |a las? )?$/
 const SHOW_LABEL = /\b(?:show|inicio|funcion|comienza)\s*:?\s*$/
 type Clock = { hour: number; minute: number; role?: 'doors' | 'show' }
+const clockRole = (before: string): Clock['role'] => DOORS_LABEL.test(before) ? 'doors' : SHOW_LABEL.test(before) ? 'show' : undefined
+const minutesSinceMidnight = ({ hour, minute }: Clock) => hour * 60 + minute
 const validClock = ({ hour, minute }: Clock) => hour >= 0 && hour <= 23 && minute <= 59
 const WEEKDAYS = 'lun(?:es)?|mar(?:tes)?|mie(?:rcoles)?|jue(?:ves)?|vie(?:rnes)?|sab(?:ado)?|dom(?:ingo)?'
 const EXPLICIT_DAY_PREFIX = new RegExp(String.raw`\b(?:dia|${WEEKDAYS})[.,:]? (?:el )?$`)
@@ -332,7 +339,7 @@ export function excerptFactsReason(excerpt: string, fields: readonly string[], f
     // Recognize an explicit calendar day before trying to parse a bare range start.
     if (!from && (at || EXPLICIT_DAY_PREFIX.test(excerpt.slice(0, offset))) || !unit && !/[.:]/.test(end)) return token
     // Without an explicit meridiem on the start, don't infer it from the end.
-    starts.push({ hour: unit && /^[ap]/.test(unit) ? -1 : Number(start), minute: 0 })
+    starts.push({ hour: unit && /^[ap]/.test(unit) ? -1 : Number(start), minute: 0, role: clockRole(excerpt.slice(0, offset)) })
     clockCount += 2
     return ' '
   })
@@ -346,13 +353,11 @@ export function excerptFactsReason(excerpt: string, fields: readonly string[], f
     const rangeEnd = betweenClocks !== null && (/^(?:\s*[-–—]\s*| (?:a|hasta)(?: las?)? )$/.test(betweenClocks) || !!prefix && betweenClocks === ' ')
     previousClockEnd = offset + token.length
     clockCount++
-    if (!rangeEnd) {
-      const before = afterHourRanges.slice(0, offset)
-      starts.push({ hour: localHour, minute: Number(m ?? 0), role: DOORS_LABEL.test(before) ? 'doors' : SHOW_LABEL.test(before) ? 'show' : undefined })
-    }
+    if (!rangeEnd) starts.push({ hour: localHour, minute: Number(m ?? 0), role: clockRole(afterHourRanges.slice(0, offset)) })
     return ' '
   })
-  const showStart = clockCount === 2 && starts.length === 2 && starts.every(validClock) && starts.some(clock => clock.role === 'doors')
+  const doors = starts.find(clock => clock.role === 'doors')
+  const showStart = doors && clockCount === 2 && starts.length === 2 && starts.every(validClock)
     ? starts.find(clock => clock.role === 'show') : undefined
   const dates = [...calendar.matchAll(DATE)]
   const partialCalendar = calendar.replace(DATE, '#')
@@ -360,6 +365,9 @@ export function excerptFactsReason(excerpt: string, fields: readonly string[], f
   // Mark recognized dates so a shorthand list such as "20 y 21 de noviembre" also holds.
   if ((starts.length > 1 && !showStart) || dates.length + contextualDays.length > 1 || JOINED_DAYS.test(partialCalendar.replace(DAY_ONLY, '#'))) {
     return MULTIPLE_OCCURRENCES
+  }
+  if (doors && showStart && minutesSinceMidnight(showStart) < minutesSinceMidnight(doors)) {
+    return "puts the show clock before doors; cite a line that states the show's own date"
   }
   const groups = dates[0]?.groups
   const statedDay = groups?.isoDay ?? groups?.day ?? contextualDays[0]?.[1]
@@ -380,6 +388,7 @@ export function excerptFactsReason(excerpt: string, fields: readonly string[], f
   }
   for (const [number] of calendar.matchAll(/\b(?:19|20)\d{2}\b/g)) if (Number(number) !== year) return wrongYear
   const start = showStart ?? starts[0]
+  if (start?.role === 'doors') return "states only a doors time; cite the show's start"
   if (!start || !validClock(start)) {
     return facts.time ? `does not state the time ${facts.time}` : 'does not state a start time'
   }
@@ -393,9 +402,10 @@ function pageReason({ visible, title, titleName, h1, selected, calendar, identit
   if (calendar) {
     if (fields.some(field => field !== 'date' && field !== 'time')) return 'A calendar performance excerpt can only support date and time'
     const name = normalizeTitle(facts.name)
-    const match = calendar.some(entry => normalizePageText(entry.text) === excerpt && entry.date === facts.date &&
-      (!facts.time || entry.time === facts.time) && name && normalizeTitle(entry.title) === name)
-    return match ? null : 'Official page calendar evidence must quote the matching performance line (YYYY-MM-DD HH:mm | Show title)'
+    const match = calendar.find(entry => normalizePageText(entry.text) === excerpt && entry.date === facts.date &&
+      name && normalizeTitle(entry.title) === name)
+    if (!match) return 'Official page calendar evidence must quote the matching performance line (YYYY-MM-DD HH:mm | Show title)'
+    return facts.time === match.time ? null : `Official page calendar performance starts at ${match.time}; set the candidate's start time to match`
   }
   if (missing) return `Official page excerpt ${missing}`
   const timingEvidence = fields.some(field => field === 'date' || field === 'time')
