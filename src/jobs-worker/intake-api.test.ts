@@ -112,7 +112,7 @@ describe('Worker image fallback', () => {
   const observe = async (urls: string[]) => {
     await enableSource()
     const store = remoteCollection(client())
-    const run = await Effect.runPromise(store.reserveCollection())
+    const run = await Effect.runPromise(store.reserveCollection)
     return (await Effect.runPromise(store.upsertObservation({ run_id: run.id, post_id: 'p1', source_username: 'synthetic_venue',
       post_url: 'https://www.instagram.com/p/sc1/', caption: '', published_at: null, content_hash: '0'.repeat(64), media_urls: urls }))).id
   }
@@ -186,7 +186,7 @@ describe('Worker image fallback', () => {
   it('reports Worker saves from first attempts and retries and does not upload those bytes from the CLI', async () => {
     const olderId = await observe([storedUrl])
     const store = remoteCollection(client())
-    const run = await Effect.runPromise(store.reserveCollection())
+    const run = await Effect.runPromise(store.reserveCollection)
     await Effect.runPromise(store.updateRun(run.id, { state: 'started', apify_run_id: 'synthetic-run', dataset_id: 'synthetic-dataset' }))
     const newerUrl = 'https://scontent.cdninstagram.com/another.jpg'
     const apify: ApifyRequest = async (_method, path) => {
