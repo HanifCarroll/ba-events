@@ -5,7 +5,7 @@ import type { PostEvent } from './select.ts'
 
 /** The carousels' closing slide. The body names what the post is saved for. */
 export const CLOSING = {
-  headline: '¿Cuál te falta?',
+  headline: '¿A cuál vas?',
   body: { finde: 'Contanos en los comentarios y guardá el post para el finde.', gratis: 'Contanos en los comentarios y guardá el post para la semana.' },
   lead: 'Todos los planes, gratis y sin registrarte:',
   button: 'baeventos.com',
