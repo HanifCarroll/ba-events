@@ -1,4 +1,5 @@
 /** Which catalog events a post shows (brief "Selection"). Pure: the D1 read lives in runtime.ts. */
+import { isArtworkOriginAllowed } from '../events/lib/artwork-delivery.ts'
 import { baLocal, descriptionLine, displayTitle, priceLabel, timeLabel } from './format.ts'
 import { FORMATS, type FormatKey, type FormatSpec, type RunWindow } from './formats.ts'
 
@@ -121,10 +122,13 @@ export function selectEvents(events: CatalogEvent[], format: FormatKey, window: 
   return pick(qualifying, spec).map(toPostEvent)
 }
 
-/** The event's artwork address when it is an https URL, the only kind the renderer downloads. */
+/**
+ * The event's artwork address when it is an https URL on one of the catalog's known image origins (our R2 route or a
+ * listed CDN), the only kind the renderer downloads. Any other address counts as no artwork.
+ */
 export function artworkUrl(event: Pick<CatalogEvent, 'imageUrl'>): string | null {
   const url = event.imageUrl?.trim()
-  return url && URL.canParse(url) && new URL(url).protocol === 'https:' ? url : null
+  return url && isArtworkOriginAllowed(url) ? url : null
 }
 
 const hasArtwork = (event: CatalogEvent) => artworkUrl(event) !== null

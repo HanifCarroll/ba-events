@@ -1,10 +1,12 @@
 /**
- * Each event's flyer, downloaded and prepared before a render: https only (redirects too, at most three), 10 s for the
- * whole download, at most 15 MB, and it must decode as an image. A flyer that fails leaves its event without artwork
+ * Each event's flyer, downloaded and prepared before a render: only from the catalog's known image origins (our R2
+ * route and the listed CDNs; redirects too, at most three), 10 s for the whole download, at most 15 MB, and it must
+ * decode as an image. A flyer that fails leaves its event without artwork
  * (it gets the no-flyer card) and is logged. Only a broken setup throws: no `sharp`, or a directory that can't be made.
  */
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { isArtworkOriginAllowed } from '../events/lib/artwork-delivery.ts'
 import type { PostEvent } from './select.ts'
 
 /** A prepared flyer: the image (at most 1280 px on its long side, more than any frame shows it at) and a small blurred, darkened copy to sit behind it. */
@@ -23,9 +25,16 @@ const FORMATS = ['jpeg', 'png', 'webp', 'gif', 'heif']
 const MAX_REDIRECTS = 3
 const isHttps = (url: string) => URL.canParse(url) && new URL(url).protocol === 'https:'
 
+/**
+ * This job runs on the VPS before anyone has approved the draft, so it only ever connects to the catalog's known image
+ * origins. https alone would let a catalog URL, or a redirect, point it at an internal service.
+ */
+const refusal = (url: string) => !isHttps(url) ? 'not an https URL' : !isArtworkOriginAllowed(url) ? 'not an allowed artwork origin' : null
+
 /** Redirects are followed by hand, so every hop is checked before it is requested. One timeout covers the whole chain. */
 async function download(url: string, fetchImpl: typeof fetch): Promise<Buffer> {
-  if (!isHttps(url)) throw new Error('not an https URL')
+  const refused = refusal(url)
+  if (refused) throw new Error(refused)
   const signal = AbortSignal.timeout(TIMEOUT_MS)
   let response = await fetchImpl(url, { signal, redirect: 'manual' })
   // A response we stop reading is cancelled, so its connection isn't left open.
@@ -36,6 +45,7 @@ async function download(url: string, fetchImpl: typeof fetch): Promise<Buffer> {
     if (hops === MAX_REDIRECTS) return reject(`more than ${MAX_REDIRECTS} redirects`)
     const next = URL.canParse(location, url) ? new URL(location, url).href : ''
     if (!isHttps(next)) return reject('redirected off https')
+    if (!isArtworkOriginAllowed(next)) return reject(`redirected to an origin that isn't allowed (${new URL(next).hostname})`)
     await response.body?.cancel().catch(() => undefined)
     url = next
     response = await fetchImpl(url, { signal, redirect: 'manual' })

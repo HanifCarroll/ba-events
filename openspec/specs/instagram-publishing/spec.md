@@ -25,7 +25,7 @@ A post MUST show only events from the Instagram intake that are scheduled, marke
 - **THEN** the post includes at least one free event
 
 ### Requirement: Frames show each event's own artwork in the website's look
-Every event card MUST show that event's own artwork whole, uncropped, above a solid panel that holds every word, so no text depends on the artwork's colors. Before a render the job MUST download each picked event's `image_url` over https only, following at most three redirects and none that leaves https, with one 10 second limit for the whole download and a 15 MB limit, and MUST use it only if it decodes as a raster image. No format may use a stock photo. Among qualifying events the pick MUST prefer events that have artwork.
+Every event card MUST show that event's own artwork whole, uncropped, above a solid panel that holds every word, so no text depends on the artwork's colors. Before a render the job MUST download each picked event's `image_url` over https and only from the catalog's known image origins (the R2 artwork route and the listed CDN hosts and paths), following at most three redirects and requesting no address or redirect hop outside those origins, with one 10 second limit for the whole download and a 15 MB limit, and MUST use it only if it decodes as a raster image. No format may use a stock photo. Among qualifying events the pick MUST prefer events that have artwork.
 
 #### Scenario: A flyer can't be used
 - **WHEN** an event has no `image_url`, or its download fails, times out, is too large, isn't https, or doesn't decode as an image
@@ -41,9 +41,13 @@ Every event card MUST show that event's own artwork whole, uncropped, above a so
 - **AND** a Reel card for an event without artwork shows the dark titled tile
 - **AND** a cover or closing frame shows only the artwork of events that have it
 
-#### Scenario: The artwork address is not https
-- **WHEN** an event's `image_url` is empty, relative, or not an `https:` URL
-- **THEN** it counts as having no artwork, for the pick and for the render
+#### Scenario: The artwork address is not https or not a known image origin
+- **WHEN** an event's `image_url` is empty, relative, not an `https:` URL, or not on one of the known image origins
+- **THEN** it counts as having no artwork, for the pick and for the render, and it is never requested
+
+#### Scenario: A redirect leaves the known image origins
+- **WHEN** an allowed artwork address redirects to an address outside the known image origins
+- **THEN** the job does not request that address, logs the reason, and renders the no-flyer card for that event
 
 #### Scenario: A font or image file is missing at render time
 - **WHEN** a vendored font or a downloaded image does not load in the frames page

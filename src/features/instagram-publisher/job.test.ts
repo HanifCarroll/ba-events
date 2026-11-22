@@ -38,7 +38,7 @@ const weekend = (): CatalogEvent[] => Array.from({ length: 6 }, (_, i) => ({
   isAllDay: false,
   categories: ['music'],
   summary: 'Una noche de música.',
-  imageUrl: `https://img.example/${i + 1}.jpg`,
+  imageUrl: `https://imagenes.passline.com/eventos/${i + 1}.jpg`,
   venue: `Sala ${i + 1}`,
   barrio: ['Palermo', 'Boedo', 'Almagro', 'Flores', 'Saavedra', 'Chacarita'][i]!,
   venueHandle: `sala${i + 1}`,
