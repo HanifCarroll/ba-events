@@ -6,11 +6,12 @@ import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { delimiter, dirname, extname, join, resolve } from 'node:path'
+import { basename, delimiter, dirname, extname, join, resolve } from 'node:path'
+import type { Artwork } from './artwork.ts'
 import { addDays } from './format.ts'
 import type { FormatKey, RunWindow } from './formats.ts'
 import { writeExcerpt, type ReadyTrack } from './reel/music.ts'
-import { reelProject, type ReelTiming } from './reel/project.ts'
+import { REEL_FAILURE, reelProject, type ReelTiming } from './reel/project.ts'
 import type { CatalogEvent, PostEvent } from './select.ts'
 
 const HOME = homedir()
@@ -100,7 +101,7 @@ export function catalogSql(window: RunWindow): string {
   for (const date of [window.from, window.to]) if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error(`bad date ${date}`)
   const start = `${window.from}T03:00:00.000Z`
   const end = `${addDays(window.to, 1)}T03:00:00.000Z`
-  return `SELECT e.id, e.name, e.starts_at, e.ends_at, e.price, e.is_free, e.status, e.time_tba, e.is_all_day, e.categories,
+  return `SELECT e.id, e.name, e.starts_at, e.ends_at, e.price, e.is_free, e.status, e.time_tba, e.is_all_day, e.categories, e.image_url,
   e.description_summary_es AS summary, v.name AS venue, v.neighborhood AS barrio, v.instagram_handle AS venue_handle,
   (SELECT o.source_username FROM event_source_evidence x JOIN intake_observations o ON o.id = x.observation_id
     WHERE x.event_id = e.id ORDER BY o.observed_at LIMIT 1) AS source_account,
@@ -128,6 +129,7 @@ export function toCatalogEvent(row: Record<string, any>): CatalogEvent {
     isAllDay: row.is_all_day === 1,
     categories: (() => { try { return JSON.parse(row.categories ?? '[]') } catch { return [] } })(),
     summary: row.summary ?? null,
+    imageUrl: typeof row.image_url === 'string' ? row.image_url : null,
     venue: row.venue ?? null,
     barrio: row.barrio ?? null,
     venueHandle: row.venue_handle ?? null,
@@ -182,7 +184,12 @@ export async function renderFramesInProcess(htmlFile: string, outDir: string, he
   try {
     const page = await browser.newPage({ viewport: { width: 1080, height }, deviceScaleFactor: 1 })
     await page.goto(`file://${htmlFile}`, { waitUntil: 'load' })
-    await page.evaluate(() => document.fonts.ready.then(() => undefined))
+    // The page sets data-ready once its fonts are loaded and its text is fitted; anything but "ok" is a failed render.
+    await page.waitForFunction(() => document.documentElement.dataset.ready !== undefined, undefined, { timeout: 30_000 })
+    const ready = await page.evaluate(() => document.documentElement.dataset.ready)
+    if (ready !== 'ok') throw new Error(`The frames page did not get ready: ${ready}`)
+    const broken = await page.evaluate(() => Array.from(document.images).filter(image => !image.naturalWidth).map(image => image.getAttribute('src')))
+    if (broken.length) throw new Error(`Images did not load: ${broken.join(', ')}`)
     const frames = await page.locator('.s').all()
     for (const [index, frame] of frames.entries()) {
       await frame.screenshot({ path: join(outDir, `frame-${index + 1}.jpg`), type: 'jpeg', quality: 92 })
@@ -272,10 +279,15 @@ const mediaEnv = (): NodeJS.ProcessEnv => {
   }
 }
 
-/** Write the HyperFrames project for a Reel into `dir`: compositions, fonts, the hero photo, noise, GSAP, and the music. */
-export async function writeReelProject(dir: string, window: RunWindow, events: PostEvent[], timing: ReelTiming, track: ReadyTrack) {
+/** Write the HyperFrames project for a Reel into `dir`: compositions, fonts, the logo, the flyers, GSAP, and the music. */
+export async function writeReelProject(dir: string, window: RunWindow, events: PostEvent[], timing: ReelTiming, track: ReadyTrack, artwork: Artwork = {}) {
   rmSync(dir, { recursive: true, force: true })
-  for (const [path, text] of Object.entries(reelProject(window, events, timing))) {
+  // The project can only load its own files, so each flyer is copied in and referred to by its path inside the project.
+  const local: Artwork = {}
+  for (const [id, art] of Object.entries(artwork)) {
+    local[id] = { ...art, file: `assets/art/${basename(art.file)}`, backdrop: `assets/art/${basename(art.backdrop)}` }
+  }
+  for (const [path, text] of Object.entries(reelProject(window, events, timing, local))) {
     mkdirSync(dirname(join(dir, path)), { recursive: true })
     writeFileSync(join(dir, path), text)
   }
@@ -283,8 +295,9 @@ export async function writeReelProject(dir: string, window: RunWindow, events: P
   mkdirSync(join(assets, 'fonts'), { recursive: true })
   const fonts = join(REPO, 'src/features/instagram-publisher/assets/fonts')
   for (const font of readdirSync(fonts)) copyFileSync(join(fonts, font), join(assets, 'fonts', font))
-  copyFileSync(join(REPO, 'static/hero-rooftop-buenos-aires.jpg'), join(assets, 'hero-rooftop-buenos-aires.jpg'))
-  copyFileSync(join(REPO, 'src/features/instagram-publisher/reel/assets/noise.png'), join(assets, 'noise.png'))
+  copyFileSync(join(REPO, 'static/logo.svg'), join(assets, 'logo.svg'))
+  mkdirSync(join(assets, 'art'), { recursive: true })
+  for (const art of Object.values(artwork)) for (const file of [art.file, art.backdrop]) copyFileSync(file, join(assets, 'art', basename(file)))
   copyFileSync(join(REPO, 'node_modules/gsap/dist/gsap.min.js'), join(assets, 'gsap.min.js'))
   await writeExcerpt(media, track.path, track.startSec, timing.total, join(assets, 'music.wav'))
 }
@@ -293,12 +306,12 @@ export async function writeReelProject(dir: string, window: RunWindow, events: P
  * Render a Reel to `<outDir>/reel.mp4` (+faststart) and `<outDir>/cover.jpg` (the cover card's hold frame). HyperFrames
  * runs in a named transient scope (1000 MB, no swap, RuntimeMaxSec 600); a timeout or error stops the whole scope.
  */
-export async function renderReel(window: RunWindow, events: PostEvent[], timing: ReelTiming, track: ReadyTrack, outDir: string, runner: Runner = run, chromeRoot?: string): Promise<string[]> {
+export async function renderReel(window: RunWindow, events: PostEvent[], timing: ReelTiming, track: ReadyTrack, outDir: string, artwork: Artwork = {}, runner: Runner = run, chromeRoot?: string): Promise<string[]> {
   managedChrome(chromeRoot)
   rmSync(outDir, { recursive: true, force: true })
   const project = join(outDir, 'project')
   try {
-    await writeReelProject(project, window, events, timing, track)
+    await writeReelProject(project, window, events, timing, track, artwork)
     const raw = join(outDir, 'render.mp4')
     const command = ['npx', '--yes', HYPERFRAMES, 'render', '--quality', 'delivery', '--workers', '1', '-o', raw]
     const unit = `ba-events-instagram-reel-${process.pid}-${Date.now()}`
@@ -317,6 +330,9 @@ export async function renderReel(window: RunWindow, events: PostEvent[], timing:
       throw Object.assign(new Error(`Rendering the Reel failed (${result.code === null ? 'timed out' : `exit ${result.code}`}): ${(result.err || result.out).trim().slice(-500)}`),
         { availableMemoryMb: memory })
     }
+    // HyperFrames still writes a video when a card reported that it couldn't be laid out; that video must not go out.
+    const failure = new RegExp(`${REEL_FAILURE}: [^\\n]*`).exec(`${result.out}\n${result.err}`)
+    if (failure) throw new Error(`Rendering the Reel failed: ${failure[0].trim().slice(0, 300)}`)
     const video = join(outDir, 'reel.mp4')
     const cover = join(outDir, 'cover.jpg')
     const remux = await media(['ffmpeg', '-v', 'error', '-y', '-i', raw, '-c', 'copy', '-movflags', '+faststart', video])

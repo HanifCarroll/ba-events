@@ -1,20 +1,18 @@
 /** Every word the posts and the Slack messages use, built from copy.md (committed next to this file). */
-import { WEEKDAYS_EN, baLocal, dateRange, englishDates, hhmm, longDate, numberWord, weekdayDay } from './format.ts'
+import { WEEKDAYS_EN, baLocal, dateRange, englishDates, hhmm, longDate, weekdayDay } from './format.ts'
 import { FORMATS, type FormatKey, type RunWindow } from './formats.ts'
 import type { PostEvent } from './select.ts'
 
+/** The carousels' closing slide. The body names what the post is saved for. */
 export const CLOSING = {
-  headline: 'Encontrá más planes',
-  body: 'Buscá por día, barrio o presupuesto. Gratis y sin registrarte.',
+  headline: '¿Cuál te falta?',
+  body: { finde: 'Contanos en los comentarios y guardá el post para el finde.', gratis: 'Contanos en los comentarios y guardá el post para la semana.' },
+  lead: 'Todos los planes, gratis y sin registrarte:',
   button: 'baeventos.com',
   footer: 'Link en la bio',
 } as const
 
-/** The Reel's own words (copy.md section 4); its closing card reuses CLOSING's headline, button, and footer. */
-export const REEL = {
-  brand: 'BA Eventos',
-  headline: ['Este finde', 'en Buenos Aires'],
-} as const
+export const REEL_CLOSING = { headline: 'Encontrá más planes', button: 'baeventos.com', footer: 'Link en la bio' } as const
 
 export const HOY_CLOSING = {
   headline: 'Más planes para hoy',
@@ -22,23 +20,23 @@ export const HOY_CLOSING = {
   footer: 'baeventos.com',
 } as const
 
-export interface Cover { kicker: string; headline: [string, string] | [string]; body: string }
+/** The site's address, on the right of a Hoy event frame's footer. */
+export const SITE = 'baeventos.com'
+
+/** A cover's words. Gratis has two headline lines, the first set much larger. The Reel's cover has no footer. */
+export interface Cover { kicker: string; headline: [string, string] | [string]; footer: string | null }
 
 export function cover(format: FormatKey, window: RunWindow, count: number): Cover {
-  const n = numberWord(count, 'es')
+  const range = dateRange(window.from, window.to)
   switch (format) {
-    case 'hoy': return {
-      kicker: longDate(window.from),
-      headline: ['Hoy en Buenos Aires'],
-      body: `${n} planes para esta noche.`,
-    }
-    case 'finde': return { kicker: dateRange(window.from, window.to), headline: ['Este finde', 'en Buenos Aires'], body: `${n} planes independientes para elegir.` }
-    case 'gratis': return { kicker: dateRange(window.from, window.to), headline: ['Gratis', 'esta semana'], body: `${n} planes gratis en Buenos Aires para elegir.` }
-    case 'reel': throw new Error('The Reel has no frame cover; see reel/project.ts')
+    case 'hoy': return { kicker: `Hoy · ${longDate(window.from)}`, headline: [`${count} planes para esta noche`], footer: SITE }
+    case 'finde': return { kicker: range, headline: [`${count} planes independientes para este finde`], footer: 'Deslizá →' }
+    case 'gratis': return { kicker: range, headline: ['Gratis', `${count} planes esta semana`], footer: 'Deslizá →' }
+    case 'reel': return { kicker: range, headline: [`${count} planes para este finde en Buenos Aires`], footer: null }
   }
 }
 
-/** The card kicker: "Hoy · 21:00" in a story, "Viernes 20 · 21:00" in a carousel. */
+/** The card kicker: "Hoy · 21:00" in a story, "Viernes 20 · 21:00" in a carousel or the Reel. CSS sets it in caps. */
 export const cardKicker = (format: FormatKey, event: PostEvent) => `${format === 'hoy' ? 'Hoy' : weekdayDay(event.date)} · ${event.time}`
 
 /** The card footer's tag text: "@handle", or "Vía @handle" when the handle isn't the venue's own account. */
@@ -52,15 +50,18 @@ export function eventLine(format: FormatKey, event: PostEvent): string {
 }
 
 /** The post caption, or null for a story (stories have no caption). A Reel's is Este finde's, plus its track's credit line. */
-export function caption(format: FormatKey, events: PostEvent[], credit: string | null = null): string | null {
+export function caption(format: FormatKey, window: RunWindow, events: PostEvent[], credit: string | null = null): string | null {
   if (format === 'hoy') return null
-  const n = events.length
-  const lines = events.map(event => eventLine(format, event)).join('\n\n')
-  const more = `Más planes en baeventos.com (link en la bio).${format === 'reel' && credit ? `\n\n${credit}` : ''}`
-  const [intro, english] = format !== 'gratis'
-    ? [`${numberWord(n, 'es')} planes independientes para este finde en Buenos Aires:`, `${numberWord(n, 'en')} independent events this weekend in Buenos Aires. More at baeventos.com.`]
-    : [`${numberWord(n, 'es')} planes gratis esta semana en Buenos Aires:`, `${numberWord(n, 'en')} free events this week in Buenos Aires. More at baeventos.com.`]
-  return `${intro}\n\n${lines}\n\n${more}\n\n${english}`
+  const free = format === 'gratis'
+  const range = dateRange(window.from, window.to)
+  return [
+    `Qué hacer ${free ? 'gratis en Buenos Aires esta semana' : 'este finde en Buenos Aires'}: ${events.length} planes de cultura independiente, ${range}.`,
+    ...events.map(event => eventLine(format, event)),
+    `Guardá este post para ${free ? 'la semana' : 'el finde'} y mandáselo a quien te acompañe.`,
+    'Más planes en baeventos.com (link en la bio).',
+    ...(format === 'reel' && credit ? [credit] : []),
+    `#BuenosAires #CulturaIndependiente ${free ? '#EntradaGratis' : '#AgendaCultural'}`,
+  ].join('\n\n')
 }
 
 /** `track` names the Reel's music: the message ends with `Music: "{title}" by {artist}.` */

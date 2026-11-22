@@ -5,7 +5,8 @@ Hermes wrote this text and Hanif's rules apply to it. Commit it word for word. C
 ## Shared pieces
 
 - **Weekday and month names** are Spanish. A weekday is capitalized at the start of a kicker or a caption line ("Viernes 20"). Month names are always lowercase ("20 al 22 de noviembre").
-- **Number words** for counts at the start of a sentence: Dos, Tres, Cuatro, Cinco, Seis, Siete, Ocho. In English: Two, Three, Four, Five, Six, Seven, Eight.
+- **Number words** for counts at the start of a sentence: Dos, Tres, Cuatro, Cinco, Seis, Siete, Ocho. In English: Two, Three, Four, Five, Six, Seven, Eight. For headlines that begin with a count, use the digit ("6 planes independientes para este finde"), since a digit reads faster on a cover.
+- **Kicker on event cards and frames:** "{Weekday} {d} · {time}" (carousels and the Reel) and "Hoy · {time}" (Hoy). Kickers are set in caps by CSS, not typed in caps.
 - **Date range:**
   - Same month: "{d1} al {d2} de {mes}" ("20 al 22 de noviembre").
   - Across two months: "{d1} de {mes1} al {d2} de {mes2}" ("28 de noviembre al 4 de diciembre").
@@ -24,28 +25,30 @@ Hermes wrote this text and Hanif's rules apply to it. Commit it word for word. C
   - Caption line: "{Weekday} {d}, {time}. {Title} en {Venue}, {Barrio}. {Price}. Vía @{handle}." For Gratis, drop the price part: "{Weekday} {d}, {time}. {Title} en {Venue}, {Barrio}. Vía @{handle}."
   - Card and frame footer: "Vía @{handle}" instead of "@{handle}".
 - **Closing slide** (carousels):
-  - Headline: "Encontrá más planes"
-  - Body: "Buscá por día, barrio o presupuesto. Gratis y sin registrarte."
+  - Headline: "¿Cuál te falta?"
+  - Body (Este finde): "Contanos en los comentarios y guardá el post para el finde."
+  - Body (Gratis): "Contanos en los comentarios y guardá el post para la semana."
+  - Line above the button: "Todos los planes, gratis y sin registrarte:"
   - Button: "baeventos.com"
   - Footer: "Link en la bio"
+- **The English caption line is removed** from every format. Instagram is Spanish only.
 
 ## 1. Hoy (a story every day, 1080 × 1920 frames)
 
 **Cover frame**
-- Kicker: "{Weekday} {d} de {mes}"
-- Headline: "Hoy en Buenos Aires"
-- Body: "{N} planes para esta noche."
+- Kicker: "Hoy · {Weekday} {d} de {mes}"
+- Headline: "{N} planes para esta noche"
 - Footer: "baeventos.com"
 
 **One frame per event**
 - Counter: "{i}/{N}"
 - Kicker: "Hoy · {time}"
 - Title
-- Description line
+- Description line (the shared rule; none when the first sentence is over 90 characters)
 - Venue name
 - Barrio
 - Price pill
-- Footer: "@{handle}" on the left and "baeventos.com" on the right
+- Footer: "@{handle}" (or "Vía @{handle}") on the left and "baeventos.com" on the right
 
 **Closing frame**
 - Headline: "Más planes para hoy"
@@ -56,58 +59,54 @@ Stories have no caption.
 
 ## 2. Este finde (a carousel every Thursday, 1080 × 1350)
 
-This matches the live post `instagram.com/p/Df2OC_UkRZu/` (`templates/ba-p2/`).
-
 **Cover**
 - Kicker: "{date range Friday to Sunday}"
-- Headline, on two lines: "Este finde" and "en Buenos Aires"
-- Body: "{N} planes independientes para elegir."
-- Footer: "baeventos.com" and "Deslizá →"
+- Headline: "{N} planes independientes para este finde"
+- Footer: "Deslizá →"
 
-**Event cards**
-- Counter: "{i}/{N}"
-- Kicker: "{Weekday} {d} · {time}"
-- Title, description line, venue, barrio, and price pill
-- Footer: "@{handle}" and "baeventos.com"
+**Event cards:** counter, kicker, title, description line, venue, barrio, price pill, footer "@{handle}" (or "Vía @{handle}").
 
-**Closing slide:** the shared closing slide above.
+**Closing slide:** the shared closing slide, Este finde body.
 
 **Caption**
 
 ```
-{N} planes independientes para este finde en Buenos Aires:
+Qué hacer este finde en Buenos Aires: {N} planes de cultura independiente, {date range}.
 
 {one line per event, with a blank line between events}
 
+Guardá este post para el finde y mandáselo a quien te acompañe.
+
 Más planes en baeventos.com (link en la bio).
 
-{N_en} independent events this weekend in Buenos Aires. More at baeventos.com.
+#BuenosAires #CulturaIndependiente #AgendaCultural
 ```
 
-Each event line reads "{Weekday} {d}, {time}. {Title} en @{handle}, {Barrio}. {Price}." End it at the barrio when there's no price pill. When there's no handle, write the venue name instead of "@{handle}". Prices in the caption read like the pill ("Gratis.", "$15.000.", "A la gorra.").
+Event lines keep today's form: "{Weekday} {d}, {time}. {Title} en @{handle}, {Barrio}. {Price}." End it at the barrio when there's no price pill. When there's no handle, write the venue name instead of "@{handle}". Prices in the caption read like the pill ("Gratis.", "$15.000.", "A la gorra.").
 
 ## 3. Gratis esta semana (a carousel every Monday, 1080 × 1350)
 
 **Cover**
 - Kicker: "{date range Monday to Sunday}"
-- Headline, on two lines: "Gratis" and "esta semana"
-- Body: "{N} planes gratis en Buenos Aires para elegir."
-- Footer: "baeventos.com" and "Deslizá →"
+- Headline, on two lines, the first much larger: "Gratis" and "{N} planes esta semana"
+- Footer: "Deslizá →"
 
-**Event cards:** the same as Este finde, and the price pill always reads "Gratis".
+**Event cards:** the same as Este finde; the pill always reads "Gratis".
 
-**Closing slide:** the shared closing slide above.
+**Closing slide:** the shared closing slide, Gratis body.
 
 **Caption**
 
 ```
-{N} planes gratis esta semana en Buenos Aires:
+Qué hacer gratis en Buenos Aires esta semana: {N} planes de cultura independiente, {date range}.
 
 {one line per event, with a blank line between events}
 
+Guardá este post para la semana y mandáselo a quien te acompañe.
+
 Más planes en baeventos.com (link en la bio).
 
-{N_en} free events this week in Buenos Aires. More at baeventos.com.
+#BuenosAires #CulturaIndependiente #EntradaGratis
 ```
 
 Each event line reads "{Weekday} {d}, {time}. {Title} en @{handle}, {Barrio}." The price is left out, because every event in the post is free.
@@ -117,26 +116,23 @@ Each event line reads "{Weekday} {d}, {time}. {Title} en @{handle}, {Barrio}." T
 The Reel shows the same events as that weekend's Este finde carousel.
 
 **Cover card**
-- Brand mark: "BA Eventos"
 - Kicker: "{date range Friday to Sunday}"
-- Headline, on two lines: "Este finde" and "en Buenos Aires"
+- Headline: "{N} planes para este finde en Buenos Aires"
 
 **One card per event**
-- Brand mark: "BA Eventos"
 - Kicker: "{Weekday} {d} · {time}"
 - Title
 - Venue name
 - Barrio and price pill on one line
 
 **Closing card**
-- Brand mark: "BA Eventos"
 - Headline: "Encontrá más planes"
 - Button: "baeventos.com"
 - Footer: "Link en la bio"
 
 The event cards have no description line, no handle, and no "baeventos.com" footer. The caption carries the handles.
 
-**Caption:** the Este finde carousel's caption, word for word. When the Reel's track has a credit line, the credit goes on its own line after "Más planes en baeventos.com (link en la bio).", with a blank line before it. Of the current tracks, only "Intención" by Sapajou (CC BY 3.0) needs a credit.
+**Caption:** the Este finde caption, word for word, with the track's credit line (when it has one) on its own line after "Más planes en baeventos.com (link en la bio).", before the hashtags, with a blank line on each side. Of the current tracks, only "Intención" by Sapajou (CC BY 3.0) needs a credit.
 
 ## Slack preview message (in English, for Hanif)
 

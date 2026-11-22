@@ -10,19 +10,19 @@ import type { PostEvent } from './select.ts'
 const approved = readFileSync(new URL('./copy.md', import.meta.url), 'utf8')
 const section = (heading: string) => approved.split(/^## /m).find(block => block.startsWith(heading))!
 const field = (block: string, name: string) => {
-  const line = block.split('\n').find(line => line.trimStart().startsWith(`- ${name}:`))!
+  const line = block.split('\n').find(line => new RegExp(`^- ${name}[:,]`).test(line.trimStart()))!
   return Array.from(line.matchAll(/"([^"]+)"/g), ([, text]) => text!)
 }
 const fill = (template: string, values: Record<string, string>) =>
   template.replace(/\{([^{}]+)\}/g, (placeholder, key: string) => values[key] ?? placeholder)
-const captionSections = (heading: string, spanish: string, english: string) =>
-  fill(section(heading).split('\n```\n')[1]!, { N: spanish, N_en: english }).split('\n\n')
+const captionSections = (heading: string, values: Record<string, string>) =>
+  fill(section(heading).split('\n```\n')[1]!, values).split('\n\n')
 const approvedCover = (heading: string, values: Record<string, string>) => {
   const block = section(heading).split('**Cover')[1]!.split('\n\n')[0]!
   return {
     kicker: fill(field(block, 'Kicker')[0]!, values),
-    headline: field(block, heading.startsWith('1.') ? 'Headline' : 'Headline, on two lines'),
-    body: fill(field(block, 'Body')[0]!, values),
+    headline: field(block, 'Headline').map(line => fill(line, values)),
+    footer: block.includes('- Footer:') ? field(block, 'Footer')[0]! : null,
   }
 }
 const slackSection = section('Slack preview message')
@@ -35,7 +35,7 @@ const slackDraft = (name: string, dates: string, publish: string, body: string) 
 }
 
 const post = (date: string, time: string, title: string, handle: string | null, barrio: string, price: string | null, venue = 'Sala', via = false): PostEvent =>
-  ({ id: title, date, startsAt: '', title, time, description: null, venue, barrio, price, handle, via })
+  ({ id: title, date, startsAt: '', title, time, description: null, venue, barrio, price, handle, imageUrl: null, via })
 
 const weekend: PostEvent[] = [
   post('2026-11-20', '21:00', 'Trío del Patio', 'patio.ejemplo', 'San Cristóbal', '$15.000'),
@@ -47,11 +47,14 @@ const weekend: PostEvent[] = [
 ]
 
 describe('Este finde', () => {
-  it('lists each event in order with its ticket terms and closes in both languages', () => {
-    const lines = caption('finde', weekend)?.split('\n\n')
-    const [intro, , ...closing] = captionSections('2. Este finde', 'Seis', 'Six')
+  const window = runWindow('finde', '2026-11-20')
+
+  it('opens with the search hook, lists each event in order with its ticket terms, and closes with the save ask, the link, and three hashtags', () => {
+    const lines = caption('finde', window, weekend)?.split('\n\n')
+    const [intro, , ...closing] = captionSections('2. Este finde', { N: '6', 'date range': '20 al 22 de noviembre' })
+    expect(closing).toHaveLength(3)
     expect(lines?.[0]).toBe(intro)
-    expect(lines?.slice(1, -2)).toEqual([
+    expect(lines?.slice(1, -3)).toEqual([
       'Viernes 20, 21:00. Trío del Patio en @patio.ejemplo, San Cristóbal. $15.000.',
       'Sábado 21, 11:00 a 16:30. Cine en el Patio en @cine_ejemplo, Saavedra. Gratis.',
       'Sábado 21, 21:30. Canciones en el Taller en @taller_ejemplo, Villa General Mitre. A la gorra.',
@@ -59,50 +62,56 @@ describe('Este finde', () => {
       'Domingo 22, 17:00. Taller de Papel en @papel_ejemplo, Almagro. Gratis.',
       'Domingo 22, 20:00. Dúo de la Plaza en Sala del Andén, Parque Patricios.',
     ])
-    expect(lines?.slice(-2)).toEqual(closing)
+    expect(lines?.slice(-3)).toEqual(closing)
   })
 
   it('formats the dates and pick count on the cover and cards', () => {
-    const window = runWindow('finde', '2026-11-20')
     expect(cover('finde', window, weekend.length)).toEqual(approvedCover('2. Este finde', {
-      'date range Friday to Sunday': '20 al 22 de noviembre', N: 'Seis',
+      'date range Friday to Sunday': '20 al 22 de noviembre', N: '6',
     }))
     expect(cardKicker('finde', weekend[1]!)).toBe('Sábado 21 · 11:00 a 16:30')
   })
 })
 
 describe('Gratis esta semana', () => {
-  it('counts five free picks in both languages and leaves prices out of the event lines', () => {
+  it('counts five free picks and leaves prices out of the event lines', () => {
+    const window = runWindow('gratis', '2026-11-30')
     const free = weekend.slice(0, 5).map(event => ({ ...event, price: 'Gratis' }))
-    const sections = caption('gratis', free)!.split('\n\n')
-    const [intro, , ...closing] = captionSections('3. Gratis esta semana', 'Cinco', 'Five')
+    const sections = caption('gratis', window, free)!.split('\n\n')
+    const [intro, , ...closing] = captionSections('3. Gratis esta semana', { N: '5', 'date range': '30 de noviembre al 6 de diciembre' })
     expect(sections[0]).toBe(intro)
-    const events = sections.slice(1, -2)
+    const events = sections.slice(1, -3)
     expect(events).toHaveLength(5)
     expect(events[0]).toBe('Viernes 20, 21:00. Trío del Patio en @patio.ejemplo, San Cristóbal.')
     expect(events.join('\n')).not.toContain('Gratis')
-    expect(sections.slice(-2)).toEqual(closing)
-    const window = runWindow('gratis', '2026-11-30')
-    expect(cover('gratis', window, free.length)).toEqual(approvedCover('3. Gratis esta semana', {
-      'date range Monday to Sunday': '30 de noviembre al 6 de diciembre', N: 'Cinco',
-    }))
+    expect(sections.slice(-3)).toEqual(closing)
+    const expected = approvedCover('3. Gratis esta semana', { 'date range Monday to Sunday': '30 de noviembre al 6 de diciembre', N: '5' })
+    expect(expected.headline).toEqual(['Gratis', '5 planes esta semana'])
+    expect(cover('gratis', window, free.length)).toEqual(expected)
   })
 })
 
+it('writes no English in any caption', () => {
+  expect(approved).toContain('The English caption line is removed')
+  for (const format of ['finde', 'gratis', 'reel'] as const) {
+    const text = caption(format, runWindow(format, format === 'gratis' ? '2026-11-23' : '2026-11-20'), weekend, 'Música: "Intención" de Sapajou.')!
+    expect(text).not.toMatch(/\b(events?|this week|weekend|More at|free)\b/i)
+  }
+})
+
 it('renders the approved closing copy on the last carousel and Hoy frames', () => {
-  const assets = { fontsDir: '/fonts', heroPhoto: '/hero.jpg' }
-  for (const { format, day, events, heading, fields } of [
-    { format: 'finde', day: '2026-11-20', events: weekend, heading: '- **Closing slide** (carousels):', fields: 4 },
-    { format: 'hoy', day: '2026-11-22', events: weekend.slice(-3), heading: '**Closing frame**', fields: 3 },
+  const assets = { fontsDir: '/fonts', logo: '/logo.svg' }
+  for (const { format, day, events, heading, other, fields } of [
+    { format: 'finde', day: '2026-11-20', events: weekend, heading: '- **Closing slide** (carousels):', other: 'Body (Gratis)', fields: 5 },
+    { format: 'gratis', day: '2026-11-23', events: weekend, heading: '- **Closing slide** (carousels):', other: 'Body (Este finde)', fields: 5 },
+    { format: 'hoy', day: '2026-11-22', events: weekend.slice(-3), heading: '**Closing frame**', other: '', fields: 3 },
   ] as const) {
-    const section = approved.split(`${heading}\n`)[1]?.split('\n\n')[0] ?? ''
-    const lines = Array.from(section.matchAll(/^\s*- \w+: "(.+)"$/gm), ([, text]) => text)
+    const section = approved.split(`${heading}\n`)[1]?.split(/\n\n|\n- \*\*/)[0] ?? ''
+    const lines = Array.from(section.matchAll(/^\s*- ([^:"]+): "(.+)"$/gm)).filter(([, name]) => name !== other).map(([, , text]) => text)
     expect(lines, heading).toHaveLength(fields)
     const $ = load(framesHtml(format, runWindow(format, day), events, assets))
-    const closing = $('body').children().last()
-    const rendered = closing.find('.serif, .serif + div, .btn, .foot span')
-      .map((_, node) => $(node).text().trim()).get().filter(Boolean)
-    expect(rendered, format).toEqual(lines)
+    const closing = $('.s').last()
+    expect(closing.find('[data-role]').map((_, node) => $(node).text().trim()).get(), format).toEqual(lines)
   }
 })
 
@@ -135,10 +144,10 @@ describe('Hoy', () => {
   it('has a cover, cards, and no caption', () => {
     const window = runWindow('hoy', '2026-11-18')
     expect(cover('hoy', window, 3)).toEqual(approvedCover('1. Hoy', {
-      Weekday: 'Miércoles', d: '18', mes: 'noviembre', N: 'Tres',
+      Weekday: 'Miércoles', d: '18', mes: 'noviembre', N: '3',
     }))
     expect(cardKicker('hoy', weekend[0]!)).toBe('Hoy · 21:00')
-    expect(caption('hoy', weekend)).toBeNull()
+    expect(caption('hoy', window, weekend)).toBeNull()
   })
 })
 
@@ -167,11 +176,22 @@ describe('Slack', () => {
 describe('Este finde Reel', () => {
   const window = runWindow('reel', '2026-11-20')
 
-  it('uses the carousel caption word for word, with a credit line after "Más planes" when the track has one', () => {
-    expect(caption('reel', weekend)).toBe(caption('finde', weekend))
-    const credited = caption('reel', weekend, 'Música: "Intención" de Sapajou (auboutdufil.com), CC BY 3.0.')!
-    expect(credited).toBe(caption('finde', weekend)!.replace('Más planes en baeventos.com (link en la bio).\n\n',
-      'Más planes en baeventos.com (link en la bio).\n\nMúsica: "Intención" de Sapajou (auboutdufil.com), CC BY 3.0.\n\n'))
+  it('uses the carousel caption word for word, with a credit line between "Más planes" and the hashtags when the track has one', () => {
+    const finde = caption('finde', runWindow('finde', '2026-11-20'), weekend)!
+    expect(caption('reel', window, weekend)).toBe(finde)
+    const credited = caption('reel', window, weekend, 'Música: "Intención" de Sapajou (auboutdufil.com), CC BY 3.0.')!
+    expect(credited).toBe(finde.replace('Más planes en baeventos.com (link en la bio).\n\n#',
+      'Más planes en baeventos.com (link en la bio).\n\nMúsica: "Intención" de Sapajou (auboutdufil.com), CC BY 3.0.\n\n#'))
+  })
+
+  it('has its own cover headline and no footer', () => {
+    const block = section('4. Este finde Reel')
+    expect(cover('reel', window, 6)).toEqual({
+      kicker: '20 al 22 de noviembre',
+      headline: [fill(field(block.split('**Cover card**')[1]!, 'Headline')[0]!, { N: '6' })],
+      footer: null,
+    })
+    expect(cardKicker('reel', weekend[1]!)).toBe('Sábado 21 · 11:00 a 16:30')
   })
 
   it('previews with the Reel name, Friday 12:00, and the track line last', () => {

@@ -24,8 +24,38 @@ A post MUST show only events from the Instagram intake that are scheduled, marke
 - **WHEN** at least one free event qualifies
 - **THEN** the post includes at least one free event
 
+### Requirement: Frames show each event's own artwork in the website's look
+Every event card MUST show that event's own artwork whole, uncropped, above a solid panel that holds every word, so no text depends on the artwork's colors. Before a render the job MUST download each picked event's `image_url` over https and only from the catalog's known image origins (the R2 artwork route and the listed CDN hosts and paths), following at most three redirects and requesting no address or redirect hop outside those origins, with one 10 second limit for the whole download and a 15 MB limit, and MUST use it only if it decodes as a raster image. No format may use a stock photo. Among qualifying events the pick MUST prefer events that have artwork.
+
+#### Scenario: A flyer can't be used
+- **WHEN** an event has no `image_url`, or its download fails, times out, is too large, isn't https, or doesn't decode as an image
+- **THEN** that event's card shows a dark tile with its title in the flyer's place, the reason is logged, and the render does not fail
+
+#### Scenario: Too few events have artwork
+- **WHEN** fewer qualifying events have artwork than the post has places
+- **THEN** qualifying events without artwork fill the remaining places and are not dropped
+
+#### Scenario: The Reel and the covers
+- **WHEN** a Reel is drafted
+- **THEN** it picks by the same rule as the carousel, so a qualifying event without artwork is not dropped and the free event is still included when one qualifies
+- **AND** a Reel card for an event without artwork shows the dark titled tile
+- **AND** a cover or closing frame shows only the artwork of events that have it
+
+#### Scenario: The artwork address is not https or not a known image origin
+- **WHEN** an event's `image_url` is empty, relative, not an `https:` URL, or not on one of the known image origins
+- **THEN** it counts as having no artwork, for the pick and for the render, and it is never requested
+
+#### Scenario: A redirect leaves the known image origins
+- **WHEN** an allowed artwork address redirects to an address outside the known image origins
+- **THEN** the job does not request that address, logs the reason, and renders the no-flyer card for that event
+
+#### Scenario: A font or image file is missing at render time
+- **WHEN** a vendored font or a downloaded image does not load in the frames page
+- **THEN** the render fails instead of producing frames in a fallback face
+- **AND** a Reel whose card can't load its fonts fails the render promptly instead of waiting or producing a video
+
 ### Requirement: The Este finde Reel shows the weekend's carousel picks as a video with rotating music
-The Reel MUST be one 1080 × 1920 H.264/AAC MP4 at 30 fps, drafted Thursday 18:00 and published Friday 12:00, with Friday 18:00 as its cutoff and deadline. It MUST show 4 to 6 events picked by Este finde's rules, without the Este finde draft's exclusions and without any event that would be over by its Friday 18:00 deadline, hold each card still for max(3.0 s, 0.35 s a word, characters / 17), and cut on the track's beats.
+The Reel MUST be one 1080 × 1920 H.264/AAC MP4 at 30 fps, drafted Thursday 18:00 and published Friday 12:00, with Friday 18:00 as its cutoff and deadline. It MUST show 4 to 6 events picked by Este finde's rules, without the Este finde draft's exclusions and without any event that would be over by its Friday 18:00 deadline, hold each card's words still for max(3.0 s, 0.35 s a word, characters / 17), and cut on the track's beats. During the hold only the flyer may move, by a slow zoom of at most 4%.
 
 #### Scenario: A Friday daytime event
 - **WHEN** an event ends by Friday 18:00, or starts by then and has no end time
@@ -112,6 +142,19 @@ With `linkStickers.hoy` enabled and no Graph API publish underway for the draft,
 #### Scenario: Share was attempted but its outcome is unclear
 - **WHEN** the job records a Share attempt with its time and frame count before dispatching the click
 - **THEN** no tick may Share again or fall back. The job reads the account's Stories for the expected number of new frames since the attempt, even if approval changes or the flag turns off. If it cannot confirm the full count by the deadline, it holds the draft and alerts Hermes to check the account's Stories.
+
+#### Scenario: A link sticker doesn't fit its free band
+- **WHEN** a placed link sticker's measured rectangle is not wholly inside its frame's free band, which holds no text and ends at or above y 1670
+- **THEN** the job discards the composer before Share and uses the Graph API route, and never shares a sticker over text or the reply bar
+
+#### Scenario: A mention sticker doesn't fit its reserved area
+- **WHEN** a placed mention sticker's measured rectangle, including its width, is not wholly inside the area reserved over the printed handle, which excludes the printed "Vía", the site address, the barrio row, and the link sticker's band
+- **THEN** the job places it once more, and if it still doesn't fit, discards the composer before Share and uses the Graph API route
+
+#### Scenario: A draft rendered with an earlier layout
+- **WHEN** a draft has no saved layout version
+- **THEN** its sticker preview, its Business Suite stickers and mention, and its Graph tags use the positions its frames were rendered for
+- **AND** its approved frames are not rendered again
 
 #### Scenario: Preview without publishing
 - **WHEN** the operator runs `stickers-dry-run` for a saved Hoy draft

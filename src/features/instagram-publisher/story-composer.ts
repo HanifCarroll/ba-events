@@ -2,7 +2,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { STEP_MS, openStoryTab, StoryCDPTimeout, type StoryCDP } from './story-cdp.ts'
 import { saveComposerEvidence } from './story-evidence.ts'
-import { exactMentionOption, retryComposerOnce, StoryComposerError, type ComposeStory, type StickerFrame } from './story-stickers.ts'
+import { exactMentionOption, MENTION_MAX, mentionMisplaced, mentionScale, placeChecked, retryComposerOnce, stickerMisplaced, StoryComposerError, type ComposeStory, type StickerFrame } from './story-stickers.ts'
 
 const COMPOSER_URL = new URL('https://business.facebook.com/latest/story_composer/?asset_id=1442212152312492&business_id=1500991868617721')
 const ACCOUNT = 'baeventos.app'
@@ -214,7 +214,12 @@ async function addLink(tab: StoryCDP, frame: StickerFrame) {
   if (await visible(tab, customText)) await fill(tab, customText, frame.text)
   await click(tab, at(button('Apply'), -1))
   await until(async () => !await visible(tab, linkUrl), STEP_MS, 100, 'the link form close')
-  await placeSticker(tab, sticker('^🔗\\s'), frame.centerY)
+  const item = sticker('^🔗\\s')
+  await placeSticker(tab, item, frame.centerY)
+  // Its real size is only known now. Over words or the reply bar it must not be shared: this error ends the composer
+  // before Share, and the draft goes out through Graph instead.
+  const misplaced = frame.band && stickerMisplaced(await boxOf(tab, item), await boxOf(tab, parent(item, 2)), frame.band)
+  if (misplaced) throw new Error(misplaced)
 }
 
 export async function selectMentionResult(tab: Pick<StoryCDP, 'evaluateExpression'>, username: string) {
@@ -250,20 +255,28 @@ async function chooseMention(tab: StoryCDP, username: string) {
   return false
 }
 
-async function addMention(tab: StoryCDP, username: string) {
+async function addMention(tab: StoryCDP, username: string, at: NonNullable<StickerFrame['mentionAt']>) {
   if (!await chooseMention(tab, username)) return false
   const item = sticker(`^@\\s*${RegExp.escape(username)}$`, 'i')
   const stage = await boxOf(tab, parent(item, 2))
   const px = stage.height / 1920
   for (let attempt = 0; attempt < 2; attempt++) {
     const box = await boxOf(tab, item)
-    if (box.height <= 90 * px) break
-    const scale = 76 * px / box.height
+    // Too tall, or (a long username) wider than the room beside the printed handle.
+    const scale = mentionScale({ width: box.width / px, height: box.height / px }, at)
+    if (scale >= 1) break
     const grip = centerOf(await boxOf(tab, button('resize', item)))
     await drag(tab, grip, { x: grip.x - box.width * (1 - scale), y: grip.y + box.height * (1 - scale) / 2 })
   }
-  if ((await boxOf(tab, item)).height > 90 * px) throw new Error('The mention sticker could not be made small enough.')
-  await placeSticker(tab, item, 1618, 66)
+  if ((await boxOf(tab, item)).height > MENTION_MAX * px) throw new Error('The mention sticker could not be made small enough.')
+  const { area } = at
+  // Its final box, width included, must cover the printed handle and nothing else. A drag can land up to 32 px off and
+  // still count as moved, so a pill outside its area is placed once more. If it is still outside, this error ends the
+  // composer before Share, and the draft goes out through Graph instead.
+  await placeChecked(
+    () => placeSticker(tab, item, at.centerY, at.left),
+    async () => area ? mentionMisplaced(await boxOf(tab, item), await boxOf(tab, parent(item, 2)), area) : null,
+  )
   return true
 }
 
@@ -371,7 +384,7 @@ async function composeAttempt(frames: StickerFrame[], action: Parameters<Compose
       await addLink(tab, frame)
       if (frame.mention) {
         step = `add the mention sticker to frame ${index + 1} in Business Suite`
-        if (!await addMention(tab, frame.mention)) skippedMentions.push(frame.mention)
+        if (!await addMention(tab, frame.mention, frame.mentionAt!)) skippedMentions.push(frame.mention)
       }
       await activate(tab, button('Apply', editor))
       await until(async () => !await visible(tab, editor))

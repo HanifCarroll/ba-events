@@ -18,6 +18,7 @@ const event = (overrides: Partial<CatalogEvent> = {}): CatalogEvent => ({
   isAllDay: false,
   categories: ['music'],
   summary: 'Una noche de música.',
+  imageUrl: null,
   venue: `Sala ${seq}`,
   barrio: 'Palermo',
   venueHandle: null,
@@ -98,6 +99,69 @@ describe('picking the mix', () => {
     const picked = selectEvents([...palermo, ...others, noText], 'finde', finde)
     expect(new Set(picked.map(p => p.barrio))).toEqual(new Set(['Palermo', 'Boedo', 'Almagro', 'Flores', 'Once']))
     expect(picked).toHaveLength(6)
+  })
+
+  it('prefers events with artwork, without dropping a qualifying event that has none', () => {
+    const art = 'https://imagenes.passline.com/eventos/a.jpg'
+    const plain = Array.from({ length: 5 }, (_, i) => event({ barrio: `Barrio ${i}`, categories: [`c${i}`] }))
+    const flyers = Array.from({ length: 4 }, () => event({ barrio: 'Palermo', summary: null, imageUrl: art, startsAt: '2026-11-22T23:00:00.000Z' }))
+    const picked = selectEvents([...plain, ...flyers], 'finde', finde)
+    expect(picked).toHaveLength(6)
+    expect(picked.filter(p => p.imageUrl).map(p => p.id)).toEqual(flyers.map(e => e.id))
+    expect(picked.filter(p => !p.imageUrl)).toHaveLength(2)
+    // Not enough flyers to fill the post: the rest still qualify.
+    expect(selectEvents(plain, 'finde', finde)).toHaveLength(5)
+    expect(toPostEvent(event({ imageUrl: '  ' })).imageUrl).toBeNull()
+  })
+
+  it('still shows one event per venue when only the later one has artwork', () => {
+    const plain = event({ venue: 'Sala Lúcida' })
+    const flyer = event({ venue: 'Sala Lucida —', startsAt: '2026-11-21T22:00:00.000Z', imageUrl: 'https://imagenes.passline.com/eventos/a.jpg' })
+    expect(selectEvents([plain, flyer], 'finde', finde).map(p => p.id)).toEqual([flyer.id])
+  })
+
+  it('picks the Reel like the carousel: flyer-less events and the only free event are never dropped', () => {
+    const reel = runWindow('reel', '2026-11-20')
+    const at = (hour: number) => ({ startsAt: `2026-11-22T${hour}:00:00.000Z` })
+    const flyers = Array.from({ length: 4 }, (_, i) => event({ ...at(20 + (i % 3)), price: 5000, imageUrl: `https://imagenes.passline.com/eventos/${i}.jpg` }))
+    const plain = event({ ...at(21), price: 5000 })
+    const free = event({ ...at(22), isFree: true, price: 0 })
+    const picked = selectEvents([...flyers, plain, free], 'reel', reel)
+    expect(picked).toHaveLength(6)
+    expect(picked.map(p => p.id)).toContain(free.id)
+    expect(picked.filter(p => p.imageUrl)).toHaveLength(4)
+    expect(new Set(picked.map(p => p.id))).toEqual(new Set(selectEvents([...flyers, plain, free], 'finde', finde).map(p => p.id)))
+    // With more candidates than places, the ones with flyers still win the remaining places.
+    const more = Array.from({ length: 4 }, (_, i) => event({ ...at(20), barrio: `Barrio ${i}`, categories: [`c${i}`] }))
+    const crowded = selectEvents([...flyers, plain, free, ...more], 'reel', reel)
+    expect(crowded.map(p => p.id)).toContain(free.id)
+    expect(crowded.filter(p => p.imageUrl)).toHaveLength(4)
+  })
+
+  it('counts only an https address as artwork', () => {
+    const insecure = event({ imageUrl: 'http://imagenes.passline.com/eventos/a.jpg', barrio: 'Boedo', categories: ['x'] })
+    const relative = event({ imageUrl: '//imagenes.passline.com/eventos/a.jpg', barrio: 'Flores', categories: ['y'] })
+    const secure = Array.from({ length: 6 }, () => event({ imageUrl: ' https://imagenes.passline.com/eventos/b.jpg ', summary: null }))
+    const picked = selectEvents([insecure, relative, ...secure], 'finde', finde)
+    expect(picked.map(p => p.id).sort()).toEqual(secure.map(e => e.id).sort())
+    expect(picked[0]!.imageUrl).toBe('https://imagenes.passline.com/eventos/b.jpg')
+    expect(toPostEvent(insecure).imageUrl).toBeNull()
+    expect(toPostEvent(relative).imageUrl).toBeNull()
+  })
+
+  it('counts only the catalog\'s known image origins as artwork', () => {
+    const r2 = 'https://baeventos.com/api/event-artwork/fcd772a2-9b05-4e1a-b6bc-e5503726a597/' + 'ab'.repeat(32) + '.webp'
+    const elsewhere = ['https://internal.example/flyer.jpg', 'https://10.0.0.5/a.jpg', 'https://baeventos.com/api/admin', 'https://imagenes.passline.com/other/a.jpg']
+      .map((imageUrl, i) => event({ imageUrl, barrio: `Barrio ${i}`, categories: [`c${i}`] }))
+    const known = [r2, r2, r2, 'https://imagenes.passline.com/eventos/a.jpg', 'https://images.venti.live/user-images/a.png', 'https://images.lumacdn.com/event-covers/a.jpg']
+      .map(imageUrl => event({ imageUrl, summary: null }))
+    // The disallowed addresses earn no preference, although those events add more variety and have a description.
+    const picked = selectEvents([...elsewhere, ...known], 'finde', finde)
+    expect(picked.map(p => p.id).sort()).toEqual(known.map(e => e.id).sort())
+    for (const other of elsewhere) expect(toPostEvent(other).imageUrl).toBeNull()
+    expect(toPostEvent(known[0]!).imageUrl).toBe(r2)
+    // They still qualify when there is room.
+    expect(selectEvents([...elsewhere, ...known.slice(0, 2)], 'finde', finde)).toHaveLength(6)
   })
 
   it('honors excluded ids and lists the picks by start time', () => {

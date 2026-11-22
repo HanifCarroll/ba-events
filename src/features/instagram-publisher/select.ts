@@ -1,6 +1,7 @@
 /** Which catalog events a post shows (brief "Selection"). Pure: the D1 read lives in runtime.ts. */
+import { isArtworkOriginAllowed } from '../events/lib/artwork-delivery.ts'
 import { baLocal, descriptionLine, displayTitle, priceLabel, timeLabel } from './format.ts'
-import { FORMATS, type FormatKey, type RunWindow } from './formats.ts'
+import { FORMATS, type FormatKey, type FormatSpec, type RunWindow } from './formats.ts'
 
 /** One row of the read-only catalog query: an intake-backed event with its venue. */
 export interface CatalogEvent {
@@ -16,6 +17,8 @@ export interface CatalogEvent {
   isAllDay: boolean
   categories: string[]
   summary: string | null
+  /** The event's flyer or photo, when the catalog has one. */
+  imageUrl: string | null
   venue: string | null
   barrio: string | null
   venueHandle: string | null
@@ -36,6 +39,7 @@ export interface PostEvent {
   barrio: string
   price: string | null
   handle: string | null
+  imageUrl: string | null
   /** True when the handle is the posting account, not the venue's own ("Vía @handle"). */
   via: boolean
 }
@@ -96,6 +100,7 @@ export function toPostEvent(event: CatalogEvent): PostEvent {
     barrio: event.barrio!,
     price: priceLabel(event),
     handle,
+    imageUrl: artworkUrl(event),
     via: handle !== null && handle !== venueHandle && !accountIsVenue(handle, venue),
   }
 }
@@ -104,14 +109,31 @@ const venueKey = (event: CatalogEvent) => normalize(event.venue!)
 
 /**
  * Greedy pick, deterministic: one event per venue; a free event first when the format wants one; then whichever
- * candidate adds the most variety (new barrio, new category) and has a description line, earliest start on ties.
+ * candidate has artwork, then adds the most variety (new barrio, new category) and has a description line, earliest
+ * start on ties. An event without artwork is still picked when no other candidate is left, and it is the free pick when
+ * it is the only free event. The Reel picks the same way, so it never drops a qualifying event for lacking a flyer.
  * The post lists the picks in start order.
  */
 export function selectEvents(events: CatalogEvent[], format: FormatKey, window: RunWindow, exclude: readonly string[] = []): PostEvent[] {
   const spec = FORMATS[format]
-  const pool = events
+  const qualifying = events
     .filter(event => !exclude.includes(event.id) && qualifies(event, format, window))
     .sort((a, b) => a.startsAt.localeCompare(b.startsAt) || a.id.localeCompare(b.id))
+  return pick(qualifying, spec).map(toPostEvent)
+}
+
+/**
+ * The event's artwork address when it is an https URL on one of the catalog's known image origins (our R2 route or a
+ * listed CDN), the only kind the renderer downloads. Any other address counts as no artwork.
+ */
+export function artworkUrl(event: Pick<CatalogEvent, 'imageUrl'>): string | null {
+  const url = event.imageUrl?.trim()
+  return url && isArtworkOriginAllowed(url) ? url : null
+}
+
+const hasArtwork = (event: CatalogEvent) => artworkUrl(event) !== null
+
+function pick(pool: CatalogEvent[], spec: FormatSpec): CatalogEvent[] {
   const picked: CatalogEvent[] = []
   const venues = new Set<string>()
   const barrios = new Set<string>()
@@ -122,8 +144,10 @@ export function selectEvents(events: CatalogEvent[], format: FormatKey, window: 
     barrios.add(event.barrio!)
     for (const category of event.categories) categories.add(category)
   }
+  // Artwork outweighs the rest together (at most 9).
   const score = (event: CatalogEvent) =>
-    (barrios.has(event.barrio!) ? 0 : 4)
+    (hasArtwork(event) ? 16 : 0)
+    + (barrios.has(event.barrio!) ? 0 : 4)
     + (event.categories.some(category => !categories.has(category)) ? 2 : 0)
     + (descriptionLine(event.summary) ? 3 : 0)
   if (spec.wantsFree) {
@@ -139,5 +163,5 @@ export function selectEvents(events: CatalogEvent[], format: FormatKey, window: 
     if (!best) break
     take(best)
   }
-  return picked.sort((a, b) => a.startsAt.localeCompare(b.startsAt) || a.id.localeCompare(b.id)).map(toPostEvent)
+  return picked.sort((a, b) => a.startsAt.localeCompare(b.startsAt) || a.id.localeCompare(b.id))
 }

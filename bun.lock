@@ -35,6 +35,7 @@
         "marked": "^18.0.11",
         "playwright": "1.57.0",
         "posthog-js": "^1.424.0",
+        "sharp": "0.35.2",
         "svelte-sonner": "^1.2.1",
         "tailwind-merge": "^3.6.0",
         "tailwindcss": "^4.3.3",
