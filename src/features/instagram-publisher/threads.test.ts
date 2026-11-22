@@ -54,6 +54,22 @@ describe('Threads text fitting', () => {
     ])
   })
 
+  it.each([
+    { venue: pick.venue, remaining: 5 },
+    { venue: 'Patio Cultural del Barrio Sur', remaining: 4 },
+  ])('shortens titles before cutting any of five distinct days (keeps $remaining)', ({ venue, remaining }) => {
+    const picks = Array.from({ length: 5 }, (_, i) => {
+      const date = addDays('2026-11-23', i)
+      return { ...pick, date, startsAt: baInstant(date, 19).toISOString(),
+        venue, title: `Muestra ${i + 1}: ${'Una noche de teatro, música y lecturas. '.repeat(3)}` }
+    })
+    const text = threadsText('gratis', picks)!
+    expect([...text].length).toBeLessThanOrEqual(500)
+    expect(text).toContain(`${remaining} planes`)
+    const titles = Array.from(text.matchAll(/^[^·]+ · (Muestra .*?…) · /gm), match => match[1]!)
+    expect(titles).toEqual(picks.slice(0, remaining).map(({ title }) => `${title.slice(0, 39).trimEnd()}…`))
+  })
+
   it('removes a matching dash suffix and title-cases an all-caps venue in Threads only', () => {
     const venue = 'CAFE ROCK LA VE'
     const events = [

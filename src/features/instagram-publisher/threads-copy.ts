@@ -59,10 +59,15 @@ export function threadsText(format: ThreadsFormat, events: PostEvent[]): string 
     const byDay = new Map<string, number>()
     for (const event of picks) byDay.set(event.date, (byDay.get(event.date) ?? 0) + 1)
     const most = Math.max(...byDay.values())
+    if (most === 1) break
     picks.splice(picks.findLastIndex(event => byDay.get(event.date) === most), 1)
   }
-  const text = build(true)
-  return fits(text) ? text : null
+  while (true) {
+    const text = build(true)
+    if (fits(text)) return text
+    if (picks.length === min) return null
+    picks.pop()
+  }
 }
 
 export function threadsPreview(text: string, slot: Date, auto = false) {

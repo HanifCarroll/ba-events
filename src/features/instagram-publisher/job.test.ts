@@ -1505,6 +1505,45 @@ describe('Threads in the publisher tick', () => {
     expect(w.threads.calls.filter(call => call === 'create')).toHaveLength(1)
   })
 
+  it('does not create a Threads container if disabled during the quota check', async () => {
+    const w = await threadsPreviewed()
+    const checkLimit = w.threads.checkLimit.bind(w.threads)
+    w.threads.checkLimit = async () => {
+      await checkLimit()
+      w.config.threads.enabled = false
+    }
+    w.approve()
+    w.at('2026-11-19', 12)
+    await w.job().tick()
+    expect(w.threads.calls).toEqual(['limit'])
+    expect(w.draft().threads).toMatchObject({ state: 'waiting', containerId: null, attemptedAt: null, failures: 0 })
+  })
+
+  it('pauses a saved container when Threads is disabled during status polling and reuses it once enabled', async () => {
+    const w = await threadsPreviewed()
+    const status = w.threads.status.bind(w.threads)
+    w.threads.status = async id => {
+      const result = await status(id)
+      w.config.threads.enabled = false
+      return result
+    }
+    w.approve()
+    w.at('2026-11-19', 12)
+    await w.job().tick()
+    expect(w.threads.calls).toEqual(['limit', 'create', 'status c1'])
+    expect(w.threads.posts).toHaveLength(0)
+    expect(w.draft().threads).toMatchObject({ state: 'publishing', containerId: 'c1', attemptedAt: null, failures: 0 })
+
+    await w.job().tick()
+    expect(w.threads.calls).toHaveLength(3)
+    w.threads.status = status
+    w.config.threads.enabled = true
+    w.at('2026-11-19', 12, 10)
+    await w.job().tick()
+    expect(w.threads.calls.slice(3)).toEqual(['status c1', 'limit', 'recent', 'publish c1', 'permalink m2'])
+    expect(w.draft().threads).toMatchObject({ state: 'published', containerId: 'c1', mediaId: 'm2' })
+  })
+
   it.each([true, false])('holds a cancelled pick before any Threads write (Instagram can write: %s)', async instagramAvailable => {
     const w = await threadsPreviewed()
     if (!instagramAvailable) w.config.r2 = null

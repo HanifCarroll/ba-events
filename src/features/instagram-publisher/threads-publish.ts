@@ -55,6 +55,7 @@ interface Services {
   sleep(ms: number): Promise<void>
   save(): void
   reactions(): Promise<Parameters<typeof readReactions>[0]>
+  enabled(): boolean
   auto(): boolean
   checkEvents(): Promise<void>
   reply(text: string): Promise<unknown>
@@ -125,6 +126,7 @@ export async function advanceThreads(draft: ThreadsDraft, window: ReturnType<typ
           await checkEventsOnce()
           await api.checkLimit()
           await checkGate()
+          if (!s.enabled()) return
           draft.containerId = await api.create(draft.text!)
           draft.state = 'publishing'
           s.save()
@@ -132,7 +134,9 @@ export async function advanceThreads(draft: ThreadsDraft, window: ReturnType<typ
         let ready = false
         // Four reads of at most 10s each, with up to three 5s waits.
         for (let poll = 0; poll < 4; poll++) {
+          if (!s.enabled()) return
           const status = await api.status(draft.containerId)
+          if (!s.enabled()) return
           if (status === 'FINISHED') { ready = true; break }
           if (status === 'ERROR' || status === 'EXPIRED') {
             draft.containerId = null
@@ -146,6 +150,7 @@ export async function advanceThreads(draft: ThreadsDraft, window: ReturnType<typ
         await api.checkLimit()
         const beforeIds = (await api.recent()).map(post => post.id)
         await checkGate()
+        if (!s.enabled()) return
         draft.beforeIds = beforeIds
         draft.attemptedAt = s.now().toISOString()
         s.save()

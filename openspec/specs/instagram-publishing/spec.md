@@ -232,7 +232,7 @@ With Threads enabled, a Hoy, Este finde, or Gratis esta semana preview MUST appe
 
 #### Scenario: Threads is disabled
 - **WHEN** Threads is disabled or absent from config
-- **THEN** the job adds no Threads preview or outcome text, makes no Threads API calls, and does not backfill a preview sent without Threads text. An explicit `dry-run --threads` can still write the text locally.
+- **THEN** the job adds no Threads preview or outcome text, makes no Threads API calls, and does not backfill a preview sent without Threads text. The job re-reads the enabled flag just before creating or publishing a container. If disabled during the tick, it pauses new writes and keeps any saved container. An explicit `dry-run --threads` can still write the text locally.
 
 ### Requirement: Threads uses plain text from the saved picks
 
@@ -244,7 +244,7 @@ The text MUST use the copy in `copy.md`, the cards' cleaned titles and price lab
 
 #### Scenario: The full list exceeds 500 code points
 - **WHEN** the full draft cannot fit
-- **THEN** remove the latest pick on the day with the most picks, repeating as needed and keeping chronological order. Keep at least two for Hoy and three for each carousel, and only then shorten titles to at most 40 code points with an ellipsis. If the minimum still cannot fit, do not post Threads or block Instagram.
+- **THEN** remove the latest pick on the day with the most picks until the text fits, the list reaches its minimum, or every remaining day has only one pick. If it still does not fit, shorten titles to at most 40 code points including the ellipsis before dropping any more picks. Then drop the latest pick overall as needed. Keep chronological order and at least two picks for Hoy or three for each carousel. If the minimum still cannot fit, do not post Threads or block Instagram.
 
 ### Requirement: Threads publishes independently and reconciles unclear sends without duplicates
 

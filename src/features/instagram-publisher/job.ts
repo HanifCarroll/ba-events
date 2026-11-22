@@ -571,8 +571,8 @@ export class Job {
   }
 
   private async tickThreads() {
-    const config = this.s.config().threads
-    if (!config.enabled) return
+    const enabled = () => this.s.config().threads.enabled
+    if (!enabled()) return
     const token = await this.s.loadThreadsToken(this.s.now()).catch(() => ({ accessToken: null, warning: 'Could not check the Threads token.' }))
     let client: Promise<ThreadsApi> | undefined
     const api = () => {
@@ -589,6 +589,7 @@ export class Job {
         sleep: ms => this.s.sleep(ms),
         save: () => this.save(draft),
         reactions: () => this.s.slackReactions(ts),
+        enabled,
         auto: () => this.s.config().threads.auto[format],
         checkEvents: () => this.checkEvents(draft),
         reply: text => this.s.slackPost(text, ts),
