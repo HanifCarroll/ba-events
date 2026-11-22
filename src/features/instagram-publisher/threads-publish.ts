@@ -12,10 +12,15 @@ export interface ThreadsDraft {
   permalink: string | null
   /** Durable before dispatch. An unclear publish leaves it set and forbids another write. */
   attemptedAt: string | null
+  /** The latest media IDs already visible when the publish was dispatched. */
+  beforeIds?: string[]
+  /** A preserved send keeps its original Slack thread when Instagram gets another revision. */
+  threadTs?: string
   publishedAt: string | null
   error: string | null
   failures: number
   notify: string | null
+  failureAlertSent?: boolean
 }
 
 export function newThreadsDraft(text: string | null): ThreadsDraft {
@@ -68,14 +73,18 @@ export async function advanceThreads(draft: ThreadsDraft, window: ReturnType<typ
     let eventsChecked = false
     const checkGate = async () => {
       if (s.now() >= window.cutoff) throw new PublishStop('deadline', 'Threads cutoff reached')
-      const reactions = readReactions(await s.reactions())
+      if (s.now() < window.publishAt) throw new PublishStop('unapproved', 'Waiting for Threads slot')
+      const reactions = readReactions(await s.reactions().catch(() => {
+        if (s.now() >= window.cutoff) throw new PublishStop('deadline', 'Threads cutoff reached')
+        s.log('Threads: no se pudo leer la aprobación de Slack; se reintenta en el próximo tick')
+        throw new PublishStop('unapproved', 'Waiting for a successful Slack reaction read')
+      }))
       if (reactions.rejected) throw new PublishStop('rejected', 'Hanif reacted ❌')
       if (s.now() >= window.cutoff) throw new PublishStop('deadline', 'Threads cutoff reached')
-      if (s.now() < window.publishAt || (!auto && !reactions.approved)) throw new PublishStop('unapproved', 'Waiting for Threads slot or approval')
+      if (!auto && !reactions.approved) throw new PublishStop('unapproved', 'Waiting for Threads approval')
     }
-    const beforeWrite = async () => {
+    const checkEventsOnce = async () => {
       if (!eventsChecked) { await s.checkEvents(); eventsChecked = true }
-      await checkGate()
     }
     try {
       if (draft.mediaId) {
@@ -83,7 +92,13 @@ export async function advanceThreads(draft: ThreadsDraft, window: ReturnType<typ
       } else if (draft.attemptedAt) {
         const api = await s.api()
         const since = Date.parse(draft.attemptedAt)
-        const matches = (await api.recent()).filter(post => post.id && post.text === draft.text && Date.parse(post.timestamp ?? '') > since)
+        const before = draft.beforeIds && new Set(draft.beforeIds)
+        // Older drafts without a pre-dispatch snapshot keep the stricter comparison.
+        const matches = (await api.recent()).filter(post => {
+          if (!post.id || post.text !== draft.text) return false
+          const stamp = Date.parse(post.timestamp ?? '')
+          return before ? stamp >= Math.floor(since / 1000) * 1000 && !before.has(post.id) : stamp > since
+        })
         if (matches.length === 1) {
           const post = matches[0]!
           draft.mediaId = post.id
@@ -99,7 +114,9 @@ export async function advanceThreads(draft: ThreadsDraft, window: ReturnType<typ
         await checkGate()
         const api = await s.api()
         if (!draft.containerId) {
-          await beforeWrite()
+          await checkEventsOnce()
+          await api.checkLimit()
+          await checkGate()
           draft.containerId = await api.create(draft.text!)
           draft.state = 'publishing'
           s.save()
@@ -117,14 +134,20 @@ export async function advanceThreads(draft: ThreadsDraft, window: ReturnType<typ
           if (poll < 3) await s.sleep(5_000)
         }
         if (!ready) return
+        await checkEventsOnce()
         await api.checkLimit()
-        await beforeWrite()
+        const beforeIds = (await api.recent()).map(post => post.id)
+        await checkGate()
+        draft.beforeIds = beforeIds
         draft.attemptedAt = s.now().toISOString()
         s.save()
         try {
           draft.mediaId = await api.publish(draft.containerId)
         } catch (error) {
-          if (error instanceof ThreadsError && error.definitive) draft.attemptedAt = null
+          if (error instanceof ThreadsError && error.definitive) {
+            draft.attemptedAt = null
+            delete draft.beforeIds
+          }
           throw error
         }
         draft.publishedAt = s.now().toISOString()
@@ -142,7 +165,7 @@ export async function advanceThreads(draft: ThreadsDraft, window: ReturnType<typ
         const reason = error instanceof ThreadsError ? error.message : 'no se pudo completar el intento'
         s.log(`Threads: ${reason}`)
         draft.error = reason
-        draft.failures++
+        if (error instanceof ThreadsError) draft.failures++
         if (!draft.mediaId && draft.attemptedAt) {
           if (pendingUntil !== null && s.now().getTime() >= pendingUntil) fail('no se pudo confirmar la publicación')
         } else if (draft.failures >= MAX_FAILURES) {

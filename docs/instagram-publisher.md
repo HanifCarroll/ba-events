@@ -51,6 +51,7 @@ Each failed attempt goes in the service log. Alerts go to #ba-eventos and put th
 | `tick` | An item fails across three consecutive ticks, or a failing run still has no preview at least an hour after its draft time. The thread updates only when the qualifying draft IDs or their causes change. |
 | `draft/<id>` | Publishing fails three ticks in a row, fails with less than an hour left, or gives up. A hold, a partial post that cannot continue, an interrupted rebuild, or a preview that misses its cutoff also alerts immediately. |
 | `draft/<id>/slack` | The outcome message fails to send three ticks in a row. |
+| `draft/<id>/threads` | Threads ends in `failed`, including when the publisher can't confirm a send. |
 | `token` | Instagram token refresh fails, the token file is invalid, or a dated token has fewer than 10 days left. |
 | `threads-token` | The Threads token refresh fails, the token file cannot be read, or the token still has at most 10 days left. |
 
@@ -58,7 +59,7 @@ A draft's alert streak counts failed ticks across steps, so changing from a reac
 
 ## Threads trial
 
-Add this key to `~/.config/ba-events/instagram-publisher.json`. Threads is off if the key is absent. Once the token is ready and the preview text looks right, set `enabled` to `true`. The existing `ba-events-instagram.timer` handles the Threads slots; no new timer or service change is needed. Run the report before switching `enabled` off at the end of the 28-day trial.
+Add this key to `~/.config/ba-events/instagram-publisher.json`. Threads is off if the key is absent. Once the token is ready and the preview text looks right, set `enabled` to `true`. The existing `ba-events-instagram.timer` handles the Threads slots; no new timer or service change is needed. Run the report before switching `enabled` off at the end of the 28-day trial. Let open sends and Slack replies settle first: disabling Threads pauses reconciliation and reply delivery, and the job keeps their saved state.
 
 ```json
 {"threads": {"enabled": false, "auto": {"hoy": false, "finde": false, "gratis": false}}}
@@ -66,21 +67,21 @@ Add this key to `~/.config/ba-events/instagram-publisher.json`. Threads is off i
 
 Use a long-lived Threads user token for `@baeventos.app` with `threads_basic`, `threads_content_publish`, and `threads_manage_insights`. Store it in `~/.config/ba-events/threads-token.json` (mode 600) with `access_token`, `account`, `obtained` (ISO timestamp), and `app_id`. The job verifies the handle with `/me`, refreshes a token more than seven days old before its 60-day expiration, and saves a successful refresh atomically. It uses in-process `fetch`; never put the token in an invocation or a log. `threads-report` runs only with Threads enabled, does not refresh the token or write draft state, and shows the follower count and one row per known published post in the requested window. A dash means the API didn't return that metric.
 
-New Hoy and carousel previews include the exact Threads text in the same Slack message. A ✅ on that message counts for both channels, and ❌ stops both even in auto mode. Threads has its own auto flags and uses the existing timer's first tick on or after its slot or a later ✅, strictly before its cutoff. It never backfills a draft that did not preview Threads text. The list uses the saved picks, drops picks from the end if needed, and shortens titles only when the minimum list still exceeds 500 code points. If that still doesn't fit, Instagram continues without a Threads post.
+New Hoy and carousel previews include the exact Threads text in the same Slack message. A ✅ on that message counts for both channels, and ❌ stops both even in auto mode. Threads has its own auto flags and uses the existing timer's first tick on or after its slot or a later ✅, strictly before its cutoff. It never backfills a draft that did not preview Threads text. The list uses the saved picks in chronological order. When it needs to fit 500 code points, it removes the latest pick from the day with the most picks, then repeats as needed. It keeps at least two for Hoy and three for each carousel, and shortens titles only if the minimum still doesn't fit. If that still doesn't fit, Instagram continues without a Threads post.
 
-The two channels save and retry independently. Threads doesn't need the Instagram token or R2; both paths check the saved picks against the current catalog before writing. Threads rechecks reactions and the cutoff before each write, waits up to about a minute per tick for the same container, checks the publishing quota, and saves the attempt before publishing. When the send's outcome is unclear, later ticks read recent posts for a unique exact text match after the attempt, never by time alone and never by sending again. After the cutoff or one tick after the attempt, whichever is later, a final read without a match reports failure. Definite failures retry on later ticks, up to six failures or the cutoff for new writes.
+The two channels save and retry independently. Threads doesn't need the Instagram token or R2; both paths check the saved picks against the current catalog before writing. Threads reads approval at or after its slot and rechecks reactions and the cutoff before each write. It waits up to about a minute per tick for the same container, checks the publishing quota before creation and before publish, and saves the latest already-visible media IDs with the attempt before dispatch. When the send's outcome is unclear, later ticks look for a unique exact text match from the attempt's second onward, excluding those saved IDs. The job never matches on time alone or repeats an unclear send. It reports an unresolved send at the cutoff or one tick after the attempt, whichever is later, so an unclear Este finde send can take about a day to report. Definite failures retry on later ticks, up to six API failures or the cutoff for new writes; Slack read failures do not use that budget.
 
 The Threads outcome is a separate reply in the original preview's thread. A Slack failure leaves the reply pending without repeating the Threads post:
 
 - `Threads: publicado {permalink}`
 - `Threads: omitido, no se publicó antes de las {HH:MM}.`
 - `Threads: omitido, reaccionaste ❌.`
-- `Threads: retenido, {title} se canceló o ya pasó.`
+- `Threads: retenido, {title} cambió (se canceló, ya pasó o salió de la agenda).`
 - `Threads: falló ({short reason}). Hermes lo revisa.`
 
 ## Regenerate
 
-`regenerate` refuses a draft that has started publishing on Instagram, has published or has an unclear publish on Threads, or is past its Instagram cutoff. It first saves the draft as revision n+1 in state `rebuilding` with approval cleared, then renders into `rev-<n+1>/` (old frames are never overwritten) and posts a new top-level preview. If it stops before rendering finishes, the next tick marks the draft `failed` and raises its alert with the exact command to run again if the cutoff is still open. If the frames are saved and Slack's response was lost, the next tick checks whether the preview arrived before trying to upload again. Publishing uploads only frames that sit in the saved revision's directory and match its hash.
+`regenerate` refuses a draft that has started publishing on Instagram or is past its Instagram cutoff. If a Threads send is confirmed or unclear, the rebuild keeps that send and its original Slack thread, and the new preview does not offer another Threads post. If Threads already published, the new preview says `Threads ya se publicó con la versión anterior.` The job first saves the draft as revision n+1 in state `rebuilding` with Instagram approval cleared, then renders into `rev-<n+1>/` (old frames are never overwritten) and posts a new top-level preview. If it stops before rendering finishes, the next tick marks the draft `failed` and raises its alert with the exact command to run again if the cutoff is still open. If the frames are saved and Slack's response was lost, the next tick checks whether the preview arrived before trying to upload again. Publishing uploads only frames that sit in the saved revision's directory and match its hash.
 
 ## The Reel
 

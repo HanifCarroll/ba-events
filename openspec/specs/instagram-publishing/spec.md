@@ -207,7 +207,7 @@ The job MUST log every failed attempt, persist failure streaks across ticks, and
 
 ### Requirement: Eligible Instagram drafts share their Slack preview and approval with Threads
 
-With Threads enabled, a new Hoy, Este finde, or Gratis esta semana preview MUST append the exact Threads text in a quote block. The Reel MUST NOT preview or publish to Threads. The same Slack message and only Hanif's reactions govern both posts; ❌ skips both, including in auto mode. Threads auto mode is separate per format.
+With Threads enabled, a Hoy, Este finde, or Gratis esta semana preview MUST append the exact Threads text in a quote block unless an earlier revision already dispatched Threads. The preview MUST distinguish manual approval from auto mode. The Reel MUST NOT preview or publish to Threads. The same Slack message and only Hanif's reactions govern both posts; ❌ skips both, including in auto mode. Threads auto mode is separate per format.
 
 #### Scenario: Publishing window
 - **WHEN** the job considers a new Threads write
@@ -216,6 +216,10 @@ With Threads enabled, a new Hoy, Este finde, or Gratis esta semana preview MUST 
 #### Scenario: Approval arrives after the slot
 - **WHEN** Hanif's ✅ is first read after the Threads slot but before its cutoff
 - **THEN** the job may publish to Threads on that tick, regardless of whether Instagram has published
+
+#### Scenario: Instagram needs a new revision after a Threads send
+- **WHEN** a confirmed or unclear Threads send already exists and the Instagram draft has not started publishing or passed its cutoff
+- **THEN** the operator can regenerate Instagram independently. The job retains the original Threads attempt, text, and reply thread. The new preview offers no second Threads post and notes a confirmed one.
 
 #### Scenario: The picks change or approval is withdrawn
 - **WHEN** a Threads write would begin
@@ -227,23 +231,31 @@ With Threads enabled, a new Hoy, Este finde, or Gratis esta semana preview MUST 
 
 ### Requirement: Threads uses plain text from the saved picks
 
-The text MUST use the copy in `copy.md`, the cards' cleaned titles and price labels, Buenos Aires start times (`HH:MM`), and no emoji or hashtags. An unknown price adds neither a label nor a separator. The post MUST be no more than 500 Unicode code points including its link line.
+The text MUST use the copy in `copy.md`, the cards' cleaned titles and price labels, venue names in title case when all-caps, Buenos Aires start times (`HH:MM`), and no emoji or hashtags. An unknown price adds neither a label nor a separator. The post MUST be no more than 500 Unicode code points including its link line.
+
+#### Scenario: A title repeats its venue
+- **WHEN** a title ends in a dash followed by its own venue name, ignoring case, accents, and punctuation
+- **THEN** the Threads text omits the suffix without changing the Instagram frames
 
 #### Scenario: The full list exceeds 500 code points
 - **WHEN** the full draft cannot fit
-- **THEN** drop events from the end, keeping at least two for Hoy and three for each carousel, and only then shorten titles to at most 40 code points with an ellipsis. If the minimum still cannot fit, do not post Threads or block Instagram.
+- **THEN** remove the latest pick on the day with the most picks, repeating as needed and keeping chronological order. Keep at least two for Hoy and three for each carousel, and only then shorten titles to at most 40 code points with an ellipsis. If the minimum still cannot fit, do not post Threads or block Instagram.
 
 ### Requirement: Threads publishes independently and reconciles unclear sends without duplicates
 
-Threads MUST save its own state, retries, container ID, media ID, permalink, and pending Slack outcome in the draft. The job MUST verify the Threads username is `baeventos.app`, create a `TEXT` container with topic `Buenos Aires` and link `https://baeventos.com`, wait for `FINISHED`, and check the account publishing limit before dispatch. A container that is still processing after the tick's polling budget MUST be saved for the next tick without counting a failure.
+Threads MUST save its own state, retries, container ID, media ID, permalink, and pending Slack outcome in the draft. The job MUST verify the Threads username is `baeventos.app`, create a `TEXT` container with topic `Buenos Aires` and link `https://baeventos.com`, wait for `FINISHED`, and check the account publishing limit before creating a container and before publishing. A container that is still processing after the tick's polling budget MUST be saved for the next tick without counting a failure.
 
 #### Scenario: `threads_publish` returns an unclear result
 - **WHEN** the publish sends without a confirmed answer
-- **THEN** the job only reconciles it by a unique exact text match with a timestamp after the saved attempt, never by time alone and never by sending another publish for that draft
+- **THEN** the job only reconciles it by a unique exact text match at or after the saved attempt's second, excluding media IDs seen before dispatch. It never matches by time alone and only retries a publish write after a known rejection that rules out dispatch.
 
 #### Scenario: One channel fails
 - **WHEN** Instagram or Threads fails, or Slack cannot deliver an outcome reply
-- **THEN** the other channel keeps its own outcome and retry schedule, and pending Threads replies are retried in the original preview thread without republishing
+- **THEN** the other channel keeps its own outcome and retry schedule, and pending Threads replies are retried in the original preview thread without republishing. A final Threads failure also raises `ba-events/instagram/draft/<id>/threads`.
+
+#### Scenario: Slack approval cannot be read
+- **WHEN** a Slack reaction read fails at or after the Threads slot
+- **THEN** Threads waits for a successful read until the cutoff without counting a Threads API failure
 
 #### Scenario: The Threads token needs attention
 - **WHEN** a live tick uses Threads and the long-lived token is over seven days old and not yet expired

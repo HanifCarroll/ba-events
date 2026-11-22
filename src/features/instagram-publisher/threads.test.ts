@@ -2,11 +2,11 @@ import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { priceLabel } from './format.ts'
+import { addDays, baInstant, priceLabel } from './format.ts'
 import { readConfig } from './runtime.ts'
 import type { PostEvent } from './select.ts'
 import { threadsApi } from './threads-api.ts'
-import { threadsText } from './threads-copy.ts'
+import { threadsPreview, threadsText } from './threads-copy.ts'
 import { loadThreadsToken, readThreadsToken } from './threads-token.ts'
 
 const dirs: string[] = []
@@ -38,6 +38,40 @@ describe('Threads text fitting', () => {
     expect(atLimit.length).toBeGreaterThan(500)
     expect(atLimit).not.toContain('…')
     expect(atLimit.endsWith('Toda la agenda de hoy: baeventos.com')).toBe(true)
+  })
+
+  it('trims six weekend picks to four without losing a day or reordering the post', () => {
+    const picks = Array.from({ length: 6 }, (_, i) => {
+      const date = addDays(pick.date, Math.floor(i / 2))
+      return { ...pick, date, startsAt: baInstant(date, 19 + i % 2).toISOString(),
+        title: `Muestra ${i + 1}: Una noche de teatro, música y lecturas` }
+    })
+    const text = threadsText('finde', picks)!
+    expect(text).toContain('4 planes')
+    expect([...text].length).toBeLessThanOrEqual(500)
+    expect(text.match(/^(Vie|Sáb|Dom) \d\d:\d\d · Muestra \d/gm)).toEqual([
+      'Vie 19:00 · Muestra 1', 'Vie 20:00 · Muestra 2', 'Sáb 19:00 · Muestra 3', 'Dom 19:00 · Muestra 5',
+    ])
+  })
+
+  it('removes a matching dash suffix and title-cases an all-caps venue in Threads only', () => {
+    const venue = 'CAFE ROCK LA VE'
+    const events = [
+      { ...pick, venue, title: 'Bufosa - Cafe Rock la VE' },
+      { ...pick, venue, title: 'Lecturas – Café Rock La V.E.' },
+      { ...pick, venue, title: 'Cine – Sala distinta' },
+    ]
+    const text = threadsText('hoy', events)
+    expect(text).toContain('Bufosa · Cafe Rock la Ve, Boedo')
+    expect(text).toContain('Lecturas · Cafe Rock la Ve, Boedo')
+    expect(text).toContain('Cine – Sala distinta · Cafe Rock la Ve, Boedo')
+    expect(events[0]).toMatchObject({ venue, title: 'Bufosa - Cafe Rock la VE' })
+  })
+
+  it('quotes styling delimiters and escapes Slack control characters without changing the public text', () => {
+    const text = 'Cine *en* _el_ ~patio~ `de noche` & <cine>'
+    const preview = threadsPreview(text, baInstant('2026-11-20', 12))
+    expect(preview).toContain('>>> ```\nCine *en* _el_ ~patio~ `de noche` &amp; &lt;cine&gt;\n```')
   })
 
   it('refuses to cut venue or barrio names if even the minimum list cannot fit', () => {
@@ -98,6 +132,17 @@ describe('Threads Graph requests', () => {
     expect(fetcher).toHaveBeenCalledTimes(1)
     const url = new URL(String(fetcher.mock.calls[0]![0]))
     expect(url.href).toBe('https://graph.threads.net/v1.0/me?fields=id%2Cusername')
+  })
+
+  it.each([
+    [{ code: 100 }, true], [{ code: 190, error_subcode: 463 }, true],
+    [{ code: 1 }, false], [{ code: 100, error_subcode: 9_999 }, false], [{ code: 190, is_transient: true }, false],
+  ] as const)('classifies only specific pre-dispatch Graph rejections (%j)', async (error, definitive) => {
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json({ id: '42', username: 'baeventos.app' }))
+      .mockResolvedValueOnce(Response.json({ error }, { status: 400 }))
+    const client = await threadsApi('synthetic', fetcher)
+    await expect(client.publish('123')).rejects.toMatchObject({ definitive })
   })
 
   it('uses the required text, topic, attachment, quota, publish, and insights endpoints', async () => {

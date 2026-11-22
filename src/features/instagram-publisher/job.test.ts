@@ -14,6 +14,7 @@ import { Job, dryRun, type Draft, type Services } from './job.ts'
 import type { Config } from './runtime.ts'
 import type { CatalogEvent } from './select.ts'
 import { StoryComposerError, type ComposeStory, type StickerFrame } from './story-stickers.ts'
+import { threadsApi } from './threads-api.ts'
 import { threadsReport } from './threads-report.ts'
 
 /** A music directory with three synthetic tracks (the files only need to exist; the fake render never reads them). */
@@ -1306,7 +1307,7 @@ describe('Threads in the publisher tick', () => {
     await w.job().tick()
     expect(w.ig.published).toHaveLength(1)
     expect(w.threads.posts[0]?.text).toBe(w.draft().threads?.text)
-    expect(w.threads.calls).toEqual(['create', 'status c1', 'limit', 'publish c1', 'permalink m2'])
+    expect(w.threads.calls).toEqual(['limit', 'create', 'status c1', 'limit', 'recent', 'publish c1', 'permalink m2'])
     expect(w.draft()).toMatchObject({ state: 'published', threads: { state: 'published', containerId: 'c1', mediaId: 'm2', permalink: w.threads.posts[0]!.permalink } })
     expect(w.slackPosts).toContainEqual({ text: `Threads: publicado ${w.threads.posts[0]!.permalink}`, threadTs: ts })
     expect(await threadsReport(w.job().allDrafts(), w.threads, baInstant('2026-11-20', 16), 28)).toContain(`2026-11-19\tfinde\t100\t2\t—\t—\t—\t3\t${w.threads.posts[0]!.permalink}\nFollowers: 31`)
@@ -1331,13 +1332,92 @@ describe('Threads in the publisher tick', () => {
     w.catalog = weekend().slice(0, 2).map(event => ({ ...event, startsAt: baInstant('2026-11-17', 20).toISOString() }))
     w.at('2026-11-17', 11, 20)
     await w.job().tick()
-    expect(w.slackPosts[0]?.text).toContain('Threads (se publica con el mismo ✅, 11:30):')
+    expect(w.slackPosts[0]?.text).toContain('Threads (se publica solo a las 11:30 salvo que reacciones ❌):')
     expect(w.threads.calls).toEqual([])
     w.at('2026-11-17', 11, 30)
     await w.job().tick()
     expect(w.threads.posts).toHaveLength(1)
     expect(w.ig.published).toHaveLength(0)
     expect(w.job().loadDraft('hoy-2026-11-17')).toMatchObject({ state: 'previewed', threads: { state: 'published' } })
+  })
+
+  it.each(['published', 'unclear'])('rebuilds the Hoy Story after an afternoon cancellation with a %s Threads send', async mode => {
+    const w = new World()
+    const job = w.job()
+    const date = '2026-11-17'
+    const id = `hoy-${date}`
+    w.config.threads.enabled = true
+    w.catalog = weekend().slice(0, 3).map((event, i) => ({ ...event, startsAt: baInstant(date, 19 + i).toISOString() }))
+    w.at(date, 11)
+    await job.tick()
+    w.approve()
+    w.slackFails = 1
+    w.slackFailPrefix = 'Threads:'
+    if (mode === 'unclear') w.threads.publishFault = 'after'
+    w.at(date, 11, 30)
+    await job.tick()
+    const original = job.loadDraft(id)!
+    expect(original.threads?.state).toBe(mode === 'published' ? 'published' : 'publishing')
+    expect(original.state).toBe('previewed')
+    const cancelled = original.events[0]!
+    w.statuses.set(cancelled.id, 'cancelled')
+    w.at(date, 13)
+    const rebuilt = await job.regenerate(id, [cancelled.id])
+    expect(rebuilt.revision).toBe(2)
+    expect(rebuilt.events.map(event => event.id)).not.toContain(cancelled.id)
+    expect(rebuilt.slack.ts).not.toBe(original.slack.ts)
+    expect(rebuilt.threads).toEqual({ ...original.threads, threadTs: original.slack.ts })
+    const preview = w.slackPosts.filter(post => !post.threadTs).at(-1)!.text
+    expect(preview).not.toContain('Threads (se publica')
+    expect(preview).not.toContain(original.threads!.text)
+    expect(preview.includes('Threads ya se publicó con la versión anterior.')).toBe(mode === 'published')
+    w.slackFails = 0
+    job.s.slackReactions = async ts => ts === original.slack.ts ? w.reactions : []
+    await job.tick()
+    expect(job.loadDraft(id)?.approvedSeenAt).toBeNull()
+    expect(job.loadDraft(id)?.threads?.state).toBe('published')
+    expect(w.slackPosts).toContainEqual({ text: `Threads: publicado ${w.threads.posts[0]!.permalink}`, threadTs: original.slack.ts })
+    job.s.slackReactions = async ts => ts === rebuilt.slack.ts ? w.reactions : []
+    w.at(date, 16, 50)
+    await job.tick()
+    w.at(date, 17)
+    await job.tick()
+    expect(job.loadDraft(id)?.state).toBe('published')
+    expect(w.threads.calls.filter(call => call.startsWith('publish'))).toHaveLength(1)
+  })
+
+  it('does not read Threads approval during six pre-slot Slack outages, then publishes on the noon ✅', async () => {
+    const w = await threadsPreviewed()
+    const job = w.job()
+    let reads = 0
+    job.s.slackReactions = async () => { reads++; throw new Error('Slack reactions.get failed') }
+    for (let i = 0; i < 6; i++) {
+      w.at('2026-11-19', 10, i * 10)
+      await job.tick()
+    }
+    expect(reads).toBe(6) // Only Instagram checked before the slot.
+    expect(w.draft().threads).toMatchObject({ state: 'waiting', failures: 0 })
+    w.approve()
+    job.s.slackReactions = async () => w.reactions
+    w.at('2026-11-19', 12)
+    await job.tick()
+    expect(w.draft().threads?.state).toBe('published')
+  })
+
+  it('does not spend the Threads API retry budget on Slack reads at or after the slot', async () => {
+    const w = await threadsPreviewed()
+    const job = w.job()
+    job.s.slackReactions = async () => { throw new Error('Slack reactions.get failed') }
+    for (let i = 0; i < 6; i++) {
+      w.at('2026-11-19', 12, i * 10)
+      await job.tick()
+    }
+    expect(w.draft().threads).toMatchObject({ state: 'waiting', failures: 0 })
+    w.approve()
+    job.s.slackReactions = async () => w.reactions
+    w.at('2026-11-19', 13)
+    await job.tick()
+    expect(w.draft().threads?.state).toBe('published')
   })
 
   it.each(['hoy', 'finde', 'gratis'] as const)('does not start %s Threads at its cutoff', async format => {
@@ -1388,7 +1468,7 @@ describe('Threads in the publisher tick', () => {
     expect(w.draft().state).toBe(instagramAvailable ? 'held' : 'previewed')
     expect(w.draft().threads?.state).toBe('held')
     expect(w.threads.calls).toEqual([])
-    expect(w.replies()).toContain(`Threads: retenido, ${event.title} se canceló o ya pasó.`)
+    expect(w.replies()).toContain(`Threads: retenido, ${event.title} cambió (se canceló, ya pasó o salió de la agenda).`)
   })
 
   it('recovers an unclear publish by exact later text after ❌ and cutoff, without a second write', async () => {
@@ -1409,12 +1489,38 @@ describe('Threads in the publisher tick', () => {
     expect(w.threads.calls.filter(call => call.startsWith('publish'))).toHaveLength(1)
   })
 
-  it('never adopts a different post by time or an older exact match, and does not blindly retry', async () => {
+  it('reconciles a same-second fake send after an unknown Graph error, excluding the pre-dispatch identical post', async () => {
+    const w = await threadsPreviewed()
+    const text = w.draft().threads!.text!
+    w.approve()
+    w.at('2026-11-19', 12)
+    const existing = w.threads.post(text, w.clock.getTime())
+    w.clock = new Date(w.clock.getTime() + 650)
+    w.threads.clock = w.clock.getTime()
+    const graphWrites: string[] = []
+    const client = await threadsApi('synthetic', async (_url, request) => {
+      if (request?.method === 'GET') return Response.json({ id: '42', username: 'baeventos.app' })
+      graphWrites.push(String(request?.body))
+      w.threads.post(text) // Graph sends successfully but returns a generic error to the caller.
+      return Response.json({ error: { code: 1, message: 'An unknown error occurred' } }, { status: 400 })
+    })
+    w.threads.publish = client.publish
+    await w.job().tick()
+    const ownPost = w.threads.posts[0]!
+    expect(Date.parse(ownPost.timestamp!)).toBe(Math.floor(w.clock.getTime() / 1000) * 1000)
+    expect(w.draft().threads).toMatchObject({ attemptedAt: w.clock.toISOString(), beforeIds: [existing], mediaId: null })
+    w.at('2026-11-19', 12, 10)
+    await w.job().tick()
+    expect(w.draft().threads).toMatchObject({ state: 'published', mediaId: ownPost.id })
+    expect(graphWrites).toEqual(['creation_id=c2'])
+  })
+
+  it('never adopts a different post by time or a pre-dispatch exact match, and does not blindly retry', async () => {
     const w = await threadsPreviewed()
     w.threads.publishFault = 'before'
     w.approve()
     w.at('2026-11-19', 12)
-    w.threads.post(w.draft().threads!.text!, w.clock.getTime() - 1000)
+    w.threads.post(w.draft().threads!.text!, w.clock.getTime())
     await w.job().tick()
     w.threads.post('Publicación manual')
     w.reactions = []
@@ -1423,6 +1529,7 @@ describe('Threads in the publisher tick', () => {
     expect(w.draft().threads).toMatchObject({ state: 'failed', mediaId: null })
     expect(w.threads.calls.filter(call => call.startsWith('publish'))).toHaveLength(1)
     expect(w.replies()).toContain('Threads: falló (no se pudo confirmar la publicación). Hermes lo revisa.')
+    expect(w.alerts).toContainEqual(expect.objectContaining({ key: 'draft/finde-2026-11-20/threads', text: expect.stringContaining('could not confirm') }))
   })
 
   it('saves IDs across a definite publish rejection and a subsequent permalink failure', async () => {
@@ -1449,13 +1556,14 @@ describe('Threads in the publisher tick', () => {
     expect(w.threads.posts).toHaveLength(1)
   })
 
-  it('does not block Instagram on Threads quota errors and resumes on the same container', async () => {
+  it('checks quota before creating a Threads container without blocking Instagram', async () => {
     const w = await threadsPreviewed()
     w.threads.atLimit = true
     w.approve()
     w.at('2026-11-19', 12)
     await w.job().tick()
-    expect(w.draft()).toMatchObject({ state: 'published', threads: { state: 'publishing', containerId: 'c1', failures: 1 } })
+    expect(w.draft()).toMatchObject({ state: 'published', threads: { state: 'waiting', containerId: null, failures: 1 } })
+    expect(w.threads.calls).toEqual(['limit'])
     w.threads.atLimit = false
     await w.job().tick()
     expect(w.draft().threads?.state).toBe('published')

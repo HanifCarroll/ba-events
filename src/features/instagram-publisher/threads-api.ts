@@ -26,6 +26,14 @@ export interface ThreadsApi {
   accountInsights(): Promise<ThreadsMetric[]>
 }
 
+type GraphError = { code?: number; error_subcode?: number; is_transient?: boolean }
+
+/** Only reject codes for invalid arguments or invalid authorization, not a generic HTTP 4xx. */
+function rejectsWrite(status: number, error: GraphError | undefined) {
+  if (![400, 401, 403].includes(status) || !error || error.is_transient) return false
+  return error.code === 190 || error.code === 102 || (error.code === 100 && !error.error_subcode)
+}
+
 const validThreadsPermalink = (value: unknown): value is string =>
   typeof value === 'string' && /^https:\/\/(?:www\.)?threads\.(?:net|com)\/[^\s<>]+$/i.test(value)
 
@@ -43,10 +51,9 @@ export async function threadsApi(token: string, fetchImpl: typeof fetch = fetch)
     } catch {
       throw new ThreadsError(`${operation}: sin respuesta`)
     }
-    const body = await response.json().catch(() => null) as (T & { error?: { code?: number; is_transient?: boolean } }) | null
+    const body = await response.json().catch(() => null) as (T & { error?: GraphError }) | null
     if (!response.ok || body?.error) {
-      const rejected = [400, 401, 403, 429].includes(response.status) && typeof body?.error?.code === 'number' && !body.error.is_transient
-      throw new ThreadsError(`${operation}: HTTP ${response.status}`, rejected)
+      throw new ThreadsError(`${operation}: HTTP ${response.status}`, rejectsWrite(response.status, body?.error))
     }
     if (!body) throw new ThreadsError(`${operation}: respuesta inválida`)
     return body

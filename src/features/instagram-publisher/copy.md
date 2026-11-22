@@ -199,9 +199,13 @@ Threads (se publica con el mismo ✅, {HH:MM}):
 {the exact Threads text, as a quote block}
 ```
 
-Outcome replies in the preview's thread:
+With auto mode on, use this heading instead: `Threads (se publica solo a las {HH:MM} salvo que reacciones ❌):`.
+
+On an Instagram rebuild after Threads has published, use `Threads ya se publicó con la versión anterior.` instead of the quote. If the send is still unclear, omit the Threads section.
+
+Outcome replies in the original preview's thread:
 - `Threads: publicado {permalink}`
 - `Threads: omitido, no se publicó antes de las {HH:MM}.`
 - `Threads: omitido, reaccionaste ❌.`
-- `Threads: retenido, {title} se canceló o ya pasó.`
+- `Threads: retenido, {title} cambió (se canceló, ya pasó o salió de la agenda).`
 - `Threads: falló ({short reason}). Hermes lo revisa.`

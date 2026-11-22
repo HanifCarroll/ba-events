@@ -30,16 +30,17 @@ export class FakeThreads implements ThreadsApi {
     if (this.atLimit) throw new ThreadsError('límite de publicación alcanzado')
   }
 
-  post(text: string, at = this.clock + 1_000) {
+  post(text: string, at = this.clock) {
     const id = `m${this.next++}`
-    this.posts.unshift({ id, text, timestamp: new Date(at).toISOString(), permalink: `https://www.threads.com/@baeventos.app/post/${id}` })
+    const timestamp = new Date(Math.floor(at / 1000) * 1000).toISOString()
+    this.posts.unshift({ id, text, timestamp, permalink: `https://www.threads.com/@baeventos.app/post/${id}` })
     return id
   }
 
   async publish(id: string) {
     this.calls.push(`publish ${id}`)
     if (this.publishFault === 'before') throw new ThreadsError('publicar: sin respuesta')
-    if (this.publishFault === 'rejected') throw new ThreadsError('publicar: HTTP 429', true)
+    if (this.publishFault === 'rejected') throw new ThreadsError('publicar: HTTP 400', true)
     const mediaId = this.post(this.containers.get(id)!)
     if (this.publishFault === 'after') throw new ThreadsError('publicar: sin respuesta')
     return mediaId

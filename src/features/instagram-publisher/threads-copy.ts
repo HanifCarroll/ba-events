@@ -1,4 +1,4 @@
-import { addDays, baInstant, baLocal, hhmm } from './format.ts'
+import { addDays, baInstant, baLocal, displayTitle, hhmm } from './format.ts'
 import type { FormatKey } from './formats.ts'
 import type { PostEvent } from './select.ts'
 
@@ -20,40 +20,66 @@ const words = {
 }
 const days = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb']
 const plain = (text: string) => text.replace(/\p{RGI_Emoji}/gv, '').replace(/#(?=[\p{L}\p{N}_])/gu, '').replace(/\s+/g, ' ').trim()
+const venueKey = (name: string) => name.normalize('NFD').toLowerCase().replace(/[^\p{L}\p{N}]/gu, '')
+
+function withoutVenue(title: string, venue: string) {
+  const key = venueKey(venue)
+  for (const dash of title.matchAll(/\s+[-–]\s+/gu)) {
+    const afterDash = dash.index + dash[0].length
+    if (key && venueKey(title.slice(afterDash)) === key) return displayTitle(title.slice(0, dash.index))
+  }
+  return title
+}
 
 function eventLine(format: ThreadsFormat, event: PostEvent, shorten: boolean) {
   const local = baLocal(event.startsAt)
   const time = `${format === 'hoy' ? '' : `${days[local.weekday]} `}${hhmm(local)}`
-  const title = plain(event.title)
+  const venue = plain(displayTitle(event.venue, false))
+  const title = withoutVenue(plain(event.title), venue)
   const chars = [...title]
   const label = shorten && chars.length > 40 ? `${chars.slice(0, 39).join('').trimEnd()}…` : title
   const price = format !== 'gratis' && event.price ? ` · ${event.price}` : ''
-  return `${time} · ${label} · ${plain(event.venue)}, ${plain(event.barrio)}${price}`
+  return `${time} · ${label} · ${venue}, ${plain(event.barrio)}${price}`
 }
 
 /** Returns null if the minimum can't fit without cutting more than the copy rules allow. */
 export function threadsText(format: ThreadsFormat, events: PostEvent[]): string | null {
   const { min, intro, link } = words[format]
   if (events.length < min) return null
-  const build = (n: number, shorten: boolean) => `${intro(n)}\n\n${events.slice(0, n).map(event => eventLine(format, event, shorten)).join('\n')}\n\n${link}`
+  const picks = [...events].sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt))
+  const build = (shorten: boolean) => `${intro(picks.length)}\n\n${picks.map(event => eventLine(format, event, shorten)).join('\n')}\n\n${link}`
   const fits = (text: string) => [...text].length <= 500
-  for (let n = events.length; n >= min; n--) {
-    const text = build(n, false)
+  while (true) {
+    const text = build(false)
     if (fits(text)) return text
+    if (picks.length === min) break
+    const byDay = new Map<string, number>()
+    for (const event of picks) byDay.set(event.date, (byDay.get(event.date) ?? 0) + 1)
+    const most = Math.max(...byDay.values())
+    picks.splice(picks.findLastIndex(event => byDay.get(event.date) === most), 1)
   }
-  const text = build(min, true)
+  const text = build(true)
   return fits(text) ? text : null
 }
 
-export function threadsPreview(text: string, slot: Date) {
+export function threadsPreview(text: string, slot: Date, auto = false) {
+  const time = hhmm(baLocal(slot))
+  const gate = auto ? `se publica solo a las ${time} salvo que reacciones ❌` : `se publica con el mismo ✅, ${time}`
   const escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-  return `\n\nThreads (se publica con el mismo ✅, ${hhmm(baLocal(slot))}):\n${escaped.split('\n').map(line => `> ${line}`).join('\n')}`
+  // Slack only decodes &amp;, &lt;, and &gt;. Quote a code block for literal styling delimiters;
+  // split any embedded triple backticks with a zero-width space so they cannot close the block.
+  const quote = /[*_~`]/u.test(escaped)
+    ? `>>> \`\`\`\n${escaped.replace(/`(?=``)/g, '`\u200b')}\n\`\`\``
+    : escaped.split('\n').map(line => `> ${line}`).join('\n')
+  return `\n\nThreads (${gate}):\n${quote}`
 }
+
+export const threadsPreviousRevision = 'Threads ya se publicó con la versión anterior.'
 
 export const threadsReplies = {
   published: (permalink: string) => `Threads: publicado ${permalink}`,
   cutoff: (by: Date) => `Threads: omitido, no se publicó antes de las ${hhmm(baLocal(by))}.`,
   rejected: 'Threads: omitido, reaccionaste ❌.',
-  held: (title: string) => `Threads: retenido, ${title} se canceló o ya pasó.`,
+  held: (title: string) => `Threads: retenido, ${title} cambió (se canceló, ya pasó o salió de la agenda).`,
   failed: (reason: string) => `Threads: falló (${reason}). Hermes lo revisa.`,
 }

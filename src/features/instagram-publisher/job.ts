@@ -20,8 +20,8 @@ import * as runtime from './runtime.ts'
 import type { Config, EventNow, TokenCheck } from './runtime.ts'
 import { selectEvents, type CatalogEvent, type PostEvent } from './select.ts'
 import { confirmsStory, liveStories, stickerFrames, StoryComposerError, type ComposeStory, type StickerFailure, type StoryShareAttempt } from './story-stickers.ts'
-import { ThreadsError, threadsApi, type ThreadsApi } from './threads-api.ts'
-import { isThreadsFormat, threadsPreview, threadsText, threadsWindow } from './threads-copy.ts'
+import { threadsApi, type ThreadsApi } from './threads-api.ts'
+import { isThreadsFormat, threadsPreview, threadsPreviousRevision, threadsText, threadsWindow } from './threads-copy.ts'
 import { advanceThreads, newThreadsDraft, stopThreads, type ThreadsDraft } from './threads-publish.ts'
 import { loadThreadsToken, type ThreadsTokenCheck } from './threads-token.ts'
 
@@ -190,14 +190,14 @@ export class Job {
   // Drafting and previewing
 
   /** Build revision `revision` of a draft into its own directory and preview it. Approval always starts empty. */
-  async createDraft(format: FormatKey, from: string, exclude: string[], revision: number, trackId: string | null = null): Promise<Draft> {
+  async createDraft(format: FormatKey, from: string, exclude: string[], revision: number, trackId: string | null = null, threads?: ThreadsDraft): Promise<Draft> {
     const id = draftId(format, from)
     const dir = join(this.framesDir(id), `rev-${revision}`)
     const built = await this.build(format, from, exclude, dir, format === 'reel' ? trackId ?? this.chooseTrack() : null)
     const draft: Draft = {
       id, format, from, to: built.window.to, revision, layout: LAYOUT_VERSION, state: 'previewing', exclude, events: built.events, caption: built.caption, track: built.track,
       frames: built.frames ?? [], framesHash: built.frames ? runtime.fileHash(built.frames) : '', slack: { fileIds: [], ts: null },
-      approvedSeenAt: null, r2Uploaded: null, publish: null, publishFailures: 0, notify: null, skipReason: null, note: null, updatedAt: '',
+      approvedSeenAt: null, r2Uploaded: null, publish: null, publishFailures: 0, notify: null, skipReason: null, note: null, updatedAt: '', threads,
     }
     if (!built.frames) {
       rmSync(dir, { recursive: true, force: true })
@@ -225,9 +225,11 @@ export class Job {
       const config = this.s.config()
       const format = draft.format
       let text = slackPreview(format, runWindow(format, draft.from), draft.caption, config.auto[format], draft.track ?? undefined)
-      if (config.threads.enabled && isThreadsFormat(format)) {
+      if (draft.threads?.attemptedAt || draft.threads?.mediaId) {
+        if (config.threads.enabled && draft.threads.mediaId) text += `\n\n${threadsPreviousRevision}`
+      } else if (config.threads.enabled && isThreadsFormat(format)) {
         draft.threads = newThreadsDraft(threadsText(format, draft.events))
-        if (draft.threads.text) text += threadsPreview(draft.threads.text, threadsWindow(format, draft.from).publishAt)
+        if (draft.threads.text) text += threadsPreview(draft.threads.text, threadsWindow(format, draft.from).publishAt, config.threads.auto[format])
       } else if (draft.threads) delete draft.threads
       // A Reel's preview attaches the video only.
       const files = await this.s.slackUploadFiles(draft.format === 'reel' ? draft.frames.slice(0, 1) : draft.frames, draft.id)
@@ -237,6 +239,9 @@ export class Job {
       await this.s.slackShareFiles(files, text)
       draft.slack.ts = await this.s.slackShareTs(draft.slack.fileIds[0]!)
       if (!draft.slack.ts) throw new Error('Slack preview lookup failed: the upload has no message yet')
+    }
+    if (draft.threads && !draft.threads.threadTs && draft.slack.ts && !draft.threads.attemptedAt && !draft.threads.mediaId) {
+      draft.threads.threadTs = draft.slack.ts
     }
     draft.state = 'previewed'
     this.save(draft)
@@ -561,11 +566,12 @@ export class Job {
     const token = await this.s.loadThreadsToken(this.s.now()).catch(() => ({ accessToken: null, warning: 'Could not check the Threads token.' }))
     let client: Promise<ThreadsApi> | undefined
     const api = () => {
-      if (!token.accessToken) throw new ThreadsError('falta un token de Threads vigente')
+      if (!token.accessToken) throw new Error('No valid Threads token')
       return client ??= this.s.threads(token.accessToken)
     }
     for (const draft of this.allDrafts()) {
-      const { threads, format, slack: { ts } } = draft
+      const { threads, format } = draft
+      const ts = threads?.threadTs ?? draft.slack.ts
       if (!threads || !ts || !isThreadsFormat(format)) continue
       await advanceThreads(threads, threadsWindow(format, draft.from), config.auto[format], {
         api,
@@ -577,6 +583,14 @@ export class Job {
         reply: text => this.s.slackPost(text, ts),
         log: text => this.s.log(`${draft.id}: ${text}`),
       }).catch(() => this.s.log(`${draft.id}: could not advance Threads state; see the saved draft`))
+      if (threads.state === 'failed' && !threads.failureAlertSent) {
+        const alert = alerts.threadsFailed(draft, threads.error, Boolean(threads.attemptedAt && !threads.mediaId), this.draftFile(draft.id))
+        try {
+          await this.s.alert(`${alerts.draftKey(draft)}/threads`, alert.title, alert.text, alert.fingerprint)
+          threads.failureAlertSent = true
+          this.save(draft)
+        } catch { this.s.log(`${draft.id}: could not raise the Threads failure alert`) }
+      }
     }
     // Alerts use the same namespace, but a Threads token issue is never counted as an Instagram failure.
     try {
@@ -589,7 +603,7 @@ export class Job {
     const { format, from } = parseDraftId(id)
     const old = this.loadDraft(id)
     if (!old) throw new Error(`No draft ${id}; see \`status\``)
-    if (old.storyShare || old.publish || old.threads?.attemptedAt || old.threads?.mediaId || ['publishing', 'published'].includes(old.state)) {
+    if (old.storyShare || old.publish || ['publishing', 'published'].includes(old.state)) {
       throw new Error(`${id} has started publishing; it can't be rebuilt`)
     }
     if (this.s.now() >= runWindow(format, from).cutoff) throw new Error(`${id} is past its cutoff`)
@@ -602,8 +616,11 @@ export class Job {
     const ready = track ? readyTrack(this.s.config().reel.musicDir, track) : null
     // The requested track is saved with the rebuilding state, so a crash's recovery command restores it.
     const savedTrack = ready ? { id: ready.id, title: ready.title, artist: ready.artist, credit: ready.credit } : old.track
-    this.save({ ...old, revision, state: 'rebuilding', exclude, track: savedTrack, approvedSeenAt: null, slack: { fileIds: [], ts: null }, notify: null, r2Uploaded: null, threads: undefined })
-    const draft = await this.createDraft(format, from, exclude, revision, track)
+    // A Threads send belongs to the earlier preview, even if reconciliation or notification is still pending.
+    const threads = old.threads && (old.threads.attemptedAt || old.threads.mediaId)
+      ? { ...old.threads, threadTs: old.threads.threadTs ?? old.slack.ts ?? undefined } : undefined
+    this.save({ ...old, revision, state: 'rebuilding', exclude, track: savedTrack, approvedSeenAt: null, slack: { fileIds: [], ts: null }, notify: null, r2Uploaded: null, threads })
+    const draft = await this.createDraft(format, from, exclude, revision, track, threads)
     if (draft.state === 'skipped') throw new Error(`Without ${exclude.join(', ')} only ${draft.events.length} events qualify; the draft is skipped`)
     return draft
   }
@@ -641,7 +658,7 @@ export async function dryRun(format: FormatKey, from: string, outDir: string, { 
     if (!text) console.log('No Threads text: the minimum event list does not fit in 500 characters.')
     else {
       writeFileSync(threadsFile, text)
-      preview += threadsPreview(text, threadsWindow(format, from).publishAt)
+      preview += threadsPreview(text, threadsWindow(format, from).publishAt, config.threads.auto[format])
     }
   }
   writeFileSync(join(outDir, 'slack.txt'), `${preview}\n`)
