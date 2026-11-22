@@ -48,9 +48,7 @@ export function buildEventJsonLd(
 	const dateOnly = event.time_tba || (event.is_all_day && event.source !== 'luma');
 	const localDate = (value: string) => new Date(value).toLocaleDateString('en-CA', { timeZone: BA_TIMEZONE });
 	const startDate = dateOnly ? localDate(event.starts_at) : event.starts_at;
-	const endDate = event.ends_at
-		? (dateOnly ? localDate(event.ends_at) : event.ends_at)
-		: (dateOnly ? startDate : undefined);
+	const endDate = event.ends_at ? (dateOnly ? localDate(event.ends_at) : event.ends_at) : undefined;
 	const status = {
 		scheduled: 'EventScheduled', past: 'EventScheduled', canceled: 'EventCancelled',
 		postponed: 'EventPostponed', pending_review: undefined
@@ -81,9 +79,6 @@ export function buildEventJsonLd(
 				streetAddress: showVenue ? event.venue_address?.trim() || undefined : undefined
 			}
 		},
-		organizer: venueName ? {
-			'@type': 'Organization', name: venueName, url: event.venue_website?.trim() || undefined
-		} : undefined,
 		isAccessibleForFree: isFree || undefined,
 		offers: ticketUrl ? {
 			'@type': 'Offer', url: ticketUrl,

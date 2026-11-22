@@ -11,42 +11,43 @@ const passlineListing = (name: string) => ({
 })
 
 describe('scope judgment', () => {
-  it('skips the model only for exact Passline template copy with no facets', async () => {
+  it('asks the model to judge template-only Passline listings based on their remaining evidence', async () => {
     const sora = passlineListing('Sora')
-    const name = 'Ciclo JamSweetHome | Bandas & JAMs'
+    const concert = passlineListing('Concierto en vivo: Pez y Fin del Mundo')
+    const withFacets = { ...concert, venue: 'Sala Sintética', categories: ['music'], facets: { activities: ['live-music'] } }
+    const name = 'Jam sintética & ensamble'
     const encoded = { ...passlineListing(name.replace('&', '&amp;')), name }
-    const captionOnly = { name: sora.name, source: sora.source, descriptionEs: '&nbsp;',
-      caption: `\n${sora.descriptionEs.toUpperCase().replaceAll(' ', '  ')}\n` }
-    const listings = [sora, encoded, captionOnly]
-    const request = vi.fn(() => Promise.reject(new Error('Template-only listings should not reach the model')))
-    expect(await judgeScopeBatch(listings, request)).toEqual(listings.map(() => ({
-      scope: 'out', reason: 'unclear: The listing has only ticket-sale text, with no program or event type.',
-    })))
-    expect(request).not.toHaveBeenCalled()
+    const listings = [
+      { ...sora, descriptionEn: sora.descriptionEs, caption: `\n${sora.descriptionEs.toUpperCase().replaceAll(' ', '  ')}\n` },
+      concert, withFacets, encoded,
+    ]
+    const outcomes = [unclear, inScope, inScope, inScope]
+    const request = vi.fn(async () => ({ judgments: outcomes.map((result, index) => ({ index, ...result })) }))
+    expect(await judgeScopeBatch(listings, request)).toEqual(outcomes)
+    expect(request).toHaveBeenCalledExactlyOnceWith([
+      { ...sora, descriptionEs: null, descriptionEn: null, caption: null },
+      { ...concert, descriptionEs: null },
+      { ...withFacets, descriptionEs: null },
+      { ...encoded, descriptionEs: null },
+    ])
+    expect(listings[0].descriptionEs).toBe(sora.descriptionEs)
   })
 
-  it('sends every other listing to the model unchanged, even when the template is present', async () => {
+  it('preserves nonmatching text even alongside a matching Passline field', async () => {
     const sora = passlineListing('Sora')
-    const trap = passlineListing('Hard Trap Fest 3')
-    const lineup = '-Show de Dagger por primera vez en la Hard Trap Fest -Show Co-estelar Flakka Flakka Artistas Emergentes:'
-    const cases = [
-      [{ ...sora, caption: 'Consigue tus entradas para Sora. En vivo: Pez y Fin del Mundo. Más info en Passline.' }, inScope],
-      [{ ...trap, descriptionEs: lineup }, inScope],
-      [{ ...trap, descriptionEs: `${trap.descriptionEs}\n${lineup}` }, inScope],
-      [{ name: 'Concierto de Jazz en vivo', source: 'passline', descriptionEs: '', descriptionEn: null, caption: '  ' }, inScope],
-      [{ ...sora, facets: { activities: ['live-music'] } }, inScope],
-      [{ ...sora, caption: 'Sora 🎸🎤' }, inScope],
-      [{ ...sora, source: 'instagram' }, unclear],
-      [{ ...sora, name: 'Sora Edición 2' }, unclear],
-      [{ ...sora, descriptionEs: 'Consigue tus entradas para Sora en Passline.' }, unclear],
-      [{ ...passlineListing('Venta de entradas'), descriptionEs: '' }, unclear],
-    ] as const
-    const inputs = cases.map(([input]) => input)
-    const outcomes = cases.map(([, result]) => result)
+    const concert = passlineListing('Festival Sintético')
+    const lineup = `${concert.descriptionEs}\nEn vivo: Los Ensayos y Dúo Inventado.`
+    const withLineup = { ...concert, descriptionEs: lineup, caption: concert.descriptionEs }
+    const unchanged = [
+      { name: 'Concierto de Jazz en vivo', source: 'passline', descriptionEs: '', descriptionEn: null, caption: '  ' },
+      { ...sora, source: 'instagram' },
+      { ...sora, name: 'Sora Edición 2' },
+      { ...sora, descriptionEs: 'Consigue tus entradas para Sora en Passline.' },
+    ]
+    const outcomes = [inScope, inScope, unclear, unclear, unclear]
     const request = vi.fn(async () => ({ judgments: outcomes.map((result, index) => ({ index, ...result })) }))
-    expect(await judgeScopeBatch(inputs, request)).toEqual(outcomes)
-    expect(request).toHaveBeenCalledTimes(1)
-    expect(request).toHaveBeenCalledWith(inputs)
+    expect(await judgeScopeBatch([withLineup, ...unchanged], request)).toEqual(outcomes)
+    expect(request).toHaveBeenCalledExactlyOnceWith([{ ...withLineup, caption: null }, ...unchanged])
   })
 
   it('rejects partial, extra, duplicate, mislabeled, or unreasoned output', () => {

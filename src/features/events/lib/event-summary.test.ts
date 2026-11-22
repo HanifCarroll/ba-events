@@ -44,7 +44,6 @@ function makeEvent(overrides: Partial<EventWithVenue> = {}): EventWithVenue {
 		venue_name: 'Sala Nube',
 		venue_neighborhood: 'Palermo',
 		venue_address: 'Calle Falsa 123',
-		venue_website: 'https://salanube.example',
 		...overrides
 	};
 }
@@ -90,41 +89,47 @@ const jsonLdFor = (overrides: Partial<EventWithVenue> = {}) =>
 	buildEventJsonLd(makeEvent(overrides), 'https://baeventos.com/events/evt-1', 'https://baeventos.com/flyer.jpg');
 
 describe('buildEventJsonLd', () => {
-	it('uses the recorded end, venue organizer, and known ticket price', () => {
+	it('emits only known details, including the recorded end, location, and ticket price', () => {
 		const jsonLd = jsonLdFor({ ends_at: '2026-08-15T21:00:00-03:00', is_free: false, price: 9000 });
-		expect(jsonLd).toMatchObject({
+		expect(JSON.parse(JSON.stringify(jsonLd))).toEqual({
+			'@context': 'https://schema.org',
 			'@type': 'Event',
 			name: 'Jazz Night at Sala Nube',
+			description: 'Intimate jazz night in Palermo.',
 			url: 'https://baeventos.com/events/evt-1',
+			image: 'https://baeventos.com/flyer.jpg',
 			startDate: '2026-08-15T19:00:00-03:00',
 			endDate: '2026-08-15T21:00:00-03:00',
+			eventAttendanceMode: 'https://schema.org/OfflineEventAttendanceMode',
 			eventStatus: 'https://schema.org/EventScheduled',
-			organizer: { '@type': 'Organization', name: 'Sala Nube', url: 'https://salanube.example' },
 			location: {
 				'@type': 'Place', name: 'Sala Nube',
 				address: { '@type': 'PostalAddress', addressLocality: 'Buenos Aires', addressCountry: 'AR', streetAddress: 'Calle Falsa 123' }
-			}
+			},
+			offers: { '@type': 'Offer', url: 'https://example.com/jazz', price: 9000, priceCurrency: 'ARS' }
 		});
-		expect(jsonLd.offers).toEqual({ '@type': 'Offer', url: 'https://example.com/jazz', price: 9000, priceCurrency: 'ARS' });
-		expect(jsonLd).not.toHaveProperty('performer');
 	});
 
-	it('does not invent an end time, price, or organizer URL', () => {
-		const jsonLd = jsonLdFor({ is_free: false, venue_website: null });
+	it('does not invent an end time or price', () => {
+		const jsonLd = jsonLdFor({ is_free: false });
 		expect(jsonLd.endDate).toBeUndefined();
-		expect(jsonLd.organizer).toMatchObject({ '@type': 'Organization', name: 'Sala Nube' });
-		expect(jsonLd.organizer?.url).toBeUndefined();
 		expect(jsonLd.offers).toEqual({ '@type': 'Offer', url: 'https://example.com/jazz' });
 	});
 
-	it('uses Buenos Aires dates when no hours are known and makes no offer without an admission URL', () => {
-		const jsonLd = jsonLdFor({ time_tba: true, starts_at: '2026-08-16T01:00:00Z', ticket_url: null });
-		expect(jsonLd).toMatchObject({ startDate: '2026-08-15', endDate: '2026-08-15', isAccessibleForFree: true });
+	it.each([{ time_tba: true }, { is_all_day: true }])('uses Buenos Aires dates and omits an unknown end for %j', (flags) => {
+		const fields = { ...flags, starts_at: '2026-08-16T01:00:00Z' };
+		const jsonLd = jsonLdFor(fields);
+		expect(jsonLd.startDate).toBe('2026-08-15');
+		expect(JSON.parse(JSON.stringify(jsonLd))).not.toHaveProperty('endDate');
+		expect(jsonLdFor({ ...fields, ends_at: '2026-08-17T01:00:00Z' }).endDate).toBe('2026-08-16');
+	});
+
+	it('requires an admission URL for an offer', () => {
+		const jsonLd = jsonLdFor({ ticket_url: null });
+		expect(jsonLd.isAccessibleForFree).toBe(true);
 		expect(jsonLd.offers).toBeUndefined();
 		expect(jsonLdFor({ source: 'ba-tourism' }).offers).toBeUndefined();
 		expect(jsonLdFor().offers?.price).toBe(0);
-		expect(jsonLdFor({ source: 'ba-tourism', is_all_day: true, starts_at: '2026-08-15T03:00:00Z', ends_at: '2026-08-16T03:00:00Z' }))
-			.toMatchObject({ startDate: '2026-08-15', endDate: '2026-08-16' });
 	});
 
 	it('preserves explicit hours on Luma events spanning multiple days', () => {
@@ -139,15 +144,11 @@ describe('buildEventJsonLd', () => {
 		expect(jsonLd.offers).toEqual({ '@type': 'Offer', url: 'https://example.com/jazz' });
 	});
 
-	it('omits a hidden, unconfirmed, or absent venue from location and organizer markup', () => {
+	it('omits a hidden, unconfirmed, or absent venue from location markup', () => {
 		for (const fields of [{ location_hidden: true }, { location_tba: true }, { venue_id: null, venue_name: null, venue_address: null }]) {
-			const jsonLd = jsonLdFor(fields);
-			const encoded = JSON.stringify(jsonLd);
-			const location = JSON.stringify(jsonLd.location);
+			const location = JSON.stringify(jsonLdFor(fields).location);
 			expect(location).not.toContain('"name":');
 			expect(location).not.toContain('"streetAddress":');
-			expect(encoded).not.toContain('"organizer":');
-			expect(encoded).not.toContain('salanube.example');
 		}
 	});
 

@@ -2,7 +2,6 @@ import { generateObject } from 'ai'
 import { load } from 'cheerio/slim'
 import { z } from 'zod'
 import { openai } from '#shared/lib/ai/providers.ts'
-import { isEmptyFacets } from '#shared/lib/search-facets.ts'
 
 export const SCOPE_MODEL = 'gpt-6-luna'
 export const SCOPE_VERSION = 'independent-culture-v4'
@@ -41,13 +40,15 @@ function normalizeListing(text: string) {
   return decoded.toLowerCase().replace(/\s+/gu, ' ').trim()
 }
 
-function precheckScope(input: ScopeInput): ScopeDecision | undefined {
-  if (input.source !== 'passline' || !isEmptyFacets(input.facets)) return
+function omitPasslineTemplate(input: ScopeInput): ScopeInput {
+  if (input.source !== 'passline') return input
   const template = normalizeListing(`Consigue tus entradas para ${input.name} en Passline. ${PASSLINE_PITCH}`)
-  const details = [input.descriptionEs, input.descriptionEn, input.caption].map(text => normalizeListing(text ?? '')).filter(Boolean)
-  if (details.length && details.every(text => text === template)) {
-    return { scope: 'out', reason: 'unclear: The listing has only ticket-sale text, with no program or event type.' }
+  const evidence = { ...input }
+  for (const field of ['descriptionEs', 'descriptionEn', 'caption'] as const) {
+    const text = input[field]
+    if (text && normalizeListing(text) === template) evidence[field] = null
   }
+  return evidence
 }
 
 export function decodeScopeJudgments(value: unknown, count: number): ScopeDecision[] {
@@ -71,9 +72,6 @@ export function requestScopeJudgments(model = openai.chat(SCOPE_MODEL)): Request
 }
 
 export async function judgeScopeBatch(inputs: ScopeInput[], request: RequestJudgments): Promise<ScopeDecision[]> {
-  const prechecked = inputs.map(precheckScope)
-  const unresolved = inputs.filter((_, index) => !prechecked[index])
-  const judged = unresolved.length ? decodeScopeJudgments(await request(unresolved), unresolved.length) : []
-  let next = 0
-  return prechecked.map(row => row ?? judged[next++]!)
+  if (!inputs.length) return []
+  return decodeScopeJudgments(await request(inputs.map(omitPasslineTemplate)), inputs.length)
 }

@@ -16,14 +16,12 @@ const PRICE_NOTE = `(SELECT json_extract(r.payload, '$.price_note') FROM event_s
 
 /** One event with its venue, or null. `displayableOnly` keeps it to scheduled and past events. */
 export async function eventByIdD1(db: D1Database, id: string, displayableOnly = false) {
-  const row = await db.prepare(`SELECT ${EVENT_COLUMNS},
-    CASE WHEN NOT coalesce(e.location_hidden, 0) AND NOT e.location_tba THEN v.website END AS venue_website,
-    ${PRICE_NOTE} AS priceNote
+  const row = await db.prepare(`SELECT ${EVENT_COLUMNS}, ${PRICE_NOTE} AS priceNote
     FROM ${FROM_EVENTS} WHERE e.id = ?${displayableOnly ? ` AND ${DISPLAYABLE}` : ''}`)
-    .bind(id).first<{ venue_website: string | null; priceNote: string | null }>()
+    .bind(id).first<{ priceNote: string | null }>()
   if (!row) return null
   const event = toPayload(row)
-  return { ...event, venue_website: row.venue_website, payWhatYouCan: isPayWhatYouCan(event.name, event.description_es, row.priceNote) }
+  return { ...event, payWhatYouCan: isPayWhatYouCan(event.name, event.description_es, row.priceNote) }
 }
 
 /** The events among `ids` (any status), at most 100. */
