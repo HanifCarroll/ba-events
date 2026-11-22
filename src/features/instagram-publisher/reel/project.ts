@@ -14,6 +14,8 @@ import { CORAL, FIT_JS, INK, LIME, LOOK_CSS, PAPER, SOFT, artOf, backdrop, colla
 import type { PostEvent } from '../select.ts'
 
 export const FPS = 30
+/** A card prints this to the browser console when it can't be laid out (a font file didn't load). */
+export const REEL_FAILURE = 'BA_REEL_CARD_FAILED'
 export const REEL_SIZE = { width: 1080, height: 1920 } as const
 const ENTER = 0.5
 const EXIT = 0.2
@@ -124,6 +126,11 @@ ${body}
       var tl = gsap.timeline({ paused: true });
 ${script}
       window.__timelines["${id}"] = tl;
+    }).catch(function (error) {
+      // Without a timeline the render would wait for this card until it times out. Register an empty one, and say why:
+      // runtime.ts fails the render when it sees this line.
+      window.__timelines["${id}"] = gsap.timeline({ paused: true });
+      console.error("${REEL_FAILURE}: ${id}: " + (error && error.message || error));
     });
   })();
   </script>

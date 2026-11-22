@@ -3,7 +3,7 @@ import { load } from 'cheerio'
 import { describe, expect, it } from 'vitest'
 import type { Artwork } from './artwork.ts'
 import { runWindow } from './formats.ts'
-import { CARD, STICKER_Y, STORY_SAFE, framesHtml } from './html.ts'
+import { CARD, LAYOUT_VERSION, STICKER_BAND, STICKER_Y, STORY_SAFE, framesHtml } from './html.ts'
 import { eventFrameTag } from './instagram.ts'
 import type { PostEvent } from './select.ts'
 import { stickerFrames } from './story-stickers.ts'
@@ -69,18 +69,18 @@ describe.each([['finde', '2026-11-20', 1350, 'carousel'], ['hoy', '2026-11-21', 
   })
 
   it('puts the tag on the footer handle, inside the panel', () => {
-    const tag = eventFrameTag(events, 2, height)!
+    const tag = eventFrameTag(events, 2, height, LAYOUT_VERSION)!
     expect(tag.username).toBe('sala2')
     expect(tag.y * height).toBeGreaterThan(CARD[kind].seam)
     expect(Math.abs(tag.y * height - CARD[kind].footer.centerY)).toBeLessThan(1) // the tag is rounded to a thousandth of the frame
     expect(cards.eq(1).find('[data-role="foot"] span').first().text()).toBe('Vía @sala2')
     if (kind === 'carousel') expect(px(cards.eq(1).find('[data-role="foot"]').attr('style'), 'top') + 20).toBe(CARD.carousel.footer.centerY)
-    expect(eventFrameTag(events, 3, height)).toBeNull()
+    expect(eventFrameTag(events, 3, height, LAYOUT_VERSION)).toBeNull()
   })
 })
 
 describe('story bands', () => {
-  const frames = stickerFrames(['cover', 'a', 'b', 'c', 'd', 'close'], events)
+  const frames = stickerFrames(['cover', 'a', 'b', 'c', 'd', 'close'], events, LAYOUT_VERSION)
   const band = (centerY: number) => [centerY - 80, centerY + 80] as const
 
   it('keeps every link sticker inside the safe band', () => {
@@ -98,6 +98,32 @@ describe('story bands', () => {
     expect(CARD.story.footer.centerY).toBe(CARD.story.bottom - 24 - 20)
     expect(frames[1]!.mentionAt!.centerY).toBe(CARD.story.footer.centerY)
     expect(frames[1]!.mentionAt!.centerY + 45).toBeLessThan(band(STICKER_Y.event)[0])
+    // The pill is at most 90 px tall. The barrio row ends `gap` px above the 40 px footer row, so the pill clears it.
+    const venueBlockBottom = CARD.story.footer.centerY - 20 - CARD.story.footer.gap
+    expect(frames[1]!.mentionAt!.centerY - 45).toBeGreaterThanOrEqual(venueBlockBottom + 4)
+  })
+
+  it('gives each link sticker a free band that holds its 160 px and ends above the reply bar', () => {
+    expect(frames.map(frame => frame.band)).toEqual([STICKER_BAND.cover, STICKER_BAND.event, STICKER_BAND.event, STICKER_BAND.event, STICKER_BAND.event, STICKER_BAND.closing])
+    for (const frame of frames) {
+      expect(frame.centerY - 80).toBeGreaterThanOrEqual(frame.band![0])
+      expect(frame.centerY + 80).toBeLessThanOrEqual(frame.band![1])
+      expect(frame.band![1]).toBeLessThanOrEqual(STORY_SAFE.bottom)
+    }
+    expect(STICKER_BAND.event).toEqual([CARD.story.bottom, 1670])
+  })
+
+  it('shrinks a long "Vía @handle" to fit its side of the footer, and cuts it only at the floor', () => {
+    const $ = load(framesHtml('hoy', runWindow('hoy', '2026-11-21'), events, assets, artwork))
+    const handle = $('[data-frame="card"]').eq(1).find('[data-handle]')
+    const { size, floor, width } = CARD.story.footer
+    expect(handle.attr('data-fit-width')).toBe(`${size},${floor},${width}`)
+    expect(handle.hasClass('one')).toBe(true)
+    expect(floor).toBeGreaterThanOrEqual(32)
+    // The longest footer, "Vía @" and a 30-character username, fits at the floor (DM Sans is about 0.54 em a character).
+    expect(35 * floor * 0.54).toBeLessThanOrEqual(width)
+    // The site's address keeps its place on the right of the 920 px row.
+    expect(width + 13 * size * 0.54 + 24).toBeLessThanOrEqual(920)
   })
 
   it('ends the cover\'s headline box above its sticker band and starts the footer below it', () => {

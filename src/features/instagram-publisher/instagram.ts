@@ -9,7 +9,7 @@
  */
 
 import { footerHandle } from './copy.ts'
-import { CARD, FRAME } from './html.ts'
+import { CARD, FRAME, LEGACY_LAYOUT } from './html.ts'
 import type { PostEvent } from './select.ts'
 
 export const GRAPH = 'https://graph.facebook.com/v27.0'
@@ -231,14 +231,21 @@ export async function publish(job: PublishJob, state: PublishState, deps: Publis
   return state.permalink!
 }
 
-/** The cover and closing have no account; intervening frames follow draft event order. */
-export function eventFrameTag(events: Array<Pick<PostEvent, 'handle' | 'via'>>, index: number, height: number) {
+/** The cover and closing have no account; intervening frames follow draft event order. `layout` is the draft's saved layout version. */
+export function eventFrameTag(events: Array<Pick<PostEvent, 'handle' | 'via'>>, index: number, height: number, layout?: number) {
   const event = events[index - 1]
-  return event?.handle ? footerTag(event.handle, height, footerHandle(event)) : null
+  return event?.handle ? footerTag(event.handle, height, footerHandle(event), layout) : null
 }
 
-/** Tag position: the centre of the card footer's text ("@handle" or "Vía @handle"), where html.ts's CARD puts it. */
-export function footerTag(handle: string, height: number, footerText = `@${handle}`): Slide['tag'] {
+/**
+ * Tag position: the centre of the card footer's text ("@handle" or "Vía @handle"), where html.ts's CARD puts it, or
+ * where the earlier frames had it when the draft has no layout version.
+ */
+export function footerTag(handle: string, height: number, footerText = `@${handle}`, layout?: number): Slide['tag'] {
+  if (layout === undefined) {
+    const { x, y } = LEGACY_LAYOUT.tag(height, footerText)
+    return { username: handle, x: Number(x.toFixed(3)), y: Number(y.toFixed(3)) }
+  }
   const { left, centerY, size } = CARD[height === FRAME.story.height ? 'story' : 'carousel'].footer
   const textWidth = footerText.length * size * 0.54
   return { username: handle, x: Number(((left + textWidth / 2) / 1080).toFixed(3)), y: Number((centerY / height).toFixed(3)) }

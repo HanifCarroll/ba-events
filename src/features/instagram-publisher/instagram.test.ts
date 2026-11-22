@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { FakeInstagram } from './fake-instagram.ts'
-import { CARD } from './html.ts'
+import { CARD, LAYOUT_VERSION } from './html.ts'
 import { InstagramError, emptyPublishState, footerTag, publish, type InstagramApi, type PublishDeps, type PublishJob, type PublishState } from './instagram.ts'
 
 const carousel: PublishJob = {
@@ -162,12 +162,18 @@ describe('story publishing', () => {
 
 describe('tag position', () => {
   it('points at the footer handle, on the card\'s solid panel', () => {
-    const tag = footerTag('salalucida', 1350)!
+    const tag = footerTag('salalucida', 1350, '@salalucida', LAYOUT_VERSION)!
     expect(tag.x).toBeGreaterThan(0.07)
     expect(tag.x).toBeLessThan(0.3)
     expect(tag.y).toBeCloseTo(CARD.carousel.footer.centerY / 1350, 3)
     expect(tag.y * 1350).toBeGreaterThan(CARD.carousel.seam)
-    expect(footerTag('salalucida', 1350, 'Vía @salalucida')!.x).toBeGreaterThan(tag.x)
+    expect(footerTag('salalucida', 1350, 'Vía @salalucida', LAYOUT_VERSION)!.x).toBeGreaterThan(tag.x)
+  })
+
+  it('keeps the earlier footer position for a draft rendered before layout versions', () => {
+    expect(footerTag('salalucida', 1350)).toEqual({ username: 'salalucida', x: 0.15, y: 0.933 })
+    expect(footerTag('salalucida', 1920)).toEqual({ username: 'salalucida', x: 0.15, y: 0.953 })
+    expect(footerTag('salalucida', 1350, '@salalucida', LAYOUT_VERSION)!.y).not.toBe(0.933)
   })
 })
 

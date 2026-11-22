@@ -2,7 +2,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { STEP_MS, openStoryTab, StoryCDPTimeout, type StoryCDP } from './story-cdp.ts'
 import { saveComposerEvidence } from './story-evidence.ts'
-import { exactMentionOption, retryComposerOnce, StoryComposerError, type ComposeStory, type StickerFrame } from './story-stickers.ts'
+import { exactMentionOption, retryComposerOnce, stickerMisplaced, StoryComposerError, type ComposeStory, type StickerFrame } from './story-stickers.ts'
 
 const COMPOSER_URL = new URL('https://business.facebook.com/latest/story_composer/?asset_id=1442212152312492&business_id=1500991868617721')
 const ACCOUNT = 'baeventos.app'
@@ -214,7 +214,12 @@ async function addLink(tab: StoryCDP, frame: StickerFrame) {
   if (await visible(tab, customText)) await fill(tab, customText, frame.text)
   await click(tab, at(button('Apply'), -1))
   await until(async () => !await visible(tab, linkUrl), STEP_MS, 100, 'the link form close')
-  await placeSticker(tab, sticker('^🔗\\s'), frame.centerY)
+  const item = sticker('^🔗\\s')
+  await placeSticker(tab, item, frame.centerY)
+  // Its real size is only known now. Over words or the reply bar it must not be shared: this error ends the composer
+  // before Share, and the draft goes out through Graph instead.
+  const misplaced = frame.band && stickerMisplaced(await boxOf(tab, item), await boxOf(tab, parent(item, 2)), frame.band)
+  if (misplaced) throw new Error(misplaced)
 }
 
 export async function selectMentionResult(tab: Pick<StoryCDP, 'evaluateExpression'>, username: string) {

@@ -1,10 +1,11 @@
-import { CARD, STICKER_Y } from './html.ts'
+import { CARD, LEGACY_LAYOUT, STICKER_BAND, STICKER_Y } from './html.ts'
 import { eventFrameTag, type InstagramApi } from './instagram.ts'
 import type { PostEvent } from './select.ts'
 
 const HOME_PAGE = 'https://baeventos.com'
 // Only count frames created close to the click, even if a later tick does the read.
 const SHARE_WINDOW_MS = 5 * 60_000
+/** The mention pill (at most 90 px tall) sits over the printed footer handle, centred on its row. */
 const MENTION_AT = { left: CARD.story.footer.left - 14, centerY: CARD.story.footer.centerY }
 
 export interface StickerFrame {
@@ -15,19 +16,44 @@ export interface StickerFrame {
   mention?: string
   /** Where the mention sticker goes: over the footer handle, clear of the link sticker. */
   mentionAt?: { left: number; centerY: number }
+  /** The band the placed link sticker must fit inside, top and bottom. Frames from before layout versions have none. */
+  band?: readonly [number, number]
 }
 
-export function stickerFrames(frames: string[], events: Array<Pick<PostEvent, 'id' | 'handle' | 'via'>>): StickerFrame[] {
+/** `layout` is the draft's saved layout version; a draft without one gets the positions its older frames were drawn for. */
+export function stickerFrames(frames: string[], events: Array<Pick<PostEvent, 'id' | 'handle' | 'via'>>, layout?: number): StickerFrame[] {
   if (events.length < 2 || events.length > 4 || frames.length !== events.length + 2) {
     throw new Error('The Hoy draft does not have a cover, one frame per event, and a closing frame.')
   }
   // The renderer saves the cover, the events in draft order, and the closing frame.
+  const legacy = layout === undefined
+  const y = legacy ? LEGACY_LAYOUT.sticker : STICKER_Y
+  const band = (kind: keyof typeof STICKER_BAND) => legacy ? {} : { band: STICKER_BAND[kind] }
   return frames.map((path, index) => {
-    if (index === 0) return { path, url: HOME_PAGE, text: 'Ver la agenda', centerY: STICKER_Y.cover }
-    if (index === frames.length - 1) return { path, url: HOME_PAGE, text: 'Buscar planes', centerY: STICKER_Y.closing }
-    const mention = eventFrameTag(events, index, 1920)?.username
-    return { path, url: `${HOME_PAGE}/events/${encodeURIComponent(events[index - 1]!.id)}`, text: 'Ver evento', centerY: STICKER_Y.event, mention, mentionAt: MENTION_AT }
+    if (index === 0) return { path, url: HOME_PAGE, text: 'Ver la agenda', centerY: y.cover, ...band('cover') }
+    if (index === frames.length - 1) return { path, url: HOME_PAGE, text: 'Buscar planes', centerY: y.closing, ...band('closing') }
+    const event = events[index - 1]!
+    const mention = eventFrameTag(events, index, 1920, layout)?.username
+    return {
+      path, url: `${HOME_PAGE}/events/${encodeURIComponent(event.id)}`, text: 'Ver evento', centerY: y.event, mention,
+      mentionAt: legacy ? LEGACY_LAYOUT.mention : MENTION_AT, ...band('event'),
+    }
   })
+}
+
+type Rect = { x: number; y: number; width: number; height: number }
+
+/**
+ * Why a placed link sticker can't be shared, or null when it lies wholly inside the frame's width and its free band.
+ * `box` and `stage` are in page pixels; the stage is the whole 1080 × 1920 frame.
+ */
+export function stickerMisplaced(box: Rect, stage: Rect, band: readonly [number, number]): string | null {
+  const px = stage.height / 1920
+  const [top, bottom] = [(box.y - stage.y) / px, (box.y + box.height - stage.y) / px]
+  const [left, right] = [(box.x - stage.x) / px, (box.x + box.width - stage.x) / px]
+  if (top < band[0] - 1 || bottom > band[1] + 1) return `The link sticker covers y ${Math.round(top)} to ${Math.round(bottom)}, outside its free band ${band[0]} to ${band[1]}.`
+  if (left < -1 || right > 1081) return `The link sticker runs off the frame (x ${Math.round(left)} to ${Math.round(right)}).`
+  return null
 }
 
 /** Each option displays the full username first and the display name on a separate line. */

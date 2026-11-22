@@ -155,6 +155,28 @@ describe('Reel rendering', () => {
     expect(existsSync(join(dir, 'out/project'))).toBe(false)
   })
 
+  it.skipIf(!ffmpeg)('fails the Reel when a card reported that it could not be laid out, even though a video was written', async () => {
+    const { spawnSync } = await import('node:child_process')
+    const { mkdirSync, existsSync } = await import('node:fs')
+    const dir = mkdtempSync(join(tmpdir(), 'reel-font-'))
+    const chrome = join(dir, 'chrome/linux-1/chrome-headless-shell-linux64')
+    mkdirSync(chrome, { recursive: true })
+    writeFileSync(join(chrome, 'chrome-headless-shell'), '')
+    const music = join(dir, 'tone.flac')
+    spawnSync(ffmpeg!, ['-v', 'error', '-f', 'lavfi', '-i', 'sine=f=220:d=40:r=48000', music])
+    const runner: Runner = async argv => {
+      if (argv.includes('render')) writeFileSync(argv[argv.indexOf('-o') + 1]!, 'video')
+      return { out: '', err: '[Browser:ERROR] BA_REEL_CARD_FAILED: e2: A font file did not load\nmore output', code: 0 }
+    }
+    process.env.BA_INSTAGRAM_RENDER_NO_SCOPE = '1'
+    try {
+      await expect(renderReel(window, events, timing, { ...track, path: music }, join(dir, 'out'), {}, runner, join(dir, 'chrome')))
+        .rejects.toThrow('Rendering the Reel failed: BA_REEL_CARD_FAILED: e2: A font file did not load')
+    } finally { delete process.env.BA_INSTAGRAM_RENDER_NO_SCOPE }
+    expect(existsSync(join(dir, 'out/reel.mp4'))).toBe(false)
+    expect(existsSync(join(dir, 'out/render.mp4'))).toBe(false)
+  }, 60_000)
+
   // The excerpt runs before the render and needs ffmpeg; runners without it skip this test.
   it.skipIf(!ffmpeg)('renders under the 1000 MB scope with one worker and stops the scope on failure', async () => {
     const { spawnSync } = await import('node:child_process')

@@ -120,15 +120,33 @@ describe('picking the mix', () => {
     expect(selectEvents([plain, flyer], 'finde', finde).map(p => p.id)).toEqual([flyer.id])
   })
 
-  it('builds the Reel from events with artwork only, unless fewer than four have any', () => {
+  it('picks the Reel like the carousel: flyer-less events and the only free event are never dropped', () => {
     const reel = runWindow('reel', '2026-11-20')
     const at = (hour: number) => ({ startsAt: `2026-11-22T${hour}:00:00.000Z` })
-    const flyers = Array.from({ length: 4 }, (_, i) => event({ ...at(20 + (i % 3)), imageUrl: `https://img.example/${i}.jpg` }))
-    const plain = Array.from({ length: 3 }, (_, i) => event({ ...at(20 + i), barrio: `Barrio ${i}`, categories: [`c${i}`] }))
-    expect(new Set(selectEvents([...plain, ...flyers], 'reel', reel).map(p => p.id))).toEqual(new Set(flyers.map(e => e.id)))
-    const few = selectEvents([...plain, ...flyers.slice(0, 3)], 'reel', reel)
-    expect(few).toHaveLength(6)
-    expect(few.filter(p => p.imageUrl)).toHaveLength(3)
+    const flyers = Array.from({ length: 4 }, (_, i) => event({ ...at(20 + (i % 3)), price: 5000, imageUrl: `https://img.example/${i}.jpg` }))
+    const plain = event({ ...at(21), price: 5000 })
+    const free = event({ ...at(22), isFree: true, price: 0 })
+    const picked = selectEvents([...flyers, plain, free], 'reel', reel)
+    expect(picked).toHaveLength(6)
+    expect(picked.map(p => p.id)).toContain(free.id)
+    expect(picked.filter(p => p.imageUrl)).toHaveLength(4)
+    expect(new Set(picked.map(p => p.id))).toEqual(new Set(selectEvents([...flyers, plain, free], 'finde', finde).map(p => p.id)))
+    // With more candidates than places, the ones with flyers still win the remaining places.
+    const more = Array.from({ length: 4 }, (_, i) => event({ ...at(20), barrio: `Barrio ${i}`, categories: [`c${i}`] }))
+    const crowded = selectEvents([...flyers, plain, free, ...more], 'reel', reel)
+    expect(crowded.map(p => p.id)).toContain(free.id)
+    expect(crowded.filter(p => p.imageUrl)).toHaveLength(4)
+  })
+
+  it('counts only an https address as artwork', () => {
+    const insecure = event({ imageUrl: 'http://img.example/a.jpg', barrio: 'Boedo', categories: ['x'] })
+    const relative = event({ imageUrl: '//img.example/a.jpg', barrio: 'Flores', categories: ['y'] })
+    const secure = Array.from({ length: 6 }, () => event({ imageUrl: ' https://img.example/b.jpg ', summary: null }))
+    const picked = selectEvents([insecure, relative, ...secure], 'finde', finde)
+    expect(picked.map(p => p.id).sort()).toEqual(secure.map(e => e.id).sort())
+    expect(picked[0]!.imageUrl).toBe('https://img.example/b.jpg')
+    expect(toPostEvent(insecure).imageUrl).toBeNull()
+    expect(toPostEvent(relative).imageUrl).toBeNull()
   })
 
   it('honors excluded ids and lists the picks by start time', () => {

@@ -1,6 +1,7 @@
 /**
- * Each event's flyer, downloaded and prepared before a render: https only, 10 s, at most 15 MB, and it must decode as
- * an image. Any failure leaves that event without artwork (it gets the no-flyer card) and is logged; nothing here throws.
+ * Each event's flyer, downloaded and prepared before a render: https only (redirects too, at most three), 10 s for the
+ * whole download, at most 15 MB, and it must decode as an image. A flyer that fails leaves its event without artwork
+ * (it gets the no-flyer card) and is logged. Only a broken setup throws: no `sharp`, or a directory that can't be made.
  */
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -19,26 +20,48 @@ const LONG_SIDE = 1280
 const MIN_SIDE = 200
 const FORMATS = ['jpeg', 'png', 'webp', 'gif', 'heif']
 
+const MAX_REDIRECTS = 3
+const isHttps = (url: string) => URL.canParse(url) && new URL(url).protocol === 'https:'
+
+/** Redirects are followed by hand, so every hop is checked before it is requested. One timeout covers the whole chain. */
 async function download(url: string, fetchImpl: typeof fetch): Promise<Buffer> {
-  if (!URL.canParse(url) || new URL(url).protocol !== 'https:') throw new Error('not an https URL')
-  const response = await fetchImpl(url, { signal: AbortSignal.timeout(TIMEOUT_MS) })
-  if (!response.ok) throw new Error(`HTTP ${response.status}`)
-  if (response.url && new URL(response.url).protocol !== 'https:') throw new Error('redirected off https')
-  if (Number(response.headers.get('content-length')) > MAX_BYTES) throw new Error('larger than 15 MB')
+  if (!isHttps(url)) throw new Error('not an https URL')
+  const signal = AbortSignal.timeout(TIMEOUT_MS)
+  let response = await fetchImpl(url, { signal, redirect: 'manual' })
+  // A response we stop reading is cancelled, so its connection isn't left open.
+  const reject = async (why: string): Promise<never> => { await response.body?.cancel().catch(() => undefined); throw new Error(why) }
+  for (let hops = 0; response.status >= 300 && response.status < 400; hops++) {
+    const location = response.headers.get('location')
+    if (!location) return reject(`HTTP ${response.status} without a Location`)
+    if (hops === MAX_REDIRECTS) return reject(`more than ${MAX_REDIRECTS} redirects`)
+    const next = URL.canParse(location, url) ? new URL(location, url).href : ''
+    if (!isHttps(next)) return reject('redirected off https')
+    await response.body?.cancel().catch(() => undefined)
+    url = next
+    response = await fetchImpl(url, { signal, redirect: 'manual' })
+  }
+  if (!response.ok) return reject(`HTTP ${response.status}`)
+  if (Number(response.headers.get('content-length')) > MAX_BYTES) return reject('larger than 15 MB')
   const chunks: Uint8Array[] = []
   let total = 0
   for await (const chunk of response.body ?? []) {
     total += chunk.byteLength
+    // Leaving the loop by throwing cancels the rest of the body.
     if (total > MAX_BYTES) throw new Error('larger than 15 MB')
     chunks.push(chunk)
   }
   return Buffer.concat(chunks)
 }
 
+export async function loadSharp(load: () => Promise<typeof import('sharp')> = () => import('sharp')) {
+  try { return (await load()).default }
+  catch (error) { throw new Error(`The image library sharp did not load (${error instanceof Error ? error.message : String(error)}). Run \`bun install\` in the ba-events checkout.`) }
+}
+
 export async function fetchArtwork(events: Array<Pick<PostEvent, 'id' | 'title' | 'imageUrl'>>, dir: string, log: (message: string) => void, fetchImpl: typeof fetch = fetch): Promise<Artwork> {
+  const sharp = await loadSharp()
   rmSync(dir, { recursive: true, force: true })
   mkdirSync(dir, { recursive: true })
-  const { default: sharp } = await import('sharp')
   sharp.cache(false)
   sharp.concurrency(1)
   const artwork: Artwork = {}

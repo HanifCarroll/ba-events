@@ -99,7 +99,7 @@ export function toPostEvent(event: CatalogEvent): PostEvent {
     barrio: event.barrio!,
     price: priceLabel(event),
     handle,
-    imageUrl: event.imageUrl?.trim() || null,
+    imageUrl: artworkUrl(event),
     via: handle !== null && handle !== venueHandle && !accountIsVenue(handle, venue),
   }
 }
@@ -109,22 +109,25 @@ const venueKey = (event: CatalogEvent) => normalize(event.venue!)
 /**
  * Greedy pick, deterministic: one event per venue; a free event first when the format wants one; then whichever
  * candidate has artwork, then adds the most variety (new barrio, new category) and has a description line, earliest
- * start on ties. An event without artwork is still picked when no other candidate is left. The Reel picks only among
- * events with artwork, unless fewer than its minimum have any. The post lists the picks in start order.
+ * start on ties. An event without artwork is still picked when no other candidate is left, and it is the free pick when
+ * it is the only free event. The Reel picks the same way, so it never drops a qualifying event for lacking a flyer.
+ * The post lists the picks in start order.
  */
 export function selectEvents(events: CatalogEvent[], format: FormatKey, window: RunWindow, exclude: readonly string[] = []): PostEvent[] {
   const spec = FORMATS[format]
   const qualifying = events
     .filter(event => !exclude.includes(event.id) && qualifies(event, format, window))
     .sort((a, b) => a.startsAt.localeCompare(b.startsAt) || a.id.localeCompare(b.id))
-  if (format === 'reel') {
-    const withArt = pick(qualifying.filter(hasArtwork), spec)
-    return (withArt.length >= spec.min ? withArt : pick(qualifying, spec)).map(toPostEvent)
-  }
   return pick(qualifying, spec).map(toPostEvent)
 }
 
-const hasArtwork = (event: CatalogEvent) => Boolean(event.imageUrl?.trim())
+/** The event's artwork address when it is an https URL, the only kind the renderer downloads. */
+export function artworkUrl(event: Pick<CatalogEvent, 'imageUrl'>): string | null {
+  const url = event.imageUrl?.trim()
+  return url && URL.canParse(url) && new URL(url).protocol === 'https:' ? url : null
+}
+
+const hasArtwork = (event: CatalogEvent) => artworkUrl(event) !== null
 
 function pick(pool: CatalogEvent[], spec: FormatSpec): CatalogEvent[] {
   const picked: CatalogEvent[] = []

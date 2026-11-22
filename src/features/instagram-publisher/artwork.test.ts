@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import sharp from 'sharp'
 import { describe, expect, it } from 'vitest'
-import { fetchArtwork } from './artwork.ts'
+import { fetchArtwork, loadSharp } from './artwork.ts'
 
 const image = (width: number, height: number, format: 'jpeg' | 'png' | 'webp' = 'jpeg') =>
   sharp({ create: { width, height, channels: 3, background: '#ff1fa0' } })[format]().toBuffer()
@@ -61,6 +61,64 @@ describe('fetching artwork', () => {
       expect(logs.find(line => line.includes(`artwork: ${id} `)), id).toContain(why)
     }
     expect(logs.find(line => line.includes('artwork: page '))).toContain('using the no-flyer card')
+  })
+
+  describe('redirects', () => {
+    const hop = (location: string | null, cancelled?: string[], name = '') => new Response(
+      new ReadableStream({ start(controller) { controller.enqueue(new Uint8Array(8)) }, cancel() { cancelled?.push(name) } }),
+      { status: 302, headers: location ? { location } : {} })
+    const run = async (routes: Record<string, () => Response>) => {
+      const asked: Array<{ url: string; redirect?: string; signal?: AbortSignal | null }> = []
+      const logs: string[] = []
+      const fake = (async (url: string, init?: RequestInit) => { asked.push({ url, redirect: init?.redirect, signal: init?.signal }); return routes[url]!() }) as unknown as typeof fetch
+      const art = await fetchArtwork([event('a', 'https://img.example/start.jpg')], dir(), m => logs.push(m), fake)
+      return { art, asked, logs }
+    }
+
+    it('follows up to three https hops by hand, under one timeout, cancelling each redirect body', async () => {
+      const good = await image(800, 1000)
+      const cancelled: string[] = []
+      const { art, asked, logs } = await run({
+        'https://img.example/start.jpg': () => hop('/two.jpg', cancelled, 'one'),
+        'https://img.example/two.jpg': () => hop('https://cdn.example/three.jpg', cancelled, 'two'),
+        'https://cdn.example/three.jpg': () => hop('https://cdn.example/final.jpg', cancelled, 'three'),
+        'https://cdn.example/final.jpg': () => ok(good),
+      })
+      expect(logs).toEqual([])
+      expect(art.a).toMatchObject({ width: 800, height: 1000 })
+      expect(asked.map(request => request.url)).toEqual(['https://img.example/start.jpg', 'https://img.example/two.jpg', 'https://cdn.example/three.jpg', 'https://cdn.example/final.jpg'])
+      expect(asked.every(request => request.redirect === 'manual')).toBe(true)
+      expect(new Set(asked.map(request => request.signal)).size).toBe(1)
+      expect(asked[0]!.signal).toBeInstanceOf(AbortSignal)
+      expect(cancelled).toEqual(['one', 'two', 'three'])
+    })
+
+    it('never requests a hop that leaves https, and cancels the response that pointed there', async () => {
+      const cancelled: string[] = []
+      const { art, asked, logs } = await run({ 'https://img.example/start.jpg': () => hop('http://img.example/plain.jpg', cancelled, 'one') })
+      expect(art).toEqual({})
+      expect(asked).toHaveLength(1)
+      expect(logs[0]).toContain('redirected off https')
+      expect(cancelled).toEqual(['one'])
+    })
+
+    it('stops at a fourth redirect, a redirect without a Location, and an error status', async () => {
+      const cancelled: string[] = []
+      const loop = await run({ 'https://img.example/start.jpg': () => hop('https://img.example/start.jpg', cancelled, 'loop') })
+      expect(loop.asked).toHaveLength(4)
+      expect(loop.logs[0]).toContain('more than 3 redirects')
+      expect(cancelled).toHaveLength(4)
+      expect((await run({ 'https://img.example/start.jpg': () => hop(null) })).logs[0]).toContain('HTTP 302 without a Location')
+      const gone: string[] = []
+      const missing = await run({ 'https://img.example/start.jpg': () => new Response(new ReadableStream({ cancel() { gone.push('body') } }), { status: 404 }) })
+      expect(missing.logs[0]).toContain('HTTP 404')
+      expect(gone).toEqual(['body'])
+    })
+  })
+
+  it('fails with a message naming `bun install` when sharp is missing', async () => {
+    await expect(loadSharp(async () => { throw new Error("Cannot find package 'sharp'") })).rejects.toThrow(/sharp did not load \(Cannot find package 'sharp'\)\. Run `bun install`/)
+    expect(typeof (await loadSharp())).toBe('function')
   })
 
   it('empties its directory first, so an earlier render\'s flyers never leak into this one', async () => {

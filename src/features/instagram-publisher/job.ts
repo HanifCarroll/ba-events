@@ -12,7 +12,7 @@ import * as alerts from './alerts.ts'
 import { fetchArtwork, type Artwork } from './artwork.ts'
 import { caption as captionFor, footerHandle, heldText, postedText, skippedMentionsText, skipText, slackPreview, tooFewText, type SkipReason } from './copy.ts'
 import { FORMATS, activeRuns, draftId, parseDraftId, runWindow, type FormatKey, type RunWindow } from './formats.ts'
-import { FRAME, framesHtml } from './html.ts'
+import { FRAME, LAYOUT_VERSION, framesHtml } from './html.ts'
 import { PROFILE_URL, StillProcessing, emptyPublishState, eventFrameTag, instagramApi, publish, type InstagramApi, type PublishJob, type PublishState, type Slide } from './instagram.ts'
 import { nextTrack, readTracks, readyTrack, type DraftTrack, type ReadyTrack } from './reel/music.ts'
 import { reelTiming, type ReelTiming } from './reel/project.ts'
@@ -30,6 +30,11 @@ export interface Draft {
   to: string
   /** Bumped by every regenerate; frames live in their own rev-<n> directory and approval belongs to one revision. */
   revision: number
+  /**
+   * The layout version (html.ts) this revision's frames were rendered with: where its stickers, mention, and tags go.
+   * A draft built before layout versions has none and keeps the earlier positions. Frames are never re-rendered in place.
+   */
+  layout?: number
   state: DraftState
   exclude: string[]
   events: PostEvent[]
@@ -64,7 +69,7 @@ export interface Services {
   config(): Config
   readCatalog(window: RunWindow): Promise<CatalogEvent[]>
   readEvents(ids: string[]): Promise<Map<string, EventNow>>
-  /** Download and prepare the events' flyers into `dir`. Never throws: an event whose flyer fails is left out. */
+  /** Download and prepare the events' flyers into `dir`. An event whose flyer fails is left out; only a broken setup (no `sharp`) throws. */
   artwork(events: PostEvent[], dir: string): Promise<Artwork>
   render(html: string, outDir: string, height: number): Promise<string[]>
   /** Returns [reel.mp4, cover.jpg]. */
@@ -180,7 +185,7 @@ export class Job {
     const dir = join(this.framesDir(id), `rev-${revision}`)
     const built = await this.build(format, from, exclude, dir, format === 'reel' ? trackId ?? this.chooseTrack() : null)
     const draft: Draft = {
-      id, format, from, to: built.window.to, revision, state: 'previewing', exclude, events: built.events, caption: built.caption, track: built.track,
+      id, format, from, to: built.window.to, revision, layout: LAYOUT_VERSION, state: 'previewing', exclude, events: built.events, caption: built.caption, track: built.track,
       frames: built.frames ?? [], framesHash: built.frames ? runtime.fileHash(built.frames) : '', slack: { fileIds: [], ts: null },
       approvedSeenAt: null, r2Uploaded: null, publish: null, publishFailures: 0, notify: null, skipReason: null, note: null, updatedAt: '',
     }
@@ -235,7 +240,7 @@ export class Job {
     const draft = this.loadDraft(id)
     if (!draft || draft.format !== 'hoy') throw new Error(`No Hoy draft ${id}; see \`status\``)
     this.verifyFrames(draft)
-    return this.s.composeStory(stickerFrames(draft.frames, draft.events), { previewDir: outDir })
+    return this.s.composeStory(stickerFrames(draft.frames, draft.events, draft.layout), { previewDir: outDir })
   }
 
   // Outcomes and notifications
@@ -366,7 +371,7 @@ export class Job {
     if (draft.format === 'hoy' && config.linkStickers.hoy && !draft.publish && !draft.stickerFallback) {
       await beforeWrite()
       this.verifyFrames(draft)
-      const frames = stickerFrames(draft.frames, draft.events)
+      const frames = stickerFrames(draft.frames, draft.events, draft.layout)
       try {
         await this.s.composeStory(frames, { evidenceDir: this.framesDir(draft.id), beforeShare: async (signal, skippedMentions) => {
           const api = this.s.instagram(token.token.access_token)
@@ -407,7 +412,7 @@ export class Job {
       job = { kind, igUserId: token.token.ig_user_id, slides: [], caption: draft.caption, video: { url: url('reel.mp4'), coverUrl: url('cover.jpg') } }
     } else {
       const height = FRAME[kind].height
-      const slides: Slide[] = draft.frames.map((_, index) => ({ url: url(names[index]!), tag: eventFrameTag(draft.events, index, height) }))
+      const slides: Slide[] = draft.frames.map((_, index) => ({ url: url(names[index]!), tag: eventFrameTag(draft.events, index, height, draft.layout) }))
       job = { kind, igUserId: token.token.ig_user_id, slides, caption: draft.caption }
     }
     draft.publish ??= emptyPublishState(job)

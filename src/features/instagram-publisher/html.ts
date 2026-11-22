@@ -18,7 +18,22 @@ export const STORY_SAFE = { top: 250, bottom: 1670 } as const
  */
 export const CARD = {
   carousel: { seam: 820, footer: { left: 80, centerY: 1296, size: 34 } },
-  story: { seam: 920, bottom: 1484, footer: { left: 80, centerY: 1440, size: 36 } },
+  // The footer row is 40 px tall, `gap` px under the barrio row, so the 90 px mention pill over it touches neither.
+  story: { seam: 920, bottom: 1484, footer: { left: 80, centerY: 1440, size: 36, floor: 32, gap: 30, width: 620 } },
+} as const
+
+/**
+ * Bumped whenever a sticker, tag, or footer position moves. Each draft saves the version its frames were rendered
+ * with, and publishing uses that version's coordinates; a draft from before versions existed has none (LEGACY_LAYOUT).
+ */
+export const LAYOUT_VERSION = 2
+
+/** The positions the frames had before the flyer-led redesign, for drafts rendered then and published after it. */
+export const LEGACY_LAYOUT = {
+  sticker: { cover: 1440, event: 1440, closing: 1390 },
+  mention: { left: 66, centerY: 1618 },
+  /** The footer handle: 28 px DM Sans at left 80, 72 px from the bottom. */
+  tag: (height: number, text: string) => ({ x: (80 + text.length * 15 / 2) / 1080, y: (height - 72 - 18) / height }),
 } as const
 
 /**
@@ -26,6 +41,13 @@ export const CARD = {
  * headline box on the cover, under the footer on an event frame, and between the body and the footer on the closing frame.
  */
 export const STICKER_Y = { cover: 1440, event: 1590, closing: 1390 } as const
+
+/** The band each link sticker must stay inside, top and bottom: no words are in it, and it ends above the reply bar. */
+export const STICKER_BAND = {
+  cover: [STICKER_Y.cover - 104, 1596],
+  event: [CARD.story.bottom, STORY_SAFE.bottom],
+  closing: [1100, 1596],
+} as const
 
 export interface Assets { fontsDir: string; logo: string }
 
@@ -50,7 +72,8 @@ body{width:1080px;background:#000}
 .stack .hbox{padding:20px 26px 26px}
 .spanel{position:absolute;left:40px;right:40px;bottom:${FRAME.story.height - CARD.story.bottom}px;background:${INK};border-radius:24px;padding:24px 40px}
 .spanel .venue{margin-top:26px}
-.frow{display:flex;justify-content:space-between;color:${SOFT};white-space:nowrap;margin-top:12px;font-size:${CARD.story.footer.size}px;line-height:40px}
+.frow{display:flex;justify-content:space-between;color:${SOFT};white-space:nowrap;margin-top:${CARD.story.footer.gap}px;font-size:${CARD.story.footer.size}px;line-height:40px}
+.frow .one{max-width:${CARD.story.footer.width}px}
 .shade{position:absolute;left:0;right:0;top:0;height:420px;background:linear-gradient(180deg,rgba(16,16,18,.8) 0,rgba(16,16,18,.8) 250px,rgba(16,16,18,0) 100%)}
 .fade{position:absolute;left:0;right:0;bottom:0;background:linear-gradient(180deg,rgba(16,16,18,0) 0,rgba(16,16,18,.84) 300px)}
 `
@@ -91,7 +114,7 @@ ${logoImg(layout.logo, 72, top, 48)}
 ${event.description ? `<div class="desc clamp" data-role="desc" style="font-size:38px">${esc(event.description)}</div>` : ''}
 <div class="venue one" data-role="venue" data-fit-width="46,34">${esc(event.venue)}</div>
 <div class="meta" style="min-height:62px"><span class="barrio one" data-role="barrio" style="font-size:40px">${esc(event.barrio)}</span>${pricePill(event, 40)}</div>
-<div class="frow" data-role="foot"><span>${esc(footerHandle(event))}</span><span>${SITE}</span></div>
+<div class="frow" data-role="foot"><span class="one" data-handle data-fit-width="${CARD.story.footer.size},${CARD.story.footer.floor},${CARD.story.footer.width}">${esc(footerHandle(event))}</span><span>${SITE}</span></div>
 </div>
 </div>`
 }
@@ -154,7 +177,7 @@ ${logo}
 function storyFrames(format: FormatKey, c: Cover, events: PostEvent[], artwork: Artwork, layout: Layout): string {
   const arts = artOf(events, artwork)
   const logo = logoImg(layout.logo, 72, STORY_SAFE.top + 8, 56)
-  const site = (text: string) => `<div class="foot" data-role="foot" style="top:1596px;font-size:40px;font-weight:600;line-height:1.2;color:${PAPER}"><span>${esc(text)}</span></div>`
+  const site = (text: string) => `<div class="foot" data-role="foot" style="top:${STICKER_BAND.cover[1]}px;font-size:40px;font-weight:600;line-height:1.2;color:${PAPER}"><span>${esc(text)}</span></div>`
   // Tonight's flyers fill the frame: the grid on top, then a row of them again that darkens behind the headline box and
   // on down, so the footer reads and the link sticker sits on flyers, not on a flat ground.
   const coverHtml = `<div class="s" data-frame="cover" style="height:${layout.height}px">

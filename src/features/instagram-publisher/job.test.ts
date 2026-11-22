@@ -8,10 +8,11 @@ import { HANIF } from './approval.ts'
 import { FakeInstagram } from './fake-instagram.ts'
 import { baInstant } from './format.ts'
 import type { RunWindow } from './formats.ts'
+import { LAYOUT_VERSION } from './html.ts'
 import { Job, type Draft, type Services } from './job.ts'
 import type { Config } from './runtime.ts'
 import type { CatalogEvent } from './select.ts'
-import { StoryComposerError, type ComposeStory } from './story-stickers.ts'
+import { StoryComposerError, type ComposeStory, type StickerFrame } from './story-stickers.ts'
 
 /** A music directory with three synthetic tracks (the files only need to exist; the fake render never reads them). */
 function musicDir(tracks = [{ id: 'a', bpm: 90, startSec: 1 }, { id: 'b', bpm: 120, startSec: 2 }, { id: 'c', bpm: 100, startSec: 0 }]) {
@@ -703,6 +704,58 @@ describe('Hoy link stickers', () => {
     await advance()
     expect(load().storyShare).toBeUndefined()
     expect(w.ig.published).toHaveLength(4)
+  })
+
+  it('saves the layout version on a new draft and places its stickers and tags by it', async () => {
+    const { w, load, advance } = await hoy()
+    expect(load().layout).toBe(LAYOUT_VERSION)
+    let centers: number[] = []
+    w.composeStory = async frames => { centers = frames.map(frame => frame.centerY); throw new StoryComposerError('place the link sticker') }
+    await advance()
+    expect(centers).toEqual([1440, 1590, 1590, 1390])
+  })
+
+  it('keeps the old sticker, mention, and tag positions for a Hoy draft rendered before layout versions', async () => {
+    const { w, load, advance } = await hoy()
+    const { layout: _layout, ...unversioned } = load()
+    writeFileSync(w.job().draftFile(unversioned.id), JSON.stringify(unversioned))
+    const hash = load().framesHash
+    let seen: StickerFrame[] = []
+    w.composeStory = async frames => { seen = frames; return [] }
+    expect(await w.job().previewStickers(unversioned.id, '/test/previews')).toEqual([])
+    expect(seen.map(frame => frame.centerY)).toEqual([1440, 1440, 1440, 1390])
+    expect(seen[1]!.mentionAt).toEqual({ left: 66, centerY: 1618 })
+    expect(seen.every(frame => frame.band === undefined)).toBe(true)
+    // The live Business Suite route uses the same positions, on the frames that were approved: nothing is re-rendered.
+    const renders = w.renderCount
+    seen = []
+    w.composeStory = async frames => { seen = frames; throw new StoryComposerError('open the Business Suite story composer') }
+    await advance()
+    expect(seen.map(frame => frame.centerY)).toEqual([1440, 1440, 1440, 1390])
+    expect(w.renderCount).toBe(renders)
+    expect(load().framesHash).toBe(hash)
+    expect(load().layout).toBeUndefined()
+    expect(load().state).toBe('published')
+  })
+
+  it('tags an unversioned carousel at its old footer position, and a new one at the new position', async () => {
+    const tags = async (versioned: boolean) => {
+      const w = await previewed()
+      if (!versioned) {
+        const { layout: _layout, ...old } = w.draft()
+        writeFileSync(w.job().draftFile(old.id), JSON.stringify(old))
+      }
+      w.approve()
+      w.at('2026-11-19', 12)
+      await w.job().tick()
+      expect(w.draft().state).toBe('published')
+      const tagged = [...w.ig.containers.values()].flatMap(container => container.params.user_tags ? [JSON.parse(container.params.user_tags)[0]] : [])
+      return tagged[0] as { username: string; x: number; y: number }
+    }
+    expect(await tags(false)).toEqual({ username: 'sala1', x: 0.116, y: 0.933 }) // 28 px text at left 80, 90 px above the bottom
+    const now = await tags(true)
+    expect(now.username).toBe('sala1')
+    expect(now.y).toBe(0.96)
   })
 
   it('uses a preview-only action for the dry run and leaves state untouched', async () => {

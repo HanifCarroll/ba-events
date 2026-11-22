@@ -113,7 +113,7 @@ Each event line reads "{Weekday} {d}, {time}. {Title} en @{handle}, {Barrio}." T
 
 ## 4. Este finde Reel (a Reel every Friday, 1080 × 1920 video)
 
-The Reel shows the same events as that weekend's Este finde carousel, leaving out events without artwork when at least four have it.
+The Reel shows the same events as that weekend's Este finde carousel.
 
 **Cover card**
 - Kicker: "{date range Friday to Sunday}"

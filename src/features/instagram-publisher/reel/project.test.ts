@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest'
 import { runWindow } from '../formats.ts'
 import type { PostEvent } from '../select.ts'
-import { holdFor, reelProject, reelTiming } from './project.ts'
+import { REEL_FAILURE, holdFor, reelProject, reelTiming } from './project.ts'
 
 const event = (n: number, title: string, price: string | null = null): PostEvent =>
   ({ id: `e${n}`, date: '2026-11-21', startsAt: '', title, time: '21:00', description: 'Ignored on the Reel.', venue: `Sala ${n}`, barrio: 'Boedo', price, handle: `sala${n}`, imageUrl: null, via: false })
@@ -76,6 +76,16 @@ describe('Reel project', () => {
     expect(files['compositions/cover.html']!.match(/assets\/art\/art-2\.jpg/g)).toHaveLength(1)
     expect(files['compositions/cover.html']).toContain('class="fill" src="assets/art/art-2-bg.jpg"')
     expect(files['compositions/closing.html']).toContain('assets/art/art-2.jpg')
+  })
+
+  it('registers a timeline and reports the failure when a card\'s fonts don\'t load, so the render never hangs', () => {
+    const files = reelProject(window, six, reelTiming(window, six, 120))
+    for (const id of ['cover', 'e1', 'e6', 'closing']) {
+      const html = files[`compositions/${id}.html`]!
+      const [, failed] = html.split('}).catch(function (error) {')
+      expect(failed, id).toContain(`window.__timelines["${id}"] = gsap.timeline({ paused: true });`)
+      expect(failed, id).toContain(`console.error("${REEL_FAILURE}: ${id}: "`)
+    }
   })
 
   it('moves only the flyer during the hold: a slow zoom, with every word landed within 0.5 s of the cut', () => {

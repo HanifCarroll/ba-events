@@ -11,7 +11,7 @@ import type { Artwork } from './artwork.ts'
 import { addDays } from './format.ts'
 import type { FormatKey, RunWindow } from './formats.ts'
 import { writeExcerpt, type ReadyTrack } from './reel/music.ts'
-import { reelProject, type ReelTiming } from './reel/project.ts'
+import { REEL_FAILURE, reelProject, type ReelTiming } from './reel/project.ts'
 import type { CatalogEvent, PostEvent } from './select.ts'
 
 const HOME = homedir()
@@ -330,6 +330,9 @@ export async function renderReel(window: RunWindow, events: PostEvent[], timing:
       throw Object.assign(new Error(`Rendering the Reel failed (${result.code === null ? 'timed out' : `exit ${result.code}`}): ${(result.err || result.out).trim().slice(-500)}`),
         { availableMemoryMb: memory })
     }
+    // HyperFrames still writes a video when a card reported that it couldn't be laid out; that video must not go out.
+    const failure = new RegExp(`${REEL_FAILURE}: [^\\n]*`).exec(`${result.out}\n${result.err}`)
+    if (failure) throw new Error(`Rendering the Reel failed: ${failure[0].trim().slice(0, 300)}`)
     const video = join(outDir, 'reel.mp4')
     const cover = join(outDir, 'cover.jpg')
     const remux = await media(['ffmpeg', '-v', 'error', '-y', '-i', raw, '-c', 'copy', '-movflags', '+faststart', video])
