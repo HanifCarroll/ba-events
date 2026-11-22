@@ -62,7 +62,8 @@ describe('Reel project', () => {
     const artwork = { e2: { file: 'assets/art/art-2.jpg', backdrop: 'assets/art/art-2-bg.jpg', width: 1080, height: 1920 } }
     const files = reelProject(window, six, reelTiming(window, six, 120), artwork)
     const flyer = files['compositions/e2.html']!
-    expect(flyer).toContain('data-flyer src="assets/art/art-2.jpg"')
+    expect(flyer).toMatch(/data-flyer data-ratio="1080,1920" data-boxes="[\d,;]+" src="assets\/art\/art-2\.jpg"/)
+    expect(flyer).toContain('id="e2-zone" class="zone" style="height:1920px" data-until="e2-panel"') // the blur fills the frame
     expect(flyer).toContain('class="fill" src="assets/art/art-2-bg.jpg"')
     // 9:16 inside the tall box: the whole flyer, never cropped.
     const [, w, h] = /data-flyer[^>]*width:(\d+)px;height:(\d+)px/.exec(flyer)!
@@ -73,6 +74,7 @@ describe('Reel project', () => {
     expect(tile.match(/Muestra anual del Taller de Arte Daniela Lucero: 10 años/g)).toHaveLength(2) // the tile and the panel
     // The cover and the closing card use only the events that have artwork.
     expect(files['compositions/cover.html']!.match(/assets\/art\/art-2\.jpg/g)).toHaveLength(1)
+    expect(files['compositions/cover.html']).toContain('class="fill" src="assets/art/art-2-bg.jpg"')
     expect(files['compositions/closing.html']).toContain('assets/art/art-2.jpg')
   })
 
@@ -86,6 +88,7 @@ describe('Reel project', () => {
     expect(files['compositions/e1.html']).not.toContain('-fly"')
     const entrances = Array.from(card.matchAll(/tl\.fromTo\("#e2-(kicker|title|venue|meta|pill|zone)", .*?, (?:LAND|\{[^}]*duration: ([\d.]+)[^}]*\}), ([\d.]+)\);/g))
     expect(entrances.map(([, id]) => id)).toEqual(['zone', 'kicker', 'title', 'venue', 'meta'])
+    expect(card).toContain('tl.fromTo("#e2-panel", { opacity: 0 }, { opacity: 1, duration: 0.2, ease: "power2.out" }, 0);')
     for (const [, , duration, at] of entrances) expect(Number(at) + Number(duration ?? 0.32)).toBeLessThanOrEqual(0.5)
     // The cover is the thumbnail: nothing enters, it only leaves.
     expect(files['compositions/cover.html']!.match(/tl\.fromTo/g)).toHaveLength(1)

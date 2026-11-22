@@ -4,12 +4,13 @@
  *
  * Timing: every card holds still for H = max(3.0 s, 0.35 s × W, C / 17) after its 0.5 s entrance and before its 0.2 s
  * exit, rounded up to a whole beat of the track, so every cut lands on a beat. Titles are fitted in the page after the
- * fonts load and before the timeline is built. During the hold only the flyer moves (a slow 4% zoom); the text is still.
+ * fonts load and before the timeline is built, and the flyer is sized into the space the words leave. During the hold
+ * only the flyer moves (a slow 4% zoom); the text is still.
  */
 import type { Artwork } from '../artwork.ts'
 import { REEL_CLOSING, cardKicker, cover } from '../copy.ts'
 import type { RunWindow } from '../formats.ts'
-import { CORAL, FIT_JS, INK, LIME, LOOK_CSS, PAPER, SOFT, artOf, collage, esc, flyerZone, fontFaces, logoImg, mosaic } from '../look.ts'
+import { CORAL, FIT_JS, INK, LIME, LOOK_CSS, PAPER, SOFT, artOf, backdrop, collage, esc, flyerZone, fontFaces, logoImg, mosaic } from '../look.ts'
 import type { PostEvent } from '../select.ts'
 
 export const FPS = 30
@@ -70,10 +71,13 @@ export function reelTiming(window: RunWindow, events: PostEvent[], bpm: number):
 
 /**
  * Instagram's Reel chrome covers the right edge and the lower third, so the words stay in x 80–916 and y 226–1330 (the
- * band the approved v3 used). A card's panel starts at SEAM; the flyer sits above it, inside the band.
+ * band the approved v3 used). A card's panel is only as tall as its words and ends just under the band; it never
+ * starts above SEAM. The flyer takes the space above it, and its blur fills the frame, under and below the panel too.
  */
 const BAND = { left: 80, width: 836, top: 226, bottom: 1330 } as const
-const SEAM = 930
+const SEAM = 960
+const PANEL_PAD = 24
+const GAP = 26
 const ZOOM = 1.04
 
 const CSS = `
@@ -84,12 +88,13 @@ ${LOOK_CSS}
 .bg{position:absolute;inset:0;background:${INK}}
 .stage{position:absolute;inset:0}
 .out{position:absolute;inset:0}
-.panel{position:absolute;left:0;top:${SEAM}px;width:1080px;bottom:0;background:${INK}}
+.panel{position:absolute;left:40px;right:40px;bottom:${1920 - BAND.bottom - PANEL_PAD}px;background:${INK};border-radius:24px;padding:22px 40px ${PANEL_PAD}px}
+.panel>div{width:${BAND.width}px}
 .text{position:absolute;left:${BAND.left}px;width:${BAND.width}px}
 .kicker{color:${LIME};font-size:44px;font-weight:700;line-height:1.1;letter-spacing:.06em;text-transform:uppercase}
-.title{line-height:1.06;overflow-wrap:anywhere;margin-top:12px}
-.venue-name{font-weight:600;line-height:1.15}
-.meta{display:flex;align-items:center;gap:24px;margin-top:10px;min-height:62px}
+.title{line-height:1.06;overflow-wrap:anywhere;margin-top:8px}
+.venue-name{font-weight:600;line-height:1.15;margin-top:18px}
+.meta{display:flex;align-items:center;gap:24px;margin-top:6px;min-height:62px}
 .barrio{color:${SOFT};font-size:42px;line-height:1.2;min-width:0}
 .pill{font-size:40px;padding:9px 24px}
 .stack{position:absolute;left:${BAND.left - 20}px;width:${BAND.width + 20}px;display:flex;flex-direction:column;align-items:flex-start}
@@ -115,7 +120,7 @@ ${body}
   (function () {${HELPERS}
     var root = document.querySelector('[data-composition-id="${id}"]');
     fontsLoaded(root).then(function () {
-      fitText(root);
+      layout(root);
       var tl = gsap.timeline({ paused: true });
 ${script}
       window.__timelines["${id}"] = tl;
@@ -126,6 +131,8 @@ ${script}
 `
 
 const LOGO = logoImg('assets/logo.svg', BAND.left - 8, BAND.top, 56)
+/** Smaller on an event card, so the flyer starts sooner under it and a tall flyer fits beside it. */
+const CARD_LOGO = logoImg('assets/logo.svg', 64, BAND.top, 44)
 
 /**
  * index.html and compositions/<id>.html. The project also needs assets/ (fonts, the logo, gsap, the flyers `artwork`
@@ -143,7 +150,8 @@ export function reelProject(window: RunWindow, events: PostEvent[], timing: Reel
     <div class="bg"></div>
     <div id="cover-stage" class="stage clip" data-start="0" data-duration="${D}">
       <div id="cover-out" class="out">
-        ${collage(arts, { x: 70, y: 330, w: 940, h: 560 }, 0.46)}
+        ${backdrop(arts)}
+        ${collage(arts, { x: 40, y: 300, w: 1000, h: 650 }, 0.52)}
         ${LOGO}
         <div class="stack" style="bottom:${1920 - BAND.bottom}px" data-hold>
           <span id="cover-kicker" class="chip" data-role="kicker">${esc(c.kicker)}</span>
@@ -158,25 +166,23 @@ export function reelProject(window: RunWindow, events: PostEvent[], timing: Reel
     const D = dur(id)
     const art = artwork[event.id]
     const pill = event.price ? `<span id="${id}-pill" class="pill${event.price === 'Gratis' ? ' free' : ''}" data-role="pill">${esc(event.price)}</span>` : ''
-    // Below the logo at full width, or beside it at full height (a tall flyer is larger there).
-    const boxes = [{ x: 40, y: 300, w: 1000, h: SEAM - 20 - 300 }, { x: 348, y: BAND.top, w: 384, h: SEAM - 20 - BAND.top }]
+    // Just under the logo at full width, or beside it from higher up (a tall flyer is larger there).
+    const boxes = [{ x: 60, y: BAND.top + 58, w: 960, h: SEAM - GAP - BAND.top - 58 }, { x: 284, y: 130, w: 512, h: SEAM - GAP - 130 }]
     files[`compositions/${id}.html`] = scene(id, `
     <div class="bg"></div>
     <div id="${id}-stage" class="stage clip" data-start="0" data-duration="${D}">
       <div id="${id}-out" class="out">
-        ${flyerZone(id, event, art, SEAM, boxes, [84, 52])}
-        ${LOGO}
-        <div class="panel"></div>
-        <div class="text" style="top:${SEAM + 28}px" data-hold>
+        ${flyerZone(id, event, art, 1920, boxes, [84, 52], { panel: `${id}-panel`, gap: GAP })}
+        ${CARD_LOGO}
+        <div id="${id}-panel" class="panel" data-hold>
           <div id="${id}-kicker" class="kicker" data-role="kicker">${esc(cardKicker('reel', event))}</div>
-          <div id="${id}-title" class="display title" data-role="title" data-fit="72,50,2">${esc(event.title)}</div>
-        </div>
-        <div class="text" style="bottom:${1920 - BAND.bottom}px">
-          <div id="${id}-venue" class="venue-name one" data-role="venue" data-fit-width="52,40,${BAND.width}">${esc(event.venue)}</div>
+          <div id="${id}-title" class="display title" data-role="title" data-fit="68,50,2">${esc(event.title)}</div>
+          <div id="${id}-venue" class="venue-name one" data-role="venue" data-fit-width="50,40">${esc(event.venue)}</div>
           <div id="${id}-meta" class="meta"><span id="${id}-barrio" class="barrio one" data-role="barrio">${esc(event.barrio)}</span>${pill}</div>
         </div>
       </div>
-    </div>`, `      tl.fromTo("#${id}-zone", { opacity: 0 }, { opacity: 1, duration: 0.32, ease: "power2.out" }, 0);${art ? `
+    </div>`, `      tl.fromTo("#${id}-zone", { opacity: 0 }, { opacity: 1, duration: 0.32, ease: "power2.out" }, 0);
+      tl.fromTo("#${id}-panel", { opacity: 0 }, { opacity: 1, duration: 0.2, ease: "power2.out" }, 0);${art ? `
       tl.fromTo("#${id}-fly", { scale: 1 }, { scale: ${ZOOM}, duration: ${r3(D)}, ease: "none" }, 0);` : ''}
       tl.fromTo("#${id}-kicker", IN, LAND, 0);
       tl.fromTo("#${id}-title", IN, LAND, 0.06);

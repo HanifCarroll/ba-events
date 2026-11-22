@@ -40,7 +40,14 @@ describe.each([['finde', '2026-11-20', 1350, 'carousel'], ['hoy', '2026-11-21', 
       expect(left).toBeGreaterThanOrEqual(40)
       expect(left + width).toBeLessThanOrEqual(1040)
       expect(top + boxHeight).toBeLessThan(CARD[kind].seam)
-      expect(px($(card).find('.panel').attr('style'), 'top')).toBe(CARD[kind].seam)
+      // A carousel's panel starts at the seam. A story's is sized by its words, and the page grows the flyer down to it.
+      if (kind === 'carousel') expect(px($(card).find('.panel').attr('style'), 'top')).toBe(CARD.carousel.seam)
+      else {
+        expect($(card).find('.zone').attr('data-until')).toBe(`c${index + 1}-panel`)
+        expect($(card).find(`#c${index + 1}-panel [data-role]`).length).toBeGreaterThanOrEqual(6)
+        expect(flyer.attr('data-ratio')).toBe(`${source.width},${source.height}`)
+        expect(px($(card).find('.zone').attr('style'), 'height')).toBe(1920) // the blur fills the frame, under the panel too
+      }
     })
   })
 
@@ -67,7 +74,7 @@ describe.each([['finde', '2026-11-20', 1350, 'carousel'], ['hoy', '2026-11-21', 
     expect(tag.y * height).toBeGreaterThan(CARD[kind].seam)
     expect(Math.abs(tag.y * height - CARD[kind].footer.centerY)).toBeLessThan(1) // the tag is rounded to a thousandth of the frame
     expect(cards.eq(1).find('[data-role="foot"] span').first().text()).toBe('Vía @sala2')
-    expect(px(cards.eq(1).find('[data-role="foot"]').attr('style'), 'top') + 20).toBe(CARD[kind].footer.centerY)
+    if (kind === 'carousel') expect(px(cards.eq(1).find('[data-role="foot"]').attr('style'), 'top') + 20).toBe(CARD.carousel.footer.centerY)
     expect(eventFrameTag(events, 3, height)).toBeNull()
   })
 })
@@ -85,9 +92,10 @@ describe('story bands', () => {
     expect(frames.map(frame => frame.centerY)).toEqual([STICKER_Y.cover, STICKER_Y.event, STICKER_Y.event, STICKER_Y.event, STICKER_Y.event, STICKER_Y.closing])
   })
 
-  it('leaves the event frame\'s sticker band below the footer, and puts the mention on the footer handle', () => {
-    const footerBottom = CARD.story.footer.centerY + 20
-    expect(band(STICKER_Y.event)[0]).toBeGreaterThanOrEqual(footerBottom + 20)
+  it('leaves the event frame\'s sticker band below the panel, and puts the mention on the footer handle', () => {
+    expect(band(STICKER_Y.event)[0]).toBeGreaterThanOrEqual(CARD.story.bottom + 20)
+    // The footer is the panel's last row: 40 px tall, above 24 px of padding.
+    expect(CARD.story.footer.centerY).toBe(CARD.story.bottom - 24 - 20)
     expect(frames[1]!.mentionAt!.centerY).toBe(CARD.story.footer.centerY)
     expect(frames[1]!.mentionAt!.centerY + 45).toBeLessThan(band(STICKER_Y.event)[0])
   })
@@ -95,6 +103,10 @@ describe('story bands', () => {
   it('ends the cover\'s headline box above its sticker band and starts the footer below it', () => {
     const $ = load(framesHtml('hoy', runWindow('hoy', '2026-11-21'), events, assets, artwork))
     const cover = $('.s').first()
+    // Flyers run from the top of the frame to the bottom: the grid, then a second row behind the headline and below it.
+    const cells = cover.find('.frame').map((_, cell) => [[px($(cell).attr('style'), 'top'), px($(cell).attr('style'), 'height')]]).get() as unknown as Array<[number, number]>
+    expect(Math.min(...cells.map(([top]) => top))).toBe(0)
+    expect(Math.max(...cells.map(([top, height]) => top + height))).toBe(1920)
     expect(1920 - px(cover.find('.stack').attr('style'), 'bottom')).toBeLessThanOrEqual(band(STICKER_Y.cover)[0])
     expect(px(cover.find('[data-role="foot"]').attr('style'), 'top')).toBeGreaterThanOrEqual(band(STICKER_Y.cover)[1])
     const closing = $('.s').last()

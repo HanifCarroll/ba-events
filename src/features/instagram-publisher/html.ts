@@ -3,6 +3,7 @@ import type { Artwork } from './artwork.ts'
 import { CLOSING, HOY_CLOSING, SITE, cardKicker, cover, footerHandle, type Cover } from './copy.ts'
 import { FORMATS, type FormatKey, type RunWindow } from './formats.ts'
 import { ARROW, FIT_JS, INK, LIME, LOOK_CSS, PAPER, SOFT, artOf, collage, esc, flyerZone, fontFaces, grid, logoImg, mosaic } from './look.ts'
+import type { Box } from './look.ts'
 import type { PostEvent } from './select.ts'
 
 export const FRAME = { story: { width: 1080, height: 1920 }, carousel: { width: 1080, height: 1350 } } as const
@@ -12,11 +13,12 @@ export const STORY_SAFE = { top: 250, bottom: 1670 } as const
 
 /**
  * Where a card's panel starts, and where its footer handle sits (the Instagram tag and the story's mention sticker
- * point at it). A story's text ends higher than a carousel's, above the link sticker's band.
+ * point at it). A carousel's panel always starts at its seam. A story's panel is only as tall as its words, ends at
+ * `bottom` (above the link sticker's band), and never starts above its seam; the flyer grows into what it leaves.
  */
 export const CARD = {
   carousel: { seam: 820, footer: { left: 80, centerY: 1296, size: 34 } },
-  story: { seam: 940, footer: { left: 80, centerY: 1440, size: 36 } },
+  story: { seam: 920, bottom: 1484, footer: { left: 80, centerY: 1440, size: 36 } },
 } as const
 
 /**
@@ -46,6 +48,11 @@ body{width:1080px;background:#000}
 .stack{position:absolute;left:30px;right:30px;display:flex;flex-direction:column;align-items:flex-start}
 .stack .chip{font-size:44px;padding:12px 20px;margin-bottom:10px}
 .stack .hbox{padding:20px 26px 26px}
+.spanel{position:absolute;left:40px;right:40px;bottom:${FRAME.story.height - CARD.story.bottom}px;background:${INK};border-radius:24px;padding:24px 40px}
+.spanel .venue{margin-top:26px}
+.frow{display:flex;justify-content:space-between;color:${SOFT};white-space:nowrap;margin-top:12px;font-size:${CARD.story.footer.size}px;line-height:40px}
+.shade{position:absolute;left:0;right:0;top:0;height:420px;background:linear-gradient(180deg,rgba(16,16,18,.8) 0,rgba(16,16,18,.8) 250px,rgba(16,16,18,0) 100%)}
+.fade{position:absolute;left:0;right:0;bottom:0;background:linear-gradient(180deg,rgba(16,16,18,0) 0,rgba(16,16,18,.84) 300px)}
 `
 
 /** A cover's lime date chip and coral headline box. Gratis sets its first word much larger than its second line. */
@@ -58,23 +65,49 @@ function headline(c: Cover, size: [max: number, floor: number, lines: number]): 
 
 interface Layout { kind: 'carousel' | 'story'; height: number; logo: string }
 
-const SIZES = {
-  carousel: { top: 28, flyerTop: 28, kicker: 40, title: '60,46,2', tile: [84, 44], desc: 36, venue: 42, barrio: 40, pill: 40, whereBottom: 1256 },
-  story: { top: STORY_SAFE.top + 8, flyerTop: STORY_SAFE.top + 8, kicker: 48, title: '66,48,2', tile: [84, 44], desc: 38, venue: 46, barrio: 40, pill: 40, whereBottom: 1396 },
-} as const
+const SIZES = { top: 28, kicker: 40, title: '60,46,2', tile: [84, 44], desc: 36, venue: 42, barrio: 40, pill: 40, whereBottom: 1256 } as const
 
-/** An event card: the flyer above the seam, and below it a solid panel, so the words never depend on the flyer's colors. */
+const pricePill = (event: PostEvent, size: number) =>
+  event.price ? `<span class="pill${event.price === 'Gratis' ? ' free' : ''}" data-role="pill" style="font-size:${size}px;padding:8px 22px">${esc(event.price)}</span>` : ''
+
+/**
+ * A story's event frame: the flyer's blur fills the frame, the flyer takes the space between the logo row and the panel,
+ * and the panel holds every word on a solid ground. The link sticker's band and everything under it show the blur.
+ */
+function storyCard(format: FormatKey, layout: Layout, event: PostEvent, index: number, total: number, artwork: Artwork): string {
+  const { seam } = CARD.story
+  const top = STORY_SAFE.top + 8
+  const gap = 20
+  // Below the logo and the counter at full width, or between them at full height (a tall flyer is larger there).
+  const boxes: Box[] = [{ x: 40, y: top + 48 + 18, w: 1000, h: seam - gap - (top + 48 + 18) }, { x: 310, y: top, w: 460, h: seam - gap - top }]
+  const id = `c${index + 1}`
+  return `<div class="s" data-frame="card" style="height:${layout.height}px">
+${flyerZone(id, event, artwork[event.id], layout.height, boxes, [84, 44], { panel: `${id}-panel`, gap })}
+${logoImg(layout.logo, 72, top, 48)}
+<div class="count" data-role="counter" style="top:${top}px">${index + 1}/${total}</div>
+<div id="${id}-panel" class="spanel">
+<div class="kicker" data-role="kicker" style="font-size:48px">${esc(cardKicker(format, event))}</div>
+<div class="display title" data-role="title" data-fit="66,48,2">${esc(event.title)}</div>
+${event.description ? `<div class="desc clamp" data-role="desc" style="font-size:38px">${esc(event.description)}</div>` : ''}
+<div class="venue one" data-role="venue" data-fit-width="46,34">${esc(event.venue)}</div>
+<div class="meta" style="min-height:62px"><span class="barrio one" data-role="barrio" style="font-size:40px">${esc(event.barrio)}</span>${pricePill(event, 40)}</div>
+<div class="frow" data-role="foot"><span>${esc(footerHandle(event))}</span><span>${SITE}</span></div>
+</div>
+</div>`
+}
+
+/** A carousel's event card: the flyer above the seam, and below it a solid panel, so the words never depend on the flyer's colors. */
 function card(format: FormatKey, layout: Layout, event: PostEvent, index: number, total: number, artwork: Artwork): string {
-  const story = layout.kind === 'story'
-  const { seam, footer } = CARD[layout.kind]
-  const size = SIZES[layout.kind]
+  if (layout.kind === 'story') return storyCard(format, layout, event, index, total, artwork)
+  const { seam, footer } = CARD.carousel
+  const size = SIZES
   const under = size.top + 48 + 18
   // Below the logo and the counter at full width, or between them at full height (a tall flyer is larger there).
-  const boxes = [{ x: 40, y: under, w: 1000, h: seam - 18 - under }, { x: 348, y: size.flyerTop, w: 384, h: seam - 18 - size.flyerTop }]
+  const boxes = [{ x: 40, y: under, w: 1000, h: seam - 18 - under }, { x: 348, y: size.top, w: 384, h: seam - 18 - size.top }]
   const handle = footerHandle(event)
-  const pill = event.price ? `<span class="pill${event.price === 'Gratis' ? ' free' : ''}" data-role="pill" style="font-size:${size.pill}px;padding:8px 22px">${esc(event.price)}</span>` : ''
-  const foot = handle || story
-    ? `<div class="foot" data-role="foot" style="top:${footer.centerY - 20}px;font-size:${footer.size}px;line-height:40px"><span>${esc(handle)}</span>${story ? `<span>${SITE}</span>` : ''}</div>`
+  const pill = pricePill(event, size.pill)
+  const foot = handle
+    ? `<div class="foot" data-role="foot" style="top:${footer.centerY - 20}px;font-size:${footer.size}px;line-height:40px"><span>${esc(handle)}</span></div>`
     : ''
   return `<div class="s" data-frame="card" style="height:${layout.height}px">
 ${flyerZone(`c${index + 1}`, event, artwork[event.id], seam, boxes, [size.tile[0], size.tile[1]])}
@@ -122,9 +155,13 @@ function storyFrames(format: FormatKey, c: Cover, events: PostEvent[], artwork: 
   const arts = artOf(events, artwork)
   const logo = logoImg(layout.logo, 72, STORY_SAFE.top + 8, 56)
   const site = (text: string) => `<div class="foot" data-role="foot" style="top:1596px;font-size:40px;font-weight:600;line-height:1.2;color:${PAPER}"><span>${esc(text)}</span></div>`
-  // The grid runs under Instagram's header and ends with the headline box, above the link sticker's band.
+  // Tonight's flyers fill the frame: the grid on top, then a row of them again that darkens behind the headline box and
+  // on down, so the footer reads and the link sticker sits on flyers, not on a flat ground.
   const coverHtml = `<div class="s" data-frame="cover" style="height:${layout.height}px">
-${grid(arts, { x: 0, y: 0, w: 1080, h: STICKER_Y.cover - 100 })}
+${grid(arts, { x: 0, y: 0, w: 1080, h: 1240 })}
+${grid([...arts].reverse().slice(0, 2), { x: 0, y: 1246, w: 1080, h: layout.height - 1246 })}
+<div class="fade" style="top:1000px"></div>
+<div class="shade"></div>
 ${logo}
 <div class="stack" style="bottom:${layout.height - (STICKER_Y.cover - 104)}px">${headline(c, [136, 88, 2])}</div>
 ${site(c.footer!)}
@@ -153,7 +190,7 @@ export function framesHtml(format: FormatKey, window: RunWindow, events: PostEve
 ${fontFaces(assets.fontsDir)}${CSS}${LOOK_CSS}</style></head><body>${body}<script>
 (function () {${FIT_JS}
   var done = function (error) { document.documentElement.dataset.ready = error ? String(error.message || error) : "ok"; };
-  fontsLoaded(document.body).then(function () { fitText(document); done(); }).catch(done);
+  fontsLoaded(document.body).then(function () { layout(document); done(); }).catch(done);
 })();
 </script></body></html>`
 }

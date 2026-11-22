@@ -54,8 +54,9 @@ export async function fetchArtwork(events: Array<Pick<PostEvent, 'id' | 'title' 
         .flatten({ background: '#1d1d23' }).jpeg({ quality: 88 }).toBuffer({ resolveWithObject: true })
       if (Math.min(info.width, info.height) < MIN_SIDE) throw new Error(`only ${info.width} × ${info.height} px`)
       // Every channel is scaled to 45%, so even a white or saturated flyer leaves a dark ground.
-      const backdrop = await sharp(data).resize({ width: 288, height: 288, fit: 'inside' }).blur(9)
-        .modulate({ saturation: 0.85 }).linear(0.45, 0).jpeg({ quality: 80 }).toBuffer()
+      // It can be stretched over a whole 1080 × 1920 frame, so it is saved without chroma subsampling.
+      const backdrop = await sharp(data).resize({ width: 384, height: 384, fit: 'inside' }).blur(14)
+        .modulate({ saturation: 0.85 }).linear(0.45, 0).jpeg({ quality: 92, chromaSubsampling: '4:4:4' }).toBuffer()
       const art: Art = { file: join(dir, `art-${index + 1}.jpg`), backdrop: join(dir, `art-${index + 1}-bg.jpg`), width: info.width, height: info.height }
       writeFileSync(art.file, data)
       writeFileSync(art.backdrop, backdrop)

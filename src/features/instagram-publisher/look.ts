@@ -56,14 +56,18 @@ export const LOOK_CSS = `
 `
 
 /**
- * In-page fitting, run once after the fonts load. `data-fit="max,floor,lines[,last]"` steps the font size down until the
- * text takes at most `lines` lines and no word overflows its box; at the floor it allows `last` lines when given, then cuts the rest with an ellipsis.
- * `data-fit-width="max,floor,width"` does the same for one line that must fit `width` px. `fontsLoaded` rejects when a
- * vendored font file is missing, because the renderer would otherwise fall back to a system face without a word.
+ * In-page layout, run once after the fonts load (`layout(root)`). `data-fit="max,floor,lines[,last]"` steps the font size
+ * down until the text takes at most `lines` lines and no word overflows its box; at the floor it allows `last` lines when
+ * given, then cuts the rest with an ellipsis. `data-fit-width="max,floor[,width]"` does the same for one line that must fit
+ * `width` px (its own box when no width is given). A zone with `data-until` then sizes its flyer into the space above
+ * that panel. `fontsLoaded` rejects when a vendored font file is missing, because the renderer would otherwise fall
+ * back to a system face without a word.
  */
 export const FIT_JS = `
-  function fitText(root) {
+  // tiles false: every fitted text outside a no-flyer tile. tiles true: the tiles' titles, once the tiles are placed.
+  function fitText(root, tiles) {
     root.querySelectorAll("[data-fit]").forEach(function (el) {
+      if ((el.closest("[data-fallback]") !== null) !== Boolean(tiles)) return;
       var p = el.dataset.fit.split(",").map(Number), size = p[0], lines = 0;
       var count = function () { return Math.round(el.getBoundingClientRect().height / parseFloat(getComputedStyle(el).lineHeight)); };
       // Words stay whole while fitting; only a word still wider than the box at the floor is broken.
@@ -77,11 +81,12 @@ export const FIT_JS = `
       if (lines > most) { el.classList.add("clamp"); el.style.webkitLineClamp = most; lines = most; }
       el.dataset.fitSize = size; el.dataset.fitLines = lines;
     });
+    if (tiles) return;
     root.querySelectorAll("[data-fit-width]").forEach(function (el) {
       var p = el.dataset.fitWidth.split(",").map(Number), size = p[0];
       for (;; size = Math.max(p[1], size - 2)) {
         el.style.fontSize = size + "px";
-        if (el.scrollWidth <= p[2] || size <= p[1]) break;
+        if (el.scrollWidth <= (p[2] || el.clientWidth) || size <= p[1]) break;
       }
       el.dataset.fitSize = size;
     });
@@ -91,6 +96,22 @@ export const FIT_JS = `
       el.style.width = Math.ceil(range.getBoundingClientRect().width) + 2 + "px";
     });
   }
+  // A flyer (or its tile) grows into the space its panel leaves: the panel is as tall as its fitted words need.
+  function placeFlyers(root) {
+    root.querySelectorAll("[data-until]").forEach(function (zone) {
+      var panel = zone.parentNode.querySelector("#" + zone.dataset.until), el = zone.querySelector("[data-boxes]");
+      if (!panel || !el) return;
+      var bottom = panel.offsetTop - Number(zone.dataset.gap), r = el.dataset.ratio.split(",").map(Number), best = null;
+      el.dataset.boxes.split(";").forEach(function (text) {
+        var b = text.split(",").map(Number), scale = Math.min(b[2] / r[0], (bottom - b[1]) / r[1]);
+        var w = Math.round(r[0] * scale), h = Math.round(r[1] * scale);
+        if (!best || w * h > best.w * best.h) best = { x: Math.round(b[0] + (b[2] - w) / 2), y: Math.round(b[1] + (bottom - b[1] - h) / 2), w: w, h: h };
+      });
+      el.style.left = best.x + "px"; el.style.top = best.y + "px"; el.style.width = best.w + "px"; el.style.height = best.h + "px";
+      if (el.hasAttribute("data-fallback")) el.style.padding = Math.round(best.w * 0.1) + "px";
+    });
+  }
+  function layout(root) { fitText(root, false); placeFlyers(root); fitText(root, true); }
   function fontsLoaded(root) {
     var text = root.textContent;
     return Promise.all(["600 40px Newsreader", "400 40px 'DM Sans'", "600 40px 'DM Sans'", "700 40px 'DM Sans'"].map(function (font) {
@@ -114,19 +135,25 @@ const place = ({ x, y, w, h }: Box) => `left:${x}px;top:${y}px;width:${w}px;heig
 /** The events' artwork, in post order. */
 export const artOf = (events: PostEvent[], artwork: Artwork): Art[] => events.flatMap(event => artwork[event.id] ?? [])
 
+/** A panel whose top depends on its words: the flyer is placed in the page, down to `gap` px above it. */
+export interface Until { panel: string; gap: number }
+
 /**
- * The top of an event card: the event's own flyer, whole, over a blurred, darkened copy of itself. The flyer takes
- * whichever of `boxes` shows it largest (one runs beside the logo, one below it). An event with no usable artwork gets
- * a dark 4:5 tile with a coral rule and its title, so the card still reads as designed.
+ * An event card's flyer: the event's own flyer, whole, over a blurred, darkened copy of itself that fills `height` px of
+ * the frame. The flyer takes whichever of `boxes` shows it largest (one runs beside the logo, one below it). An event
+ * with no usable artwork gets a dark 4:5 tile with a coral rule and its title, so the card still reads as designed.
+ * With `until`, `boxes` are the space the tallest panel leaves, and the page enlarges the flyer when the panel is shorter.
  */
-export function flyerZone(id: string, event: PostEvent, art: Art | undefined, seam: number, boxes: Box[], tileTitle: [max: number, floor: number]): string {
+export function flyerZone(id: string, event: PostEvent, art: Art | undefined, height: number, boxes: Box[], tileTitle: [max: number, floor: number], until?: Until): string {
   const largest = (width: number, height: number) => boxes.map(box => contain(width, height, box)).sort((a, b) => b.w * b.h - a.w * a.h)[0]!
+  const zone = `<div id="${id}-zone" class="zone" style="height:${height}px"${until ? ` data-until="${until.panel}" data-gap="${until.gap}"` : ''}>`
+  const grow = (width: number, height: number) => until ? ` data-ratio="${width},${height}" data-boxes="${boxes.map(box => `${box.x},${box.y},${box.w}`).join(';')}"` : ''
   if (art) {
-    return `<div id="${id}-zone" class="zone" style="height:${seam}px"><img class="fill" src="${esc(art.backdrop)}" alt=""><img id="${id}-fly" class="fly" data-flyer src="${esc(art.file)}" alt="" style="${place(largest(art.width, art.height))}"></div>`
+    return `${zone}<img class="fill" src="${esc(art.backdrop)}" alt=""><img id="${id}-fly" class="fly" data-flyer${grow(art.width, art.height)} src="${esc(art.file)}" alt="" style="${place(largest(art.width, art.height))}"></div>`
   }
   const tile = largest(4, 5)
   const pad = Math.round(tile.w * 0.1)
-  return `<div id="${id}-zone" class="zone" style="height:${seam}px"><div class="tile" data-fallback style="${place(tile)};padding:${pad}px"><i></i><div class="display" data-role="tile-title" data-fit="${tileTitle.join(',')},4,6" style="margin-top:${Math.round(pad * 0.6)}px">${esc(event.title)}</div></div></div>`
+  return `${zone}<div class="tile" data-fallback${grow(4, 5)} style="${place(tile)};padding:${pad}px"><i></i><div class="display" data-role="tile-title" data-fit="${tileTitle.join(',')},4,6" style="margin-top:${Math.round(pad * 0.6)}px">${esc(event.title)}</div></div></div>`
 }
 
 /**
@@ -181,6 +208,9 @@ export function mosaic(arts: Art[], width: number, height: number): string {
   }).join('')
   return `${cells}<div class="dim"></div>`
 }
+
+/** A full-frame ground from the blurred, darkened copies of up to three flyers, blended evenly, so one dark flyer doesn't leave it black. */
+export const backdrop = (arts: Art[]) => arts.slice(0, 3).map((art, i) => `<img class="fill" src="${esc(art.backdrop)}" alt=""${i ? ` style="opacity:${(1 / (i + 1)).toFixed(3)}"` : ''}>`).join('')
 
 export const logoImg = (src: string, left: number, top: number, height: number) =>
   `<img class="logo" src="${esc(src)}" alt="BA Eventos" style="left:${left}px;top:${top}px;height:${height}px;width:${Math.round(height * 900 / 198)}px">`

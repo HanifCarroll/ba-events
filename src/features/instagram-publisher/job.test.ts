@@ -931,7 +931,7 @@ describe('artwork', () => {
     await w.job().tick()
     expect(w.draft().events).toHaveLength(6)
     expect(w.html.match(/data-flyer/g)).toHaveLength(5)
-    expect(w.html.match(/data-fallback/g)).toHaveLength(1)
+    expect(w.html.match(/class="tile" data-fallback/g)).toHaveLength(1) // the page's script names the attribute too
     expect(w.html).not.toContain('hero-rooftop')
     expect(w.html).not.toMatch(/https?:\/\//) // nothing is fetched at render time
     const { existsSync } = await import('node:fs')
