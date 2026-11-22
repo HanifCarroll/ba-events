@@ -1,4 +1,5 @@
 import { generateObject } from 'ai'
+import { load } from 'cheerio/slim'
 import { z } from 'zod'
 import { openai } from '#shared/lib/ai/providers.ts'
 
@@ -25,20 +26,29 @@ IN: independent and public theater, dance performances and circus; live music in
 
 OUT: club or party nights centered on DJ sets, dancing or drinking (fiesta, boliche, after-office); mainstream arena or stadium shows, including Movistar Arena, Luna Park, River, Vélez and Huracán stadiums, large commercial shows at Hipódromo de Palermo, Teatro Gran Rex or Teatro Ópera, commercial theater productions in Corrientes-area commercial houses such as Multiteatro Comafi, Teatro Liceo, Paseo La Plaza, Teatro Metropolitan, Lola Membrives, Teatro Astral and El Nacional, arena-level touring headliners and mass festivals from big promoters such as DF Entertainment, Fénix, PopArt, Move Concerts and T4F; tech, business and networking meetups; language exchanges; recurring classes such as weekly yoga, dance or language classes; milongas and social-dance nights; commercial tours; sales and brand promotions.
 
-Judge the actual program. A tango or folk concert is not a social dance. A showcase of live independent bands and makers can qualify even if it is called a fiesta, serves drinks, or has a DJ before or after the set. Prefer the evidence of a live program over words such as fiesta and club. A tribute to a famous artist is not a mainstream tour; judge the tribute act and room. A mid-size theater, city venue or Tecnópolis can host independent or public culture, but a commercial producer's run with a TV or star cast in a Corrientes commercial house is out. A small venue or an Instagram listing does not make a party independent culture. A restaurant's wine-pairing dinner or a winery's promotional tasting is out even if it includes an educational talk; a public museum exhibition with a guided visit can qualify. If genuinely unclear, judge out with a reason beginning exactly "unclear:".
+Judge the actual program. A tango or folk concert is not a social dance. A showcase of live independent bands and makers can qualify even if it is called a fiesta, serves drinks, or has a DJ before or after the set. Prefer the evidence of a live program over words such as fiesta and club. A tribute to a famous artist is not a mainstream tour; judge the tribute act and room. A mid-size theater, city venue or Tecnópolis can host independent or public culture, but a commercial producer's run with a TV or star cast in a Corrientes commercial house is out. A small venue or an Instagram listing does not make a party independent culture. A restaurant's wine-pairing dinner or a winery's promotional tasting is out even if it includes an educational talk; a public museum exhibition with a guided visit can qualify. Generic ticket-seller sales copy is not event evidence. If the listing only has such copy and no program, performers, or event type, judge it out as unclear. If genuinely unclear, judge out with a reason beginning exactly "unclear:".
 
 Return a JSON object with judgments. Give exactly one judgment for each input index, with scope "in" or "out" and one short English sentence as reason, at most 160 characters and ending in punctuation. Explain the decisive type of event in plain English without repeating titles, proper names, or links.`
 
-type ScopeInput = { name: string; descriptionEs?: string | null; descriptionEn?: string | null; caption?: string | null }
+type ScopeInput = { name: string; source?: string; descriptionEs?: string | null; descriptionEn?: string | null; caption?: string | null; facets?: unknown }
 
-/** Narrow party titles only; conflicting context goes to the model. */
-export function precheckScope(input: ScopeInput): ScopeDecision | undefined {
-  const title = input.name.normalize('NFD').replace(/\p{Diacritic}/gu, '').trim().toLowerCase()
-  const details = [input.descriptionEs, input.descriptionEn, input.caption].join(' ')
-  if (/^(?:club night|noche de boliche|after[ -]office)$/.test(title)
-    && !/\b(?:concierto|concert|en vivo|live|teatro|theatre|theater|obra|proyecci[oó]n|screening|performance)\b/i.test(details)) {
-    return { scope: 'out', reason: 'The event is advertised as a club or after-office party.' }
+const PASSLINE_PITCH = 'Encuentra detalles, asegura tu asistencia y prepárate para disfrutar de una experiencia inolvidable.'
+
+function normalizeListing(text: string) {
+  // Decode entities without discarding literal markup or symbols that may be evidence.
+  const decoded = text.includes('&') ? load(text.replaceAll('<', '&lt;'), {}, false).root().text() : text
+  return decoded.toLowerCase().replace(/\s+/gu, ' ').trim()
+}
+
+function omitPasslineTemplate(input: ScopeInput): ScopeInput {
+  if (input.source !== 'passline') return input
+  const template = normalizeListing(`Consigue tus entradas para ${input.name} en Passline. ${PASSLINE_PITCH}`)
+  const evidence = { ...input }
+  for (const field of ['descriptionEs', 'descriptionEn', 'caption'] as const) {
+    const text = input[field]
+    if (text && normalizeListing(text) === template) evidence[field] = null
   }
+  return evidence
 }
 
 export function decodeScopeJudgments(value: unknown, count: number): ScopeDecision[] {
@@ -62,9 +72,6 @@ export function requestScopeJudgments(model = openai.chat(SCOPE_MODEL)): Request
 }
 
 export async function judgeScopeBatch(inputs: ScopeInput[], request: RequestJudgments): Promise<ScopeDecision[]> {
-  const prechecked = inputs.map(precheckScope)
-  const unresolved = inputs.filter((_, index) => !prechecked[index])
-  const judged = unresolved.length ? decodeScopeJudgments(await request(unresolved), unresolved.length) : []
-  let next = 0
-  return prechecked.map(row => row ?? judged[next++]!)
+  if (!inputs.length) return []
+  return decodeScopeJudgments(await request(inputs.map(omitPasslineTemplate)), inputs.length)
 }

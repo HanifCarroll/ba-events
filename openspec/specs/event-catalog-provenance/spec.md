@@ -48,6 +48,25 @@ Time-TBA, location-TBA, missing price, missing description, and missing source d
 - **AND** model-facing facts omit a start time and end time
 - **AND** canonical cards retain the source timestamps and time-TBA flag for their existing presentation rules
 
+### Requirement: Event structured data reflects known catalog facts
+Event detail JSON-LD SHALL use recorded times, status, admission facts, and visible venue facts. It SHALL NOT supply an unknown performer, ticket sales start, ticket availability, or end date.
+
+#### Scenario: Event detail includes a confirmed venue and admission information
+- **WHEN** the event has a visible, confirmed venue
+- **THEN** the Place uses the stored name and address without placeholder text; a hidden or unconfirmed location does not expose its venue details
+- **AND** an offer uses an actual ticket or registration link and omits the price when it is unknown
+
+#### Scenario: Admission is a variable contribution
+- **WHEN** the agenda's contribution rules recognize pay-what-you-can admission from the listing or the retained price note
+- **THEN** JSON-LD omits a price and does not claim free admission, even with a zero price or free flag, and keeps any ticket URL
+
+#### Scenario: The event has no precise start time or a changed status
+- **WHEN** the event is date-only or time TBA
+- **THEN** its start and any recorded end are Buenos Aires calendar dates
+- **AND** JSON-LD omits `endDate` when no end is recorded
+- **AND** a Luma event with known hours keeps its times even if flagged all-day because of its duration
+- **AND** cancellation and postponement map to their corresponding schema statuses without changing the date or location
+
 ### Requirement: Source presentation preserves provenance
 Event detail and summaries SHALL distinguish BA Eventos pages, original event sources, and ticket links using the stored source fields. Sanitization or summary generation MUST NOT create a source URL.
 
@@ -132,6 +151,12 @@ The D1 catalog SHALL judge events individually for an independent and public cul
 - **WHEN** the hourly task selects events whose judgments were cleared in the last two hours
 - **THEN** it judges those rows ahead of other pending judgments, newest clear first
 - **AND** the operator backfill retains its stable start-time and ID order
+
+#### Scenario: A Passline description or caption matches the fixed ticket-sale template
+- **WHEN** a Passline description or caption exactly matches the full template for the stored title after HTML entity, case, and whitespace normalization
+- **THEN** the catalog sends the listing to the model with only the matching fields set to null
+- **AND** the title, venue, categories, facets, and any nonmatching descriptions or captions remain unchanged
+- **AND** generic ticket-sale copy is not evidence of what the event is
 
 #### Scenario: An operator rehearses the backfill
 - **WHEN** the operator requests a dry run for scheduled events starting today or later in Buenos Aires

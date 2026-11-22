@@ -1,22 +1,53 @@
 import { describe, expect, it, vi } from 'vitest'
 import { runJsonFixture } from '../../../../tests/support/run-fixture.ts'
-import { decodeScopeJudgments, judgeScopeBatch, precheckScope, SCOPE_MODEL } from './judge.ts'
+import { decodeScopeJudgments, judgeScopeBatch, SCOPE_MODEL } from './judge.ts'
 
 const inScope = { scope: 'in', reason: 'It is a small-room live show.' }
 const unclear = { scope: 'out', reason: 'unclear: The listing does not say what takes place.' }
 
+const passlineListing = (name: string) => ({
+  name, source: 'passline',
+  descriptionEs: `Consigue tus entradas para ${name} en Passline. Encuentra detalles, asegura tu asistencia y prepárate para disfrutar de una experiencia inolvidable.`,
+})
+
 describe('scope judgment', () => {
-  it('pre-checks only unqualified club titles, not genres, venues, or ambiguous party words', async () => {
-    const request = vi.fn(async () => ({ judgments: [{ index: 1, ...unclear }, { index: 0, ...inScope }] }))
-    expect(precheckScope({ name: '   NOCHE DE BOLÍCHE ' })).toMatchObject({ scope: 'out' })
-    expect(precheckScope({ name: 'Fiesta del Libro' })).toBeUndefined()
-    expect(precheckScope({ name: 'After Office: sesión de jazz en vivo' })).toBeUndefined()
-    expect(precheckScope({ name: 'After Office', descriptionEs: 'Una obra de teatro de humor.' })).toBeUndefined()
-    const live = { name: 'Trap y Metal en Sala Chica', source: 'passline' }
-    const ambiguous = { name: 'Encuentro', source: 'instagram-intake' }
-    expect(await judgeScopeBatch([{ name: 'Club Night' }, live, ambiguous], request))
-      .toEqual([expect.objectContaining({ scope: 'out' }), inScope, unclear])
-    expect(request).toHaveBeenCalledWith([live, ambiguous])
+  it('asks the model to judge template-only Passline listings based on their remaining evidence', async () => {
+    const sora = passlineListing('Sora')
+    const concert = passlineListing('Concierto en vivo: Pez y Fin del Mundo')
+    const withFacets = { ...concert, venue: 'Sala Sintética', categories: ['music'], facets: { activities: ['live-music'] } }
+    const name = 'Jam sintética & ensamble'
+    const encoded = { ...passlineListing(name.replace('&', '&amp;')), name }
+    const listings = [
+      { ...sora, descriptionEn: sora.descriptionEs, caption: `\n${sora.descriptionEs.toUpperCase().replaceAll(' ', '  ')}\n` },
+      concert, withFacets, encoded,
+    ]
+    const outcomes = [unclear, inScope, inScope, inScope]
+    const request = vi.fn(async () => ({ judgments: outcomes.map((result, index) => ({ index, ...result })) }))
+    expect(await judgeScopeBatch(listings, request)).toEqual(outcomes)
+    expect(request).toHaveBeenCalledExactlyOnceWith([
+      { ...sora, descriptionEs: null, descriptionEn: null, caption: null },
+      { ...concert, descriptionEs: null },
+      { ...withFacets, descriptionEs: null },
+      { ...encoded, descriptionEs: null },
+    ])
+    expect(listings[0].descriptionEs).toBe(sora.descriptionEs)
+  })
+
+  it('preserves nonmatching text even alongside a matching Passline field', async () => {
+    const sora = passlineListing('Sora')
+    const concert = passlineListing('Festival Sintético')
+    const lineup = `${concert.descriptionEs}\nEn vivo: Los Ensayos y Dúo Inventado.`
+    const withLineup = { ...concert, descriptionEs: lineup, caption: concert.descriptionEs }
+    const unchanged = [
+      { name: 'Concierto de Jazz en vivo', source: 'passline', descriptionEs: '', descriptionEn: null, caption: '  ' },
+      { ...sora, source: 'instagram' },
+      { ...sora, name: 'Sora Edición 2' },
+      { ...sora, descriptionEs: 'Consigue tus entradas para Sora en Passline.' },
+    ]
+    const outcomes = [inScope, inScope, unclear, unclear, unclear]
+    const request = vi.fn(async () => ({ judgments: outcomes.map((result, index) => ({ index, ...result })) }))
+    expect(await judgeScopeBatch([withLineup, ...unchanged], request)).toEqual(outcomes)
+    expect(request).toHaveBeenCalledExactlyOnceWith([{ ...withLineup, caption: null }, ...unchanged])
   })
 
   it('rejects partial, extra, duplicate, mislabeled, or unreasoned output', () => {

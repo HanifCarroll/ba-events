@@ -67,6 +67,11 @@ The homepage SHALL lead with the current agenda and render exactly one centered 
 - **THEN** the composer follows the first six phone rows or the first two desktop grid rows, or the last visible card if there are fewer, even before hydration or without JavaScript
 - **AND** it follows the agenda status when no cards are visible, and contains a short heading, an input, and at most two suggestion chips
 
+#### Scenario: A visitor focuses the homepage composer
+- **WHEN** the textarea receives focus by touch or keyboard
+- **THEN** a visible outline follows the rounded form instead of outlining the textarea
+- **AND** the enabled microphone, send, and suggestion buttons retain distinct keyboard focus indicators
+
 #### Scenario: A visitor browses more of the agenda
 - **WHEN** the homepage renders without a valid paging parameter
 - **THEN** it shows at most 24 grouped cards and the localized shown and total counts when there are matches
