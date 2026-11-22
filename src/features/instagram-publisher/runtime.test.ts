@@ -39,6 +39,7 @@ describe('catalog read', () => {
     expect(sql).not.toMatch(/\b(insert|update|delete|drop|alter|create|replace|attach|pragma)\b/i)
     expect(sql).toContain("e.starts_at >= '2026-11-20T03:00:00.000Z' AND e.starts_at < '2026-11-23T03:00:00.000Z'")
     expect(sql).toContain('event_source_evidence')
+    expect(sql).toContain('e.image_url')
     expect(sql).toContain("json_extract(c.payload, '$.intent') <> 'link'")
   })
 
@@ -48,6 +49,8 @@ describe('catalog read', () => {
     expect(toCatalogEvent({ ...row, price_note: 'A contribución consciente, sugerido $8000.' }).payWhatYouWant).toBe(true)
     expect(toCatalogEvent({ ...row, price_note: 'Gratis con inscripción.' }).payWhatYouWant).toBe(false)
     expect(toCatalogEvent(row).categories).toEqual(['music'])
+    expect(toCatalogEvent(row).imageUrl).toBeNull()
+    expect(toCatalogEvent({ ...row, image_url: 'https://baeventos.com/api/event-artwork/a/b.webp' }).imageUrl).toBe('https://baeventos.com/api/event-artwork/a/b.webp')
   })
 })
 
@@ -127,7 +130,7 @@ describe('rendering', () => {
 })
 
 describe('Reel rendering', () => {
-  const events = [1, 2, 3, 4].map(n => ({ id: `${n}`, date: '2026-11-21', startsAt: '', title: 'T', time: '21:00', description: null, venue: `V${n}`, barrio: 'B', price: null, handle: null, via: false }))
+  const events = [1, 2, 3, 4].map(n => ({ id: `${n}`, date: '2026-11-21', startsAt: '', title: 'T', time: '21:00', description: null, venue: `V${n}`, barrio: 'B', price: null, handle: null, imageUrl: null, via: false }))
   const window = { from: '2026-11-20', to: '2026-11-22' } as never
   const timing = reelTiming(window, events, 120)
   const track = { id: 't', title: 't', artist: 'a', file: 'x.flac', durationSec: 40, bpm: 120, startSec: 0, credit: null, path: '/nonexistent/x.flac' }
@@ -135,7 +138,7 @@ describe('Reel rendering', () => {
   it('fails, naming the install command, when HyperFrames\' managed Chrome is missing', async () => {
     const calls: string[][] = []
     const runner: Runner = async argv => { calls.push(argv); return { out: '', err: '', code: 0 } }
-    await expect(renderReel(window, events, timing, track, mkdtempSync(join(tmpdir(), 'reel-')), runner, '/nonexistent/chrome'))
+    await expect(renderReel(window, events, timing, track, mkdtempSync(join(tmpdir(), 'reel-')), {}, runner, '/nonexistent/chrome'))
       .rejects.toThrow(/managed Chrome is missing.*npx --yes hyperframes@0\.9\.66 browser ensure/)
     expect(calls).toEqual([])
   })
@@ -148,7 +151,7 @@ describe('Reel rendering', () => {
     const { mkdirSync, existsSync } = await import('node:fs')
     mkdirSync(chrome, { recursive: true })
     writeFileSync(join(chrome, 'chrome-headless-shell'), '')
-    await expect(renderReel(window, events, timing, track, join(dir, 'out'), async () => ({ out: '', err: '', code: 0 }), join(dir, 'chrome'))).rejects.toThrow()
+    await expect(renderReel(window, events, timing, track, join(dir, 'out'), {}, async () => ({ out: '', err: '', code: 0 }), join(dir, 'chrome'))).rejects.toThrow()
     expect(existsSync(join(dir, 'out/project'))).toBe(false)
   })
 
@@ -164,7 +167,7 @@ describe('Reel rendering', () => {
     spawnSync(ffmpeg!, ['-v', 'error', '-f', 'lavfi', '-i', 'sine=f=220:d=40:r=48000', music])
     const calls: string[][] = []
     const runner: Runner = async argv => { calls.push(argv); return { out: '', err: 'boom', code: argv[0] === 'systemd-run' ? 1 : 0 } }
-    await expect(renderReel(window, events, timing, { ...track, path: music }, join(dir, 'out'), runner, join(dir, 'chrome')))
+    await expect(renderReel(window, events, timing, { ...track, path: music }, join(dir, 'out'), {}, runner, join(dir, 'chrome')))
       .rejects.toThrow(/Rendering the Reel failed \(exit 1\)/)
     const { existsSync } = await import('node:fs')
     expect(existsSync(join(dir, 'out/project'))).toBe(false) // the audio excerpt doesn't outlive a failed render

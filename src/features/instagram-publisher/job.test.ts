@@ -37,6 +37,7 @@ const weekend = (): CatalogEvent[] => Array.from({ length: 6 }, (_, i) => ({
   isAllDay: false,
   categories: ['music'],
   summary: 'Una noche de música.',
+  imageUrl: `https://img.example/${i + 1}.jpg`,
   venue: `Sala ${i + 1}`,
   barrio: ['Palermo', 'Boedo', 'Almagro', 'Flores', 'Saavedra', 'Chacarita'][i]!,
   venueHandle: `sala${i + 1}`,
@@ -67,7 +68,10 @@ class World {
   music = musicDir()
   config: Config = { auto: { hoy: false, finde: false, gratis: false, reel: false }, linkStickers: { hoy: false }, r2: { bucket: 'b', publicBaseUrl: 'https://ig.example' }, reel: { musicDir: this.music } }
   composeStory: ComposeStory = async () => { throw new Error('Unexpected call to the browser') }
-  reelRenders: Array<{ track: string; total: number; events: string[] }> = []
+  reelRenders: Array<{ track: string; total: number; events: string[]; flyers: number }> = []
+  /** The page the last still-frame render got, and every directory the flyers were downloaded into. */
+  html = ''
+  artDirs: string[] = []
   renderError: Error | null = null
   tokenWarning: string | null = null
   renderCount = 0
@@ -84,16 +88,27 @@ class World {
         const event = this.catalog.find(candidate => candidate.id === id)!
         return [id, { status: this.statuses.get(id) ?? 'scheduled', startsAt: event.startsAt, endsAt: event.endsAt, inScope: !this.notInScope.has(id) }]
       })),
-      render: async (_html, outDir, _height) => {
+      artwork: async (events, dir) => {
+        const { mkdirSync } = await import('node:fs')
+        mkdirSync(dir, { recursive: true })
+        this.artDirs.push(dir)
+        return Object.fromEntries(events.filter(event => event.imageUrl).map(event => {
+          const file = join(dir, `${event.id}.jpg`)
+          writeFileSync(file, 'flyer')
+          return [event.id, { file, backdrop: file, width: 800, height: 1000 }]
+        }))
+      },
+      render: async (html, outDir, _height) => {
+        this.html = html
         this.renderCount++
         if (this.renderError) throw this.renderError
         const { mkdirSync } = await import('node:fs')
         mkdirSync(outDir, { recursive: true })
         return Array.from({ length: 8 }, (_, i) => { const path = join(outDir, `frame-${i + 1}.jpg`); writeFileSync(path, `render ${this.renderCount} frame ${i + 1}`); return path })
       },
-      renderReel: async (_window, events, timing, track, outDir) => {
+      renderReel: async (_window, events, timing, track, outDir, artwork) => {
         this.renderCount++
-        this.reelRenders.push({ track: track.id, total: timing.total, events: events.map(event => event.id) })
+        this.reelRenders.push({ track: track.id, total: timing.total, events: events.map(event => event.id), flyers: Object.keys(artwork).length })
         const { mkdirSync } = await import('node:fs')
         mkdirSync(outDir, { recursive: true })
         return ['reel.mp4', 'cover.jpg'].map(name => { const path = join(outDir, name); writeFileSync(path, `render ${this.renderCount} ${name}`); return path })
@@ -909,6 +924,30 @@ describe('regenerate', () => {
   })
 })
 
+describe('artwork', () => {
+  it('renders each event\'s flyer, and the no-flyer card for an event without one', async () => {
+    const w = new World()
+    w.catalog[5]!.imageUrl = null
+    await w.job().tick()
+    expect(w.draft().events).toHaveLength(6)
+    expect(w.html.match(/data-flyer/g)).toHaveLength(5)
+    expect(w.html.match(/data-fallback/g)).toHaveLength(1)
+    expect(w.html).not.toContain('hero-rooftop')
+    expect(w.html).not.toMatch(/https?:\/\//) // nothing is fetched at render time
+    const { existsSync } = await import('node:fs')
+    expect(existsSync(w.artDirs[0]!)).toBe(false)
+  })
+
+  it('removes the downloaded flyers when the render fails', async () => {
+    const w = new World()
+    w.renderError = new Error('render crashed')
+    await w.job().tick()
+    const { existsSync } = await import('node:fs')
+    expect(w.artDirs).toHaveLength(1)
+    expect(existsSync(w.artDirs[0]!)).toBe(false)
+  })
+})
+
 describe('Este finde Reel', () => {
   /** Thursday 18:05: the Reel draft is previewed (the finde draft was made Wednesday). */
   async function reelPreviewed(w = new World()) {
@@ -930,6 +969,14 @@ describe('Este finde Reel', () => {
     expect(preview.text).toContain('It goes out Friday at 12:00 once you react ✅.')
     expect(preview.text.endsWith('\n\nMusic: "Track a" by Synth.')).toBe(true)
     expect(reel.caption).toBe(w.draft().caption)
+  })
+
+  it('passes the downloaded flyers to the render and removes them afterwards', async () => {
+    const w = await reelPreviewed()
+    expect(w.reelRenders[0]!.flyers).toBe(6)
+    const { existsSync } = await import('node:fs')
+    expect(w.artDirs).toHaveLength(2)
+    for (const dir of w.artDirs) expect(existsSync(dir)).toBe(false)
   })
 
   it('shows the carousel picks minus the finde exclusions', async () => {

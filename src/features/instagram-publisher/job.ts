@@ -9,6 +9,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync,
 import { join } from 'node:path'
 import { PublishStop, checkWrite, decide, readReactions } from './approval.ts'
 import * as alerts from './alerts.ts'
+import { fetchArtwork, type Artwork } from './artwork.ts'
 import { caption as captionFor, footerHandle, heldText, postedText, skippedMentionsText, skipText, slackPreview, tooFewText, type SkipReason } from './copy.ts'
 import { FORMATS, activeRuns, draftId, parseDraftId, runWindow, type FormatKey, type RunWindow } from './formats.ts'
 import { FRAME, framesHtml } from './html.ts'
@@ -63,9 +64,11 @@ export interface Services {
   config(): Config
   readCatalog(window: RunWindow): Promise<CatalogEvent[]>
   readEvents(ids: string[]): Promise<Map<string, EventNow>>
+  /** Download and prepare the events' flyers into `dir`. Never throws: an event whose flyer fails is left out. */
+  artwork(events: PostEvent[], dir: string): Promise<Artwork>
   render(html: string, outDir: string, height: number): Promise<string[]>
   /** Returns [reel.mp4, cover.jpg]. */
-  renderReel(window: RunWindow, events: PostEvent[], timing: ReelTiming, track: ReadyTrack, outDir: string): Promise<string[]>
+  renderReel(window: RunWindow, events: PostEvent[], timing: ReelTiming, track: ReadyTrack, outDir: string, artwork: Artwork): Promise<string[]>
   slackUploadFiles(frames: string[], draftId: string): Promise<Array<{ id: string; title: string }>>
   slackShareFiles(files: Array<{ id: string; title: string }>, text: string): Promise<unknown>
   slackShareTs(fileId: string): Promise<string | null>
@@ -88,8 +91,9 @@ export const liveServices = (): Services => ({
   config: runtime.readConfig,
   readCatalog: runtime.readCatalog,
   readEvents: runtime.readEvents,
+  artwork: (events, dir) => fetchArtwork(events, dir, runtime.log),
   render: (html, outDir, height) => runtime.renderFrames(html, outDir, height),
-  renderReel: runtime.renderReel,
+  renderReel: (window, events, timing, track, outDir, artwork) => runtime.renderReel(window, events, timing, track, outDir, artwork),
   slackUploadFiles: runtime.slackUploadFiles,
   slackShareFiles: runtime.slackShareFiles,
   slackShareTs: runtime.slackShareTs,
@@ -131,7 +135,7 @@ export class Job {
   }
 
   private assets() {
-    return { fontsDir: join(this.s.repo, 'src/features/instagram-publisher/assets/fonts'), heroPhoto: join(this.s.repo, 'static/hero-rooftop-buenos-aires.jpg') }
+    return { fontsDir: join(this.s.repo, 'src/features/instagram-publisher/assets/fonts'), logo: join(this.s.repo, 'static/logo.svg') }
   }
 
   /** The Reel track for a new draft: the one whose last published Reel is oldest, never-published tracks first. */
@@ -150,15 +154,22 @@ export class Job {
     const skip = format === 'reel' ? [...exclude, ...(this.loadDraft(draftId('finde', from))?.exclude ?? [])] : exclude
     const events = selectEvents(await this.s.readCatalog(window), format, window, skip)
     if (events.length < FORMATS[format].min) return { window, events, caption: null, frames: null, track: null, timing: null }
-    if (format === 'reel') {
-      const track = readyTrack(this.s.config().reel.musicDir, trackId!)
-      const timing = reelTiming(window, events, track.bpm)
-      const frames = await this.s.renderReel(window, events, timing, track, outDir)
-      const saved: DraftTrack = { id: track.id, title: track.title, artist: track.artist, credit: track.credit }
-      return { window, events, caption: captionFor(format, events, track.credit), frames, track: saved, timing }
+    // The flyers go next to the render directory (rendering empties its own) and are removed once the frames exist.
+    const artDir = `${outDir}-art`
+    try {
+      if (format === 'reel') {
+        const track = readyTrack(this.s.config().reel.musicDir, trackId!)
+        const timing = reelTiming(window, events, track.bpm)
+        const frames = await this.s.renderReel(window, events, timing, track, outDir, await this.s.artwork(events, artDir))
+        const saved: DraftTrack = { id: track.id, title: track.title, artist: track.artist, credit: track.credit }
+        return { window, events, caption: captionFor(format, window, events, track.credit), frames, track: saved, timing }
+      }
+      const html = framesHtml(format, window, events, this.assets(), await this.s.artwork(events, artDir))
+      const frames = await this.s.render(html, outDir, FRAME[FORMATS[format].kind as 'story' | 'carousel'].height)
+      return { window, events, caption: captionFor(format, window, events), frames, track: null, timing: null }
+    } finally {
+      rmSync(artDir, { recursive: true, force: true })
     }
-    const frames = await this.s.render(framesHtml(format, window, events, this.assets()), outDir, FRAME[FORMATS[format].kind as 'story' | 'carousel'].height)
-    return { window, events, caption: captionFor(format, events), frames, track: null, timing: null }
   }
 
   // Drafting and previewing

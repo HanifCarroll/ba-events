@@ -6,8 +6,6 @@ export const WEEKDAYS_ES = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves'
 export const WEEKDAYS_EN = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'] as const
 export const MONTHS_ES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'] as const
 export const MONTHS_EN = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'] as const
-const NUMBERS_ES = ['Cero', 'Uno', 'Dos', 'Tres', 'Cuatro', 'Cinco', 'Seis', 'Siete', 'Ocho']
-const NUMBERS_EN = ['Zero', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight']
 
 /** A Buenos Aires wall-clock reading of an instant. */
 export interface LocalTime { date: string; weekday: number; day: number; month: number; hour: number; minute: number }
@@ -67,11 +65,6 @@ export function englishDates(from: string, to: string, style: 'long' | 'compact'
   const start = `${month(m1)} ${d1}`
   if (from === to) return start
   return `${start}${style === 'compact' ? '–' : ' to '}${m1 === m2 ? d2 : `${month(m2)} ${d2}`}`
-}
-
-export function numberWord(n: number, lang: 'es' | 'en'): string {
-  const words = lang === 'es' ? NUMBERS_ES : NUMBERS_EN
-  return words[n] ?? String(n)
 }
 
 export type PriceInput = { isFree: boolean; price: number | null; payWhatYouWant: boolean }

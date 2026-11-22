@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { FakeInstagram } from './fake-instagram.ts'
+import { CARD } from './html.ts'
 import { InstagramError, emptyPublishState, footerTag, publish, type InstagramApi, type PublishDeps, type PublishJob, type PublishState } from './instagram.ts'
 
 const carousel: PublishJob = {
@@ -160,11 +161,13 @@ describe('story publishing', () => {
 })
 
 describe('tag position', () => {
-  it('points at the footer handle', () => {
+  it('points at the footer handle, on the card\'s solid panel', () => {
     const tag = footerTag('salalucida', 1350)!
     expect(tag.x).toBeGreaterThan(0.07)
     expect(tag.x).toBeLessThan(0.3)
-    expect(tag.y).toBeCloseTo(0.933, 2)
+    expect(tag.y).toBeCloseTo(CARD.carousel.footer.centerY / 1350, 3)
+    expect(tag.y * 1350).toBeGreaterThan(CARD.carousel.seam)
+    expect(footerTag('salalucida', 1350, 'Vía @salalucida')!.x).toBeGreaterThan(tag.x)
   })
 })
 

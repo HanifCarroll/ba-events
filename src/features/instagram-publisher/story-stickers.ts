@@ -1,9 +1,11 @@
+import { CARD, STICKER_Y } from './html.ts'
 import { eventFrameTag, type InstagramApi } from './instagram.ts'
 import type { PostEvent } from './select.ts'
 
 const HOME_PAGE = 'https://baeventos.com'
 // Only count frames created close to the click, even if a later tick does the read.
 const SHARE_WINDOW_MS = 5 * 60_000
+const MENTION_AT = { left: CARD.story.footer.left - 14, centerY: CARD.story.footer.centerY }
 
 export interface StickerFrame {
   path: string
@@ -11,6 +13,8 @@ export interface StickerFrame {
   text: string
   centerY: number
   mention?: string
+  /** Where the mention sticker goes: over the footer handle, clear of the link sticker. */
+  mentionAt?: { left: number; centerY: number }
 }
 
 export function stickerFrames(frames: string[], events: Array<Pick<PostEvent, 'id' | 'handle' | 'via'>>): StickerFrame[] {
@@ -19,10 +23,10 @@ export function stickerFrames(frames: string[], events: Array<Pick<PostEvent, 'i
   }
   // The renderer saves the cover, the events in draft order, and the closing frame.
   return frames.map((path, index) => {
-    if (index === 0) return { path, url: HOME_PAGE, text: 'Ver la agenda', centerY: 1440 }
-    if (index === frames.length - 1) return { path, url: HOME_PAGE, text: 'Buscar planes', centerY: 1390 }
+    if (index === 0) return { path, url: HOME_PAGE, text: 'Ver la agenda', centerY: STICKER_Y.cover }
+    if (index === frames.length - 1) return { path, url: HOME_PAGE, text: 'Buscar planes', centerY: STICKER_Y.closing }
     const mention = eventFrameTag(events, index, 1920)?.username
-    return { path, url: `${HOME_PAGE}/events/${encodeURIComponent(events[index - 1]!.id)}`, text: 'Ver evento', centerY: 1440, mention }
+    return { path, url: `${HOME_PAGE}/events/${encodeURIComponent(events[index - 1]!.id)}`, text: 'Ver evento', centerY: STICKER_Y.event, mention, mentionAt: MENTION_AT }
   })
 }
 

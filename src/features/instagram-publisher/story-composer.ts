@@ -250,7 +250,7 @@ async function chooseMention(tab: StoryCDP, username: string) {
   return false
 }
 
-async function addMention(tab: StoryCDP, username: string) {
+async function addMention(tab: StoryCDP, username: string, at: { left: number; centerY: number }) {
   if (!await chooseMention(tab, username)) return false
   const item = sticker(`^@\\s*${RegExp.escape(username)}$`, 'i')
   const stage = await boxOf(tab, parent(item, 2))
@@ -263,7 +263,7 @@ async function addMention(tab: StoryCDP, username: string) {
     await drag(tab, grip, { x: grip.x - box.width * (1 - scale), y: grip.y + box.height * (1 - scale) / 2 })
   }
   if ((await boxOf(tab, item)).height > 90 * px) throw new Error('The mention sticker could not be made small enough.')
-  await placeSticker(tab, item, 1618, 66)
+  await placeSticker(tab, item, at.centerY, at.left)
   return true
 }
 
@@ -371,7 +371,7 @@ async function composeAttempt(frames: StickerFrame[], action: Parameters<Compose
       await addLink(tab, frame)
       if (frame.mention) {
         step = `add the mention sticker to frame ${index + 1} in Business Suite`
-        if (!await addMention(tab, frame.mention)) skippedMentions.push(frame.mention)
+        if (!await addMention(tab, frame.mention, frame.mentionAt!)) skippedMentions.push(frame.mention)
       }
       await activate(tab, button('Apply', editor))
       await until(async () => !await visible(tab, editor))

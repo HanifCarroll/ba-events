@@ -24,8 +24,28 @@ A post MUST show only events from the Instagram intake that are scheduled, marke
 - **WHEN** at least one free event qualifies
 - **THEN** the post includes at least one free event
 
+### Requirement: Frames show each event's own artwork in the website's look
+Every event card MUST show that event's own artwork whole, uncropped, above a solid panel that holds every word, so no text depends on the artwork's colors. Before a render the job MUST download each picked event's `image_url` over https only, with a 10 second limit and a 15 MB limit, and MUST use it only if it decodes as a raster image. No format may use a stock photo. Among qualifying events the pick MUST prefer events that have artwork.
+
+#### Scenario: A flyer can't be used
+- **WHEN** an event has no `image_url`, or its download fails, times out, is too large, isn't https, or doesn't decode as an image
+- **THEN** that event's card shows a dark tile with its title in the flyer's place, the reason is logged, and the render does not fail
+
+#### Scenario: Too few events have artwork
+- **WHEN** fewer qualifying events have artwork than the post has places
+- **THEN** qualifying events without artwork fill the remaining places and are not dropped
+
+#### Scenario: The Reel and the covers
+- **WHEN** a Reel is drafted and at least 4 qualifying events have artwork
+- **THEN** the Reel shows only events with artwork
+- **AND** a cover or closing frame shows only the artwork of events that have it
+
+#### Scenario: A font or image file is missing at render time
+- **WHEN** a vendored font or a downloaded image does not load in the frames page
+- **THEN** the render fails instead of producing frames in a fallback face
+
 ### Requirement: The Este finde Reel shows the weekend's carousel picks as a video with rotating music
-The Reel MUST be one 1080 × 1920 H.264/AAC MP4 at 30 fps, drafted Thursday 18:00 and published Friday 12:00, with Friday 18:00 as its cutoff and deadline. It MUST show 4 to 6 events picked by Este finde's rules, without the Este finde draft's exclusions and without any event that would be over by its Friday 18:00 deadline, hold each card still for max(3.0 s, 0.35 s a word, characters / 17), and cut on the track's beats.
+The Reel MUST be one 1080 × 1920 H.264/AAC MP4 at 30 fps, drafted Thursday 18:00 and published Friday 12:00, with Friday 18:00 as its cutoff and deadline. It MUST show 4 to 6 events picked by Este finde's rules, without the Este finde draft's exclusions and without any event that would be over by its Friday 18:00 deadline, hold each card's words still for max(3.0 s, 0.35 s a word, characters / 17), and cut on the track's beats. During the hold only the flyer may move, by a slow zoom of at most 4%.
 
 #### Scenario: A Friday daytime event
 - **WHEN** an event ends by Friday 18:00, or starts by then and has no end time

@@ -5,7 +5,7 @@ import type { PostEvent } from '../select.ts'
 import { holdFor, reelProject, reelTiming } from './project.ts'
 
 const event = (n: number, title: string, price: string | null = null): PostEvent =>
-  ({ id: `e${n}`, date: '2026-11-21', startsAt: '', title, time: '21:00', description: 'Ignored on the Reel.', venue: `Sala ${n}`, barrio: 'Boedo', price, handle: `sala${n}`, via: false })
+  ({ id: `e${n}`, date: '2026-11-21', startsAt: '', title, time: '21:00', description: 'Ignored on the Reel.', venue: `Sala ${n}`, barrio: 'Boedo', price, handle: `sala${n}`, imageUrl: null, via: false })
 const window = runWindow('reel', '2026-11-20')
 const six = [event(1, 'Muestra anual del Taller de Arte Daniela Lucero: 10 años', 'Gratis'), event(2, 'Mondongo'), event(3, 'Jazz <en> "vivo"', '$15.000'), event(4, 'Ciclo'), event(5, 'Yoga'), event(6, 'CBB')]
 
@@ -40,13 +40,14 @@ describe('Reel project', () => {
     const files = reelProject(window, six, reelTiming(window, six, 120))
     expect(Object.keys(files).sort()).toEqual(['compositions/closing.html', 'compositions/cover.html', ...[1, 2, 3, 4, 5, 6].map(n => `compositions/e${n}.html`), 'hyperframes.json', 'index.html', 'meta.json'].sort())
     const cover = files['compositions/cover.html']
-    for (const text of ['BA Eventos', '20 al 22 de noviembre', 'Este finde', 'en Buenos Aires']) {
+    for (const text of ['20 al 22 de noviembre', '6 planes para este finde en Buenos Aires', 'src="assets/logo.svg"']) {
       expect(cover).toContain(text)
     }
+    expect(cover).not.toContain('hero-rooftop')
     expect(files['compositions/e1.html']).toContain('Sábado 21 · 21:00')
-    expect(files['compositions/e1.html']).toContain('pill free tx">Gratis<')
+    expect(files['compositions/e1.html']).toContain('class="pill free" data-role="pill">Gratis<')
     expect(files['compositions/e3.html']).toContain('Jazz &lt;en&gt; &quot;vivo&quot;')
-    expect(files['compositions/e3.html']).toContain('class="pill tx">$15.000<')
+    expect(files['compositions/e3.html']).toContain('class="pill" data-role="pill">$15.000<')
     expect(files['compositions/e2.html']).not.toContain('class="pill')
     for (const html of Object.values(files)) {
       expect(html).not.toContain('Ignored on the Reel.')
@@ -55,5 +56,39 @@ describe('Reel project', () => {
     }
     expect(files['compositions/closing.html']).toContain('Encontrá más planes')
     expect(files['index.html']).toContain('src="assets/music.wav"')
+  })
+
+  it('shows each flyer whole over its own blur, and a titled tile when an event has none', () => {
+    const artwork = { e2: { file: 'assets/art/art-2.jpg', backdrop: 'assets/art/art-2-bg.jpg', width: 1080, height: 1920 } }
+    const files = reelProject(window, six, reelTiming(window, six, 120), artwork)
+    const flyer = files['compositions/e2.html']!
+    expect(flyer).toContain('data-flyer src="assets/art/art-2.jpg"')
+    expect(flyer).toContain('class="fill" src="assets/art/art-2-bg.jpg"')
+    // 9:16 inside the tall box: the whole flyer, never cropped.
+    const [, w, h] = /data-flyer[^>]*width:(\d+)px;height:(\d+)px/.exec(flyer)!
+    expect(Number(w) / Number(h)).toBeCloseTo(1080 / 1920, 2)
+    const tile = files['compositions/e1.html']!
+    expect(tile).toContain('data-fallback')
+    expect(tile).not.toContain('data-flyer')
+    expect(tile.match(/Muestra anual del Taller de Arte Daniela Lucero: 10 años/g)).toHaveLength(2) // the tile and the panel
+    // The cover and the closing card use only the events that have artwork.
+    expect(files['compositions/cover.html']!.match(/assets\/art\/art-2\.jpg/g)).toHaveLength(1)
+    expect(files['compositions/closing.html']).toContain('assets/art/art-2.jpg')
+  })
+
+  it('moves only the flyer during the hold: a slow zoom, with every word landed within 0.5 s of the cut', () => {
+    const artwork = { e2: { file: 'assets/art/a.jpg', backdrop: 'assets/art/a-bg.jpg', width: 800, height: 1000 } }
+    const timing = reelTiming(window, six, 120)
+    const files = reelProject(window, six, timing, artwork)
+    const card = files['compositions/e2.html']!
+    const length = timing.cards.find(c => c.id === 'e2')!.length
+    expect(card).toContain(`tl.fromTo("#e2-fly", { scale: 1 }, { scale: 1.04, duration: ${length}, ease: "none" }, 0);`)
+    expect(files['compositions/e1.html']).not.toContain('-fly"')
+    const entrances = Array.from(card.matchAll(/tl\.fromTo\("#e2-(kicker|title|venue|meta|pill|zone)", .*?, (?:LAND|\{[^}]*duration: ([\d.]+)[^}]*\}), ([\d.]+)\);/g))
+    expect(entrances.map(([, id]) => id)).toEqual(['zone', 'kicker', 'title', 'venue', 'meta'])
+    for (const [, , duration, at] of entrances) expect(Number(at) + Number(duration ?? 0.32)).toBeLessThanOrEqual(0.5)
+    // The cover is the thumbnail: nothing enters, it only leaves.
+    expect(files['compositions/cover.html']!.match(/tl\.fromTo/g)).toHaveLength(1)
+    expect(files['compositions/cover.html']).toContain(`OUT, ${timing.cards[0]!.length - 0.2}`)
   })
 })

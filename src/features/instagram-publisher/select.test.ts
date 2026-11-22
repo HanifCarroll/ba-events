@@ -18,6 +18,7 @@ const event = (overrides: Partial<CatalogEvent> = {}): CatalogEvent => ({
   isAllDay: false,
   categories: ['music'],
   summary: 'Una noche de música.',
+  imageUrl: null,
   venue: `Sala ${seq}`,
   barrio: 'Palermo',
   venueHandle: null,
@@ -98,6 +99,36 @@ describe('picking the mix', () => {
     const picked = selectEvents([...palermo, ...others, noText], 'finde', finde)
     expect(new Set(picked.map(p => p.barrio))).toEqual(new Set(['Palermo', 'Boedo', 'Almagro', 'Flores', 'Once']))
     expect(picked).toHaveLength(6)
+  })
+
+  it('prefers events with artwork, without dropping a qualifying event that has none', () => {
+    const art = 'https://baeventos.com/api/event-artwork/a/b.jpg'
+    const plain = Array.from({ length: 5 }, (_, i) => event({ barrio: `Barrio ${i}`, categories: [`c${i}`] }))
+    const flyers = Array.from({ length: 4 }, () => event({ barrio: 'Palermo', summary: null, imageUrl: art, startsAt: '2026-11-22T23:00:00.000Z' }))
+    const picked = selectEvents([...plain, ...flyers], 'finde', finde)
+    expect(picked).toHaveLength(6)
+    expect(picked.filter(p => p.imageUrl).map(p => p.id)).toEqual(flyers.map(e => e.id))
+    expect(picked.filter(p => !p.imageUrl)).toHaveLength(2)
+    // Not enough flyers to fill the post: the rest still qualify.
+    expect(selectEvents(plain, 'finde', finde)).toHaveLength(5)
+    expect(toPostEvent(event({ imageUrl: '  ' })).imageUrl).toBeNull()
+  })
+
+  it('still shows one event per venue when only the later one has artwork', () => {
+    const plain = event({ venue: 'Sala Lúcida' })
+    const flyer = event({ venue: 'Sala Lucida —', startsAt: '2026-11-21T22:00:00.000Z', imageUrl: 'https://img.example/a.jpg' })
+    expect(selectEvents([plain, flyer], 'finde', finde).map(p => p.id)).toEqual([flyer.id])
+  })
+
+  it('builds the Reel from events with artwork only, unless fewer than four have any', () => {
+    const reel = runWindow('reel', '2026-11-20')
+    const at = (hour: number) => ({ startsAt: `2026-11-22T${hour}:00:00.000Z` })
+    const flyers = Array.from({ length: 4 }, (_, i) => event({ ...at(20 + (i % 3)), imageUrl: `https://img.example/${i}.jpg` }))
+    const plain = Array.from({ length: 3 }, (_, i) => event({ ...at(20 + i), barrio: `Barrio ${i}`, categories: [`c${i}`] }))
+    expect(new Set(selectEvents([...plain, ...flyers], 'reel', reel).map(p => p.id))).toEqual(new Set(flyers.map(e => e.id)))
+    const few = selectEvents([...plain, ...flyers.slice(0, 3)], 'reel', reel)
+    expect(few).toHaveLength(6)
+    expect(few.filter(p => p.imageUrl)).toHaveLength(3)
   })
 
   it('honors excluded ids and lists the picks by start time', () => {
