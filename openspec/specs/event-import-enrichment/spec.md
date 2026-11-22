@@ -47,13 +47,13 @@ The catalog SHALL keep source-stated organizer names and URLs, performer lineups
 #### Scenario: Intake sees a credit or a ticket-sale opening time
 - **WHEN** an Instagram intake candidate supplies an organizer, a lineup, or a ticket-sale opening time
 - **THEN** the fact needs a corresponding retained source excerpt or image, and accepted explicit intake facts are protected against later importer or enrichment writes
-- **AND** the excerpt must explicitly credit the role for this occurrence; a posting account, seller, sponsor, or after-party performer is not a credit
-- **AND** a ticket-sale timestamp requires a quoted calendar date and clock; changing that timestamp or the ticket destination requires current direct ticket evidence, so an unsupported correction changes neither field
+- **AND** the excerpt must explicitly credit the role for this occurrence and keep a performer's name intact; a posting account, seller, sponsor, or credit in an after-party section is not a credit for the main show. An after-party section lasts until a blank line or the next heading
+- **AND** a ticket-sale timestamp requires a quoted calendar date and clock; changing that timestamp or the ticket destination requires current direct ticket evidence quoting the exact destination, ignoring the HTTP/HTTPS scheme, leading `www.`, a trailing slash, and tracking parameters. An unsupported correction changes neither field
 - **AND** an omitted field leaves the prior fact untouched unless a verified door date or ticket destination has changed
 
 #### Scenario: An Instagram flyer gives only doors
 - **WHEN** the flyer explicitly states a door time but no performance start
-- **THEN** intake stores the evidenced Buenos Aires door timestamp; each clock matches its own label, and a doors clock before 06:00 requires an explicit local `doors_date`
+- **THEN** intake stores the evidenced Buenos Aires door timestamp; a doors clock needs a doors label, and a start clock needs a start label or an unlabeled line. Intake checks the complete caption line around each cited clock and interprets AM/PM when present. A doors clock before 06:00 requires an explicit local `doors_date`
 - **AND** the door clock does not become the start; when an update adds doors to the same date with no new start, it keeps the existing verified start and end and checks doors against that start
 - **AND** a reschedule to another date clears stale doors when the revision has no new door evidence
 

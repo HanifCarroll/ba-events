@@ -7,7 +7,7 @@ import { importTry, ImportOperationError } from '../core/effect-utils.ts'
 import { candidateError, decodeCandidate, isOfficialPage, type Candidate } from './schema.ts'
 import { officialSites, verifyOfficialPagesEffect, type ReadPage, type RenderPage } from './official-page.ts'
 import { baDate, baTime, candidateStart, candidateDoors, decideMatch, descriptionChanged, searchInputsChanged, validateEvidence, normalizeTitle, ticketDestinationChanged,
-  suppliedDetailFacts, type CatalogMatch, type Observation } from './planning.ts'
+  citesTicketDestination, suppliedDetailFacts, type CatalogMatch, type Observation } from './planning.ts'
 import type { IntakePlanRow, IntakeStore } from './store.ts'
 
 export type IntakePlan = IntakePlanRow
@@ -141,7 +141,8 @@ export const previewCandidateEffect = Effect.fn('intake.preview')(function*(stor
     if (old.price !== payload.price || old.is_free !== payload.is_free) changes.push('price')
     // An official page can support a new event, but a correction still needs the organizer's or venue's own post.
     for (const field of changes) if (!candidate.evidence.some(evidence => !isOfficialPage(evidence) && evidence.fields.some(item => item === field) &&
-      observations.some(post => post.id === evidence.observation_id && post.authority !== 'curator'))) {
+      (field !== 'ticket' || citesTicketDestination(evidence.excerpt, payload.ticket_url)) &&
+      observations.some(post => post.id === evidence.observation_id && (post.authority === 'organizer' || post.authority === 'venue')))) {
       decision.action = 'held'; decision.reasons.push(`Correction of ${field} needs direct organizer or venue evidence`)
     }
   }

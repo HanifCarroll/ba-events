@@ -25,6 +25,13 @@ export function canonicalTicket(value: string | null): string | null {
   url.searchParams.sort()
   return `${url.origin}${url.pathname.replace(/\/$/, '')}${url.search}`
 }
+/** A correction must cite the destination itself, not just tag a quote as ticket evidence. */
+export function citesTicketDestination(excerpt: string, ticket: string | null | undefined): boolean {
+  const normalize = (url: string) => canonicalTicket(url.replace(/^https?:\/\/(?:www\.)?/i, 'https://'))
+  const destination = ticket && normalize(ticket)
+  return Boolean(destination && [...excerpt.matchAll(/\bhttps?:\/\/[^\s<>"']+/giu)].some(([url]) => normalize(url) === destination))
+}
+
 export function ticketDestinationChanged(before: unknown, after: string | null | undefined): boolean {
   if (!after) return false
   return typeof before !== 'string' || (canonicalTicket(before) ?? before) !== (canonicalTicket(after) ?? after)
@@ -98,8 +105,12 @@ export function validateEvidence(candidate: Candidate, observations: Observation
     if (evidence.media_id) {
       if (!media.some(item => item.id === evidence.media_id && item.observation_id === post.id)) reasons.push('Flyer evidence is not attached to this observation')
     } else if (!post.caption.includes(evidence.excerpt)) reasons.push('Caption evidence must be an exact excerpt')
-    if (candidate.time && evidence.fields.includes('time') && !supportsStartTime(evidence.excerpt, candidate.time, evidence.media_id ? undefined : post.caption)) {
+    const caption = evidence.media_id ? undefined : post.caption
+    if (candidate.time && evidence.fields.includes('time') && !supportsStartTime(evidence.excerpt, candidate.time, caption)) {
       reasons.push('Start time must match the labeled show clock, not doors')
+    }
+    if (candidate.doors_time && evidence.fields.includes('doors_time') && !statesDoorsTime(evidence.excerpt, candidate.doors_time, caption)) {
+      reasons.push('Door time must match the labeled doors clock')
     }
     for (const field of evidence.fields) supported.add(field)
   }
@@ -107,9 +118,6 @@ export function validateEvidence(candidate: Candidate, observations: Observation
   for (const field of suppliedDetailFacts(candidate)) {
     if (field === 'doors_time') {
       if (!supported.has(field)) reasons.push('Missing evidence for doors_time')
-      if (candidate.doors_time && postEvidence.some(item => item.fields.includes(field) && !statesDoorsTime(item.excerpt, candidate.doors_time!))) {
-        reasons.push('Door time must match the labeled doors clock')
-      }
     } else if (!postEvidence.some(item => item.fields.some(value => value === field))) reasons.push(`Missing Instagram evidence for ${field}`)
   }
   for (const [field, credits] of [['organizer', candidate.organizer ? [candidate.organizer] : []], ['performers', candidate.performers ?? []]] as const) {

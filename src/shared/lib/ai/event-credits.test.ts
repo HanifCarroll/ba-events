@@ -20,3 +20,16 @@ it('requires a role, stops organizer evidence at the first comma or period, and 
     { name: 'Invitado', excerpt: 'Invitado estuvo en el público.' },
   ] }, ['Presenta: Passline. Auspicia Falso. Invitado estuvo en el público.\nAfter-party\nDJ: Otro'])).toEqual({})
 })
+
+it.each(['\n\n', '\n## Show principal\n', '\nShow principal:\n'])('limits the after-party to its own section (%j)', separator => {
+  const source = `After-party\nDJ: Uno\nDJ: Dos${separator}DJ: Tres`
+  const performers = ['Uno', 'Dos', 'Tres'].map(name => ({ name, excerpt: `DJ: ${name}` }))
+  expect(statedEventCredits({ performers }, [source])).toEqual({ performers: [{ name: 'Tres' }] })
+})
+
+it.each(['Organizador', 'Organizadora'])('accepts %s and keeps a performer name containing y intact', label => {
+  const excerpt = `${label}: Nube. Actúa: Luz y Sombra`
+  const organizer = { name: 'Nube', excerpt }
+  const performers = ['Luz y Sombra', 'Luz', 'Sombra'].map(name => ({ name, excerpt }))
+  expect(statedEventCredits({ organizer, performers }, [excerpt])).toEqual({ organizer: { name: 'Nube' }, performers: [{ name: 'Luz y Sombra' }] })
+})

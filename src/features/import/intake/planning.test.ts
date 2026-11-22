@@ -64,6 +64,27 @@ describe('Instagram candidate publication rules', () => {
     const trimmed = [{ ...evidence[0], excerpt: '21 hs', fields: ['time'] as const }]
     expect(validateEvidence({ ...input, time: '21:00', evidence: trimmed }, posts, [], now)).toContain('Start time must match the labeled show clock, not doors')
   })
+  it('checks trimmed clocks against the full caption lines even when a quote spans lines', () => {
+    const caption = 'Synthetic Jazz 20/11\nPuertas 21 hs\nShow 22 hs'
+    const excerpt = { observation_id: observationId, media_id: null }
+    const input = { ...candidate(), time: '22:00', doors_time: '21:00', evidence: [
+      { ...excerpt, fields: ['name', 'date', 'venue'] as const, excerpt: 'Synthetic Jazz 20/11' },
+      { ...excerpt, fields: ['time'] as const, excerpt: '22 hs' },
+      { ...excerpt, fields: ['doors_time'] as const, excerpt: '21 hs' },
+    ] }
+    const posts = [{ ...post, caption }]
+    expect(validateEvidence({ ...input, time: '21:00' }, posts, [], now)).toContain('Start time must match the labeled show clock, not doors')
+    expect(validateEvidence(input, posts, [], now)).toEqual([])
+    expect(validateEvidence({ ...input, evidence: input.evidence.map(item => item.excerpt === '22 hs' ?
+      { ...item, excerpt: '21 hs\nShow 22 hs' } : item) }, posts, [], now)).toEqual([])
+  })
+  it.each(['Show', 'Comienzo', 'Empieza', 'Arranca'])('recognizes %s and reads the complete 12-hour clock', label => {
+    const caption = `Synthetic Jazz 20/11\nPuertas 20 hs - ${label} 9:30 PM`
+    const evidence = [{ ...candidate().evidence[0], excerpt: '9:30 PM' }]
+    expect(validateEvidence({ ...candidate(), time: '21:30', evidence }, [{ ...post, caption }], [], now)).toEqual([])
+    expect(validateEvidence({ ...candidate(), time: '09:30', evidence: [{ ...evidence[0], excerpt: '9:30' }] }, [{ ...post, caption }], [], now))
+      .toContain('Start time must match the labeled show clock, not doors')
+  })
   it('requires an explicit doors date before 06:00 even when only doors are known', () => {
     const excerpt = 'Synthetic Jazz, Puerta 00:30'
     const evidence = [{ observation_id: observationId, fields: ['name', 'venue', 'date', 'doors_time'] as const, excerpt, media_id: null }]
@@ -80,7 +101,7 @@ describe('Instagram candidate publication rules', () => {
     ['organizer', 'Passline', 'Presenta: Passline'],
     ['organizer', 'Colectivo Nube', 'Entradas: Colectivo Nube'],
     ['organizer', 'Colectivo Nube', 'Con el apoyo de Colectivo Nube'],
-    ['performers', 'Trío Sol', 'After-party\nDJ: Trío Sol'],
+    ['performers', 'Trío Sol', 'After-party\nDJ: Uno\nDJ: Trío Sol'],
   ] as const)('rejects unsupported %s roles even when the name is quoted', (role, name, caption) => {
     const excerpt = caption.split('\n').at(-1)!
     const evidence = [...candidate().evidence, { observation_id: observationId, fields: [role], excerpt, media_id: null }]

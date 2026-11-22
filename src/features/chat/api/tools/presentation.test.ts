@@ -28,6 +28,16 @@ describe('concierge source presentation', () => {
     }
   })
 
+  it('tells the model when doors open without turning that time into the start', () => {
+    const source = { ...event, time_tba: true, doors_at: '2026-10-14T01:00:00.000Z' }
+    const expected = { dateTime: 'Doors open Tuesday, Oct 13 at 10:00 PM', timeTba: true }
+    expect(formatEventForClaude(source)).toMatchObject(expected)
+    expect(formatEventDetailsForClaude(source)).toMatchObject(expected)
+    expect(formatSavedEventsForClaude([source])[0]).toMatchObject(expected)
+    expect(formatEventForClaude({ ...source, doors_at: null }).dateTime).toBe('Time TBA')
+    expect(formatEventForClaude({ ...source, time_tba: false }).dateTime).toBe('Tuesday, Oct 13 at 10:00 PM')
+  })
+
   for (const flag of ['location_hidden', 'location_tba'] as const) {
     it(`omits the address and rejects event directions for ${flag}`, async () => {
       const source = { ...event, [flag]: true }

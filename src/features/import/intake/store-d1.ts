@@ -17,7 +17,7 @@ import type { EventInsert } from '#shared/lib/types.ts'
 import { importTry, ImportOperationError } from '../core/effect-utils.ts'
 import { mostSimilarVenue, similarIntakeVenues } from '../core/venue-similarity-d1.ts'
 import { pickVenue, venueNameKey } from '../core/venue-identity.ts'
-import { baDate, searchInputsChanged, ticketDestinationChanged, type Media } from './planning.ts'
+import { baDate, citesTicketDestination, searchInputsChanged, ticketDestinationChanged, type Media } from './planning.ts'
 import type { Source } from './schema.ts'
 import type { IntakePlanRow, IntakePolicy, IntakeStore, Reservation, VenueRow } from './store.ts'
 
@@ -352,10 +352,13 @@ export function d1Intake({ db, evidence, artwork, vectors }: IntakeBindings, sit
           throw new Error('A matching event appeared after preview')
         }
       }
-      const evidenceRows = (await db.prepare(`SELECT json_extract(x.value, '$.fields') AS fields, o.observed_at, s.authority FROM json_each(?) x
-        JOIN intake_observations o ON o.id = json_extract(x.value, '$.observation_id')
+      const evidenceRows = (await db.prepare(`SELECT json_extract(x.value, '$.fields') AS fields, o.observed_at, s.authority,
+          json_extract(x.value, '$.excerpt') AS excerpt, o.caption, json_extract(x.value, '$.media_id') AS media_id,
+          EXISTS (SELECT 1 FROM intake_media m WHERE m.id = json_extract(x.value, '$.media_id') AND m.observation_id = o.id) AS retained_media
+        FROM json_each(?) x JOIN intake_observations o ON o.id = json_extract(x.value, '$.observation_id')
         JOIN instagram_sources s ON s.username = o.source_username`).bind(JSON.stringify(plan.evidence))
-        .all<{ fields: string | null; observed_at: string; authority: string }>()).results
+        .all<{ fields: string | null; observed_at: string; authority: string; excerpt: string | null; caption: string;
+          media_id: string | null; retained_media: number }>()).results
       if (!evidenceRows.length) throw new Error('Retained evidence is required')
       const level = Math.max(...evidenceRows.map(row => row.authority === 'curator' ? 1 : 2))
       const observed = evidenceRows.map(row => row.observed_at).sort().at(-1)!
@@ -379,9 +382,11 @@ export function d1Intake({ db, evidence, artwork, vectors }: IntakeBindings, sit
           price: (previous.price ?? null) !== (e.price ?? null) || !!previous.is_free !== !!e.is_free,
           organizer: e.organizer_name !== undefined, performers: e.performers !== undefined,
           offers_valid_from: e.offers_valid_from !== undefined, doors_time: e.doors_at !== undefined }
+        const ticket = e.ticket_url ?? (typeof previous.ticket_url === 'string' ? previous.ticket_url : null)
         for (const [fact, needsEvidence] of Object.entries(changed)) {
           if (needsEvidence && !evidenceRows.some(row => (row.authority === 'venue' || row.authority === 'organizer') &&
-            (JSON.parse(row.fields ?? '[]') as string[]).includes(fact) && (!protection || row.observed_at >= protection.observed_at))) {
+            (JSON.parse(row.fields ?? '[]') as string[]).includes(fact) && (!protection || row.observed_at >= protection.observed_at) &&
+            (fact !== 'ticket' || row.excerpt && (row.media_id ? row.retained_media : row.caption.includes(row.excerpt)) && citesTicketDestination(row.excerpt, ticket)))) {
             throw new Error(`Correction field lacks current direct evidence: ${fact}`)
           }
         }

@@ -83,7 +83,7 @@ Event detail JSON-LD SHALL use recorded times, status, admission facts, and visi
 - **WHEN** event details include a stored organizer, performer lineup, or door time
 - **THEN** the event page shows the credited people and identifies doors separately from the performance start, including the local door date when it differs from the event date
 - **AND** JSON-LD uses `doorTime` without treating it as the performance start, and includes a sale opening time only on an offer with a usable ticket or registration link
-- **AND** chat and saved Event Cards show that same localized doors label, and MCP reads include the door timestamp separately from the start
+- **AND** chat and saved Event Cards show that same localized doors label, the concierge receives a labeled Buenos Aires door time when the start is unknown, and MCP reads include the door timestamp separately from the start
 
 ### Requirement: Source presentation preserves provenance
 Event detail and summaries SHALL distinguish BA Eventos pages, original event sources, and ticket links using the stored source fields. Sanitization or summary generation MUST NOT create a source URL.
