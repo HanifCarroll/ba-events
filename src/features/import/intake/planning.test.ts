@@ -37,7 +37,7 @@ describe('Instagram candidate publication rules', () => {
     const input = { ...candidate(), time: null, doors_time: '00:30', doors_date: '2026-11-21' }
     expect(candidateStart(input)).toBe('2026-11-20T03:00:00.000Z')
     expect(candidateDoors(input)).toBe('2026-11-21T03:30:00.000Z')
-    expect(validateEvidence(input, [post], [], now)).toContain('Missing Instagram evidence for doors_time')
+    expect(validateEvidence(input, [post], [], now)).toContain('Missing evidence for doors_time')
     expect(validateEvidence({ ...input, doors_date: '2026-11-23' }, [post], [], now)).toContain('Door time must be on the event date or an adjacent day')
     expect(candidateDoors({ ...input, date: '2026-11-21', time: '01:00', doors_date: '2026-11-20', doors_time: '23:30' }))
       .toBe('2026-11-21T02:30:00.000Z')
@@ -46,6 +46,12 @@ describe('Instagram candidate publication rules', () => {
     const input = { ...candidate(), performers: [{ name: 'Uncredited Band' }],
       evidence: [{ ...candidate().evidence[0], fields: [...candidate().evidence[0].fields, 'performers' as const] }] }
     expect(validateEvidence(input, [post], [], now)).toContain('Instagram evidence must name performers: Uncredited Band')
+  })
+  it('does not take a posting account as the credited organizer without a stated credit', () => {
+    const input = { ...candidate(), organizer: { name: 'Synthetic Producer' },
+      evidence: [{ ...candidate().evidence[0], fields: [...candidate().evidence[0].fields, 'organizer' as const] }] }
+    expect(validateEvidence(input, [{ ...post, authority: 'organizer', source_username: 'synthetic_producer' }], [], now))
+      .toContain('Instagram evidence must name organizer: Synthetic Producer')
   })
   it('does not reinterpret conditional admission as free', () => {
     expect(validateEvidence({ ...candidate(), price_kind: 'conditional', price_ars: 0 }, [post], [], now)).toContain('Only a fixed price may set price_ars')

@@ -443,7 +443,7 @@ describe.skipIf(bun)('the operator flow on D1', () => {
     const venueId = await venue()
     const ticket = 'https://tickets.example/first'
     const excerpt = `Synthetic Jazz — organiza Nube, toca Trío Sol. Entradas a la venta desde el 20/11 a las 15:00: ${ticket}. Puerta: 00.30 hs.`
-    const runId = (await run(store.reserveCollection())).id
+    const runId = (await run(store.reserveCollection)).id
     const post = await observation(runId, excerpt)
     const candidate = id(), day = shiftDay(baToday(), 5), doorsDate = shiftDay(day, 1)
     const evidence = (fields: string[]) => [{ observation_id: post, fields: ['name', 'date', 'venue', ...fields], excerpt, media_id: null }]

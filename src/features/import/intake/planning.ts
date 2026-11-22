@@ -92,15 +92,16 @@ export function validateEvidence(candidate: Candidate, observations: Observation
   }
   const postEvidence = candidate.evidence.filter(item => 'observation_id' in item)
   for (const field of suppliedDetailFacts(candidate)) {
-    if (!postEvidence.some(item => item.fields.some(value => value === field))) reasons.push(`Missing Instagram evidence for ${field}`)
+    if (field === 'doors_time') {
+      if (!supported.has(field)) reasons.push('Missing evidence for doors_time')
+    } else if (!postEvidence.some(item => item.fields.some(value => value === field))) reasons.push(`Missing Instagram evidence for ${field}`)
   }
   for (const [field, credits] of [['organizer', candidate.organizer ? [candidate.organizer] : []], ['performers', candidate.performers ?? []]] as const) {
     for (const credit of credits) {
       const name = normalizeTitle(credit.name)
-      if (!name || !postEvidence.some(item => item.fields.includes(field) && (
-        ` ${normalizeTitle(item.excerpt)} `.includes(` ${name} `) || field === 'organizer' && observations.some(post =>
-          post.id === item.observation_id && post.authority === 'organizer' && normalizeTitle(post.source_username) === name)
-      ))) reasons.push(`Instagram evidence must name ${field}: ${credit.name}`)
+      if (!name || !postEvidence.some(item => item.fields.includes(field) && ` ${normalizeTitle(item.excerpt)} `.includes(` ${name} `))) {
+        reasons.push(`Instagram evidence must name ${field}: ${credit.name}`)
+      }
       if (credit.url && (!validPublicUrl(credit.url) || !postEvidence.some(item => item.fields.includes(field) && item.excerpt.includes(credit.url!)))) {
         reasons.push(`Instagram evidence must explicitly give the HTTPS URL for ${credit.name}`)
       }

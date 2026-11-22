@@ -359,8 +359,9 @@ export function renderedPageRead(requested: string, snapshot: { url: string; vis
     ...(selected !== undefined ? { selected } : {}) }
 }
 
-/** The candidate facts a page excerpt must back: its name, its BA date, and its BA time when it has one. */
-export type PageFacts = { name: string; date: string; time: string | null; sites: ReadonlySet<string>; venueWebsite?: string | null }
+/** The candidate facts a page excerpt must back. Dates and clocks are in Buenos Aires time. */
+export type PageFacts = { name: string; date: string; time: string | null; doorsTime?: string; doorsDate?: string;
+  sites: ReadonlySet<string>; venueWebsite?: string | null }
 
 const MONTHS = ['ene(?:ro)?', 'feb(?:rero)?', 'mar(?:zo)?', 'abr(?:il)?', 'may(?:o)?', 'jun(?:io)?',
   'jul(?:io)?', 'ago(?:sto)?', 'sep(?:t(?:iembre)?)?|set(?:iembre)?', 'oct(?:ubre)?', 'nov(?:iembre)?', 'dic(?:iembre)?']
@@ -405,7 +406,7 @@ function doorsAndShow(excerpt: string) {
   if (!match) return null
   const [, dateText, doorsHour, doorsMinute = '00', showHour, showMinute = '00'] = match
   if (Number(showHour) * 60 + Number(showMinute) < Number(doorsHour) * 60 + Number(doorsMinute)) return null
-  return { dateText, time: `${showHour.padStart(2, '0')}:${showMinute}` }
+  return { dateText, time: `${showHour.padStart(2, '0')}:${showMinute}`, doorsTime: `${doorsHour.padStart(2, '0')}:${doorsMinute}` }
 }
 
 function pairDateReason(text: string, date: string): string | null {
@@ -422,14 +423,21 @@ function pairDateReason(text: string, date: string): string | null {
   return null
 }
 
+const citesTiming = (fields: readonly string[]) => fields.includes('date') || fields.includes('time') || fields.includes('doors_time')
+
 /** Why a normalized excerpt doesn't state the facts it is cited for; null when it does. */
 export function excerptFactsReason(excerpt: string, fields: readonly string[], facts: PageFacts): string | null {
-  if (!fields.includes('date') && !fields.includes('time')) return null
-  if (DOORS_WORD.test(excerpt)) {
+  if (!citesTiming(fields)) return null
+  const citesDoors = fields.includes('doors_time')
+  if (citesDoors || DOORS_WORD.test(excerpt)) {
     const pair = doorsAndShow(excerpt)
-    if (!pair) return DOORS_REASON
-    return pairDateReason(pair.dateText, facts.date) ??
-      (facts.time === pair.time ? null : `states the show starts at ${pair.time}; set the candidate's start time to match`)
+    if (!pair) return citesDoors ? "must quote one date followed by labeled doors and show times" : DOORS_REASON
+    const wrongDate = pairDateReason(pair.dateText, facts.date)
+    if (wrongDate) return wrongDate
+    if (facts.time !== pair.time) return `states the show starts at ${pair.time}; set the candidate's start time to match`
+    if (citesDoors && facts.doorsTime !== pair.doorsTime) return `states doors open at ${pair.doorsTime}; set the candidate's doors time to match`
+    if (citesDoors && facts.doorsDate && facts.doorsDate !== facts.date) return `states doors open on ${facts.date}; set the candidate's doors date to match`
+    return null
   }
   if (CLOCK_LIST.test(excerpt)) return MULTIPLE_OCCURRENCES
   const [year, month, day] = facts.date.split('-').map(Number)
@@ -520,7 +528,7 @@ function pageReason({ visible, title, titleName, ogTitle, h1, h1WithoutRating, h
     return facts.time === match.time ? null : `Official page calendar performance starts at ${match.time}; set the candidate's start time to match`
   }
   if (missing) return `Official page excerpt ${missing}`
-  const timingEvidence = fields.some(field => field === 'date' || field === 'time')
+  const timingEvidence = citesTiming(fields)
   const normalizedVisible = normalizePageText(visible)
   if (selected === null && timingEvidence) return INVALID_FANZ_SELECTION
   if (selected?.lines.some(line => quoted.test(normalizePageText(line)))) {

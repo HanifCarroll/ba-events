@@ -47,7 +47,8 @@ export const previewCandidateEffect = Effect.fn('intake.preview')(function*(stor
   const reasons = validateEvidence(candidate, observations, media, now)
   if (candidate.evidence.some(isOfficialPage)) {
     const pageSites = yield* officialPageSitesEffect(store, candidate.venue_id, candidate.ticket_url, candidate.evidence, observations)
-    reasons.push(...yield* verifyOfficialPagesEffect(candidate.evidence, { name: candidate.name, date: candidate.date, time: candidate.time, ...pageSites }, readPage, renderPage))
+    reasons.push(...yield* verifyOfficialPagesEffect(candidate.evidence, { name: candidate.name, date: candidate.date, time: candidate.time,
+      doorsTime: candidate.doors_time, doorsDate: candidate.doors_date, ...pageSites }, readPage, renderPage))
   }
   // Changed source observations invalidate earlier evidence even if the candidate was not edited yet.
   const currentObservations = yield* Effect.forEach(observations, post => Effect.gen(function* () {
@@ -103,7 +104,7 @@ export const previewCandidateEffect = Effect.fn('intake.preview')(function*(stor
     ...(candidate.organizer ? { organizer_name: candidate.organizer.name.trim(), organizer_url: candidate.organizer.url ?? null } : {}),
     performers: candidate.performers?.map(credit => ({ ...credit, name: credit.name.trim() })),
     offers_valid_from: candidate.offers_valid_from,
-    doors_at: candidateDoors(candidate),
+    doors_at: decision.action === 'held' ? undefined : candidateDoors(candidate),
     source: 'instagram', external_id: candidate.id, status: candidate.status,
     image_url: flyer ? store.artworkUrl(eventId, flyer) : old?.image_url as string | null ?? null,
     image_width: flyer ? null : old?.image_width as number | null ?? null,
@@ -154,12 +155,13 @@ const officialPageSitesEffect = (store: IntakeStore, venueId: string | null, tic
   return { sites, venueWebsite }
 })
 
-/** The plan's name and Buenos Aires date and time, the facts its page excerpts must state. */
-const planFacts = (plan: IntakePlanRow) => {
-  const start = new Date(plan.payload.starts_at)
-  const time = plan.payload.time_tba ? null : new Intl.DateTimeFormat('en-GB', { timeZone: 'America/Argentina/Buenos_Aires',
-    hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(start)
-  return { name: plan.payload.name, date: baDate(start.toISOString()), time }
+/** Reconstruct the local facts from the plan before verifying the cited pages again. */
+const planFacts = ({ payload }: IntakePlanRow) => {
+  const localTime = new Intl.DateTimeFormat('en-GB', { timeZone: 'America/Argentina/Buenos_Aires',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+  return { name: payload.name, date: baDate(payload.starts_at),
+    time: payload.time_tba ? null : localTime.format(new Date(payload.starts_at)),
+    ...(payload.doors_at ? { doorsDate: baDate(payload.doors_at), doorsTime: localTime.format(new Date(payload.doors_at)) } : {}) }
 }
 
 const storedPresentation = (event: Record<string, unknown>) => ({

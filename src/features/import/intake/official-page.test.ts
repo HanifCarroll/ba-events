@@ -18,7 +18,7 @@ const SHOWTIMES = `<html><head><title>Sala Sintética</title><script>var s = "LU
   <p hidden>LUNES 23 DE NOVIEMBRE 21:00</p><p style="display: none">MIÉRCOLES 25 NOVIEMBRE</p>
   <p>Teatro&nbsp;Sint&eacute;tico, Pasaje Ficticio 1234</p>
 </body></html>`
-const evidence = (url: string, excerpt: string, fields: Array<'date' | 'time' | 'venue'> = ['date', 'time']) => ({ kind: 'official_page' as const, url, fields, excerpt })
+const evidence = (url: string, excerpt: string, fields: Array<'date' | 'time' | 'venue' | 'doors_time'> = ['date', 'time']) => ({ kind: 'official_page' as const, url, fields, excerpt })
 const standaloneDateReason = "Official page excerpt does not give a standalone date before doors; cite a line that states only the show's date and times"
 
 describe('official-page evidence', () => {
@@ -154,11 +154,25 @@ describe('official-page evidence', () => {
     ['Lunes 23 de noviembre: Doors 21:00 | Comienza: 22:00', '2026-11-23', '21:00', '22:00'],
   ])('takes the show time, not doors, from %s', async (excerpt, date, doors, show) => {
     const read = readHtml(`<h1>${facts.name}</h1><p>${excerpt}</p>`)
-    const verify = (time: string | null, fields?: Array<'date' | 'time'>) => Effect.runPromise(verifyOfficialPagesEffect(
-      [evidence(officialUrl, excerpt, fields)], { ...facts, date, time }, read))
+    const verify = (time: string | null, fields?: Array<'date' | 'time' | 'doors_time'>, doorsTime = doors) => Effect.runPromise(verifyOfficialPagesEffect(
+      [evidence(officialUrl, excerpt, fields)], { ...facts, date, time, doorsTime }, read))
     expect(await verify(show)).toEqual([])
+    expect(await verify(show, ['date', 'time', 'doors_time'])).toEqual([])
+    expect(await verify(show, ['doors_time'], show)).toEqual([`Official page excerpt states doors open at ${doors}; set the candidate's doors time to match: ${officialUrl}`])
     for (const time of [doors, null]) {
       expect(await verify(time, ['date'])).toEqual([`Official page excerpt states the show starts at ${show}; set the candidate's start time to match: ${officialUrl}`])
+    }
+  })
+
+  it('requires the same complete dated doors and show line for doors evidence, without omitted qualifiers', async () => {
+    const excerpt = 'Lunes 23 de noviembre - Puerta 21 hs - Show 22 hs'
+    const at = { ...facts, time: '22:00', doorsTime: '21:00' }
+    const verify = (quote: string, text: string, doorsDate?: string) => Effect.runPromise(verifyOfficialPagesEffect(
+      [evidence(officialUrl, quote, ['doors_time'])], { ...at, doorsDate }, readHtml(`<h1>${facts.name}</h1><p>${text}</p>`)))
+    expect(await verify(excerpt, `En caso de lluvia: ${excerpt}`)).toEqual([`${standaloneDateReason}: ${officialUrl}`])
+    expect(await verify(excerpt, excerpt, '2026-11-22')).toEqual([`Official page excerpt states doors open on ${at.date}; set the candidate's doors date to match: ${officialUrl}`])
+    for (const line of ['Lunes 23 de noviembre - Puerta 21 hs', 'Lunes 23 de noviembre - Show 22 hs', 'Puerta 21 hs - Show 22 hs']) {
+      expect(await verify(line, line)).toHaveLength(1)
     }
   })
 

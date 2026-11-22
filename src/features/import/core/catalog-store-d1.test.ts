@@ -128,7 +128,8 @@ describe('events and their vectors', () => {
 		expect(await db.prepare('SELECT scope, search_document FROM events WHERE id = ?').bind(id).first())
 			.toEqual({ scope: 'in', search_document: 'Synthetic source text' })
 		await db.batch(intakeCommitBatch(db, [db.prepare('UPDATE events SET organizer_name = ? WHERE id = ?').bind('New direct evidence', id)]))
-		expect(await db.prepare('SELECT organizer_name FROM events WHERE id = ?').bind(id).first('organizer_name')).toBe('New direct evidence')
+		expect(await db.prepare('SELECT organizer_name, scope, scope_invalidated_at FROM events WHERE id = ?').bind(id).first())
+			.toEqual({ organizer_name: 'New direct evidence', scope: 'in', scope_invalidated_at: null })
 	})
 
 	it('deletes events and their vectors, more than one Vectorize call at a time', async () => {

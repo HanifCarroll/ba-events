@@ -150,6 +150,44 @@ describe('intake failure and retry orchestration', () => {
     }))).rejects.toThrow("calendar evidence must be on the selected venue's stored website")
   })
 
+  it('plans separate doors and start timestamps from an official page and rechecks the doors at commit', async () => {
+    const venue = { id: '20000000-0000-4000-8000-000000000001', name: 'Sala Sintética', neighborhood: 'Palermo', website: 'https://sala.example.org' }
+    const post = { id: '30000000-0000-4000-8000-000000000001', post_id: 'post-1', source_username: 'synthetic',
+      caption: 'Synthetic Jazz en Sala Sintética', media_urls: [] }
+    const excerpt = 'Lunes 23 de noviembre - Puerta 21 hs - Show 22 hs'
+    const candidate = decodeCandidate({ id: '10000000-0000-4000-8000-000000000003', expected_revision: 1, intent: 'create', target_event_id: null,
+      name: 'Synthetic Jazz', date: '2026-11-23', time: '22:00', doors_time: '21:00', venue_name: venue.name, venue_id: venue.id,
+      description_es: null, description_en: null, categories: ['music'], status: 'scheduled', price_kind: 'unknown',
+      price_ars: null, price_note: null, ticket_url: null, artwork_media_id: null, artwork_note: 'No flyer on this post', issues: [], notes: '',
+      evidence: [{ observation_id: post.id, fields: ['name', 'venue'], excerpt: post.caption, media_id: null },
+        { kind: 'official_page', url: `${venue.website}/obra`, fields: ['date', 'time', 'doors_time'], excerpt }],
+    })
+    let line = excerpt
+    const readPage = (url: string, sites: ReadonlySet<string>) => readOfficialPage(url, sites, async () => new Response(
+      `<h1>Synthetic Jazz</h1><p>${line}</p>`, { headers: { 'content-type': 'text/html' } }))
+    let saved = plan
+    const db = commitStore(plan, {
+      candidate: () => Effect.succeed({ revision: 1, payload: candidate, id: candidate.id }),
+      venue: () => Effect.succeed(venue),
+      observationsByIds: () => Effect.succeed([post]), mediaForObservations: () => Effect.succeed([]),
+      sourceAuthorities: () => Effect.succeed([{ username: 'synthetic', authority: 'venue' }]),
+      latestObservation: () => Effect.succeed({ id: post.id, content_hash: 'synthetic' }),
+      linkedEventIds: () => Effect.succeed([]), eventsBetween: () => Effect.succeed([]),
+      insertPlan: row => Effect.sync(() => saved = { ...row, id: 'plan', receipt: null, payload: { ...row.payload, embedding: Array(1536).fill(0.1) } }),
+      plan: () => Effect.sync(() => saved),
+    })
+    const preview = await Effect.runPromise(previewCandidateEffect(db, candidate.id, new Date('2026-10-25'), readPage))
+    expect(preview).toMatchObject({ action: 'create', reasons: [], payload: {
+      starts_at: '2026-11-24T01:00:00.000Z', doors_at: '2026-11-24T00:00:00.000Z', time_tba: false,
+    } })
+    const publishers = { readPage, embed: async () => { throw new Error('Unexpected embedding') },
+      presentation: async () => { throw new Error('Unexpected presentation') } }
+    line = excerpt.replace('Puerta 21', 'Puerta 20')
+    await expect(Effect.runPromise(commitPlanEffect(db, preview.id, publishers))).rejects.toThrow("must be an excerpt of the page's visible text")
+    line = excerpt
+    await expect(Effect.runPromise(commitPlanEffect(db, preview.id, publishers))).resolves.toEqual(receipt)
+  })
+
   it('overlaps publication preparation but waits for both results before writing', async () => {
     const unprepared = { ...plan, artwork_media_id: null, payload: { ...plan.payload, embedding: undefined, venue_id: 'venue' } }
     const calls: string[] = []

@@ -46,12 +46,18 @@ The catalog SHALL keep source-stated organizer names and URLs, performer lineups
 #### Scenario: Intake sees a credit or a ticket-sale opening time
 - **WHEN** an Instagram intake candidate supplies an organizer, a lineup, or a ticket-sale opening time
 - **THEN** the fact needs a corresponding retained source excerpt or image, and accepted explicit intake facts are protected against later importer or enrichment writes
+- **AND** a posting account alone does not count as an organizer credit
 - **AND** a correction needs direct organizer or venue evidence, and an omitted field leaves the prior fact untouched unless a door date or ticket destination has changed
 
 #### Scenario: An Instagram flyer gives only doors
 - **WHEN** the flyer explicitly states a door time but no performance start
 - **THEN** intake stores the evidenced Buenos Aires door timestamp, including its next-day calendar date when the doors open after midnight, and leaves the start time TBA
 - **AND** a later intake revision can add doors to the existing event without changing its identity or claiming a start; a reschedule to another date clears stale doors when the revision has no new door evidence
+
+#### Scenario: An ordinary official page states doors and show time
+- **WHEN** a candidate cites an official-page excerpt for `doors_time`
+- **THEN** preview and commit require the same complete, standalone dated doors/show line as for the start time and verify each clock against its own label
+- **AND** the doors clock is stored separately from the show start; a doors-only official-page line does not qualify
 
 #### Scenario: A scheduled event has descriptions but lacks people fields
 - **WHEN** facet enrichment reads the descriptions or an operator runs the bounded people backfill
