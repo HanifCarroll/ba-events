@@ -25,7 +25,7 @@ Hermes wrote this text and Hanif's rules apply to it. Commit it word for word. C
   - Caption line: "{Weekday} {d}, {time}. {Title} en {Venue}, {Barrio}. {Price}. Vía @{handle}." For Gratis, drop the price part: "{Weekday} {d}, {time}. {Title} en {Venue}, {Barrio}. Vía @{handle}."
   - Card and frame footer: "Vía @{handle}" instead of "@{handle}".
 - **Closing slide** (carousels):
-  - Headline: "¿Cuál te falta?"
+  - Headline: "¿A cuál vas?"
   - Body (Este finde): "Contanos en los comentarios y guardá el post para el finde."
   - Body (Gratis): "Contanos en los comentarios y guardá el post para la semana."
   - Line above the button: "Todos los planes, gratis y sin registrarte:"
