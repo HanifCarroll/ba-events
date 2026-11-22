@@ -12,7 +12,7 @@ export const SEMANTIC_MATCH_THRESHOLD = 0.2
 
 /** The `events_with_venues` columns (without embedding and search_document), over events e and venues v. */
 export const EVENT_COLUMNS = `e.id, e.name, e.description_es, e.description_en, e.description_display_es, e.description_display_en,
-  e.description_summary_es, e.description_summary_en, e.starts_at, e.ends_at, e.is_all_day, e.time_tba, e.venue_id,
+  e.description_summary_es, e.description_summary_en, e.starts_at, e.ends_at, e.doors_at, e.is_all_day, e.time_tba, e.venue_id,
   e.categories, e.price, e.is_free, e.min_age, e.image_url, e.image_width, e.image_height, e.link, e.ticket_url, e.source,
   e.external_id, e.status, e.location_hidden, e.location_tba, e.description_unavailable, e.enrichment_status,
   e.enrichment_error, e.enriched_at, e.created_at, e.updated_at, v.name AS venue_name, v.neighborhood AS venue_neighborhood,
@@ -27,7 +27,7 @@ const EventRow = Schema.Struct({
   id: Schema.String, name: Schema.String,
   description_es: text, description_en: text, description_display_es: text, description_display_en: text,
   description_summary_es: text, description_summary_en: text,
-  starts_at: Schema.String, ends_at: text, is_all_day: Schema.BooleanFromBit, time_tba: Schema.BooleanFromBit,
+  starts_at: Schema.String, ends_at: text, doors_at: text, is_all_day: Schema.BooleanFromBit, time_tba: Schema.BooleanFromBit,
   venue_id: text, categories: Schema.fromJsonString(Schema.Array(Schema.String)), price,
   is_free: Schema.BooleanFromBit, min_age: integer, image_url: text, image_width: integer, image_height: integer,
   link: text, ticket_url: text, source: Schema.String, external_id: text, status: Schema.String,

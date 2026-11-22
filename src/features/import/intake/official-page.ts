@@ -5,6 +5,8 @@ import { formatInTimeZone } from 'date-fns-tz'
 import { Effect } from 'effect'
 import { normalizeTitle } from './planning.ts'
 import { isOfficialPage, validPublicUrl, type Evidence } from './schema.ts'
+import { TICKET_SELLERS } from '#shared/lib/ticket-sellers.ts'
+export { TICKET_SELLERS } from '#shared/lib/ticket-sellers.ts'
 
 const MAX_BYTES = 2_097_152
 const TIMEOUT_MS = 10_000
@@ -27,10 +29,6 @@ export function publicPageUrl(value: string): boolean {
   return !host.startsWith('[') && !/^[\d.]+$/.test(host) && !/(^|\.)(local|localhost|internal|lan|home|arpa)$/.test(host)
 }
 
-// Argentine ticket sellers whose event pages count as official, by registrable domain (checked live on 2026-11-17).
-// Ticketportal is left out: no Argentine domain of theirs resolves.
-export const TICKET_SELLERS = ['alternativateatral.com', 'plateanet.com', 'ticketek.com.ar', 'passline.com', 'entradaweb.com.ar',
-  'eventbrite.com', 'eventbrite.com.ar', 'tuentrada.com', 'livepass.com.ar', 'allaccess.com.ar', 'venti.com.ar', 'venti.live', 'entradauno.com']
 // Social sites, link pages, translators, caches and archives never count, even when a venue or caption points at them.
 const NEVER = new Set(['instagram.com', 'facebook.com', 'fb.com', 'fb.me', 'x.com', 'twitter.com', 't.co', 'tiktok.com', 'youtube.com',
   'youtu.be', 'linktr.ee', 'translate.goog', 'googleusercontent.com', 'archive.org'])

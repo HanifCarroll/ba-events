@@ -157,9 +157,9 @@ export type ExtractFacetsFn = (
   }
 ) => Promise<EventFacetExtraction>
 
-function missingCredits(input: EventSourceDetails, organizer?: EventCredit, performers?: readonly EventCredit[]): EventSourceDetails {
+function missingCredits(input: EventSourceDetails & { source: string }, organizer?: EventCredit, performers?: readonly EventCredit[]): EventSourceDetails {
   return {
-    ...(!input.organizer_name && organizer ? { organizer_name: organizer.name, organizer_url: organizer.url ?? null } : {}),
+    ...(input.source !== 'ba-tourism' && !input.organizer_name && organizer ? { organizer_name: organizer.name, organizer_url: organizer.url ?? null } : {}),
     ...(!input.performers?.length && performers?.length ? { performers } : {}),
   }
 }
@@ -304,11 +304,18 @@ export function enrichSingleEventEffect(
 
     if (input.description_es) {
       console.log(`[event-enrichment] Reusing stored Spanish description for ${name}`)
-      const organizer = (source === 'luma' || source === 'ba-tourism') && !input.organizer_name && adapter?.serverEnrich
-        ? (yield* enrichmentTry('event-enrichment.detail-organizer', () => adapter.serverEnrich!(link, { organizerOnly: true })))?.organizer
-        : undefined
+      // The detail read supplies privacy as well as credits. Apply it before any translation or other work.
+      const detail = source === 'luma' && !input.organizer_name && adapter?.serverEnrich
+        ? yield* enrichmentTry('event-enrichment.detail-organizer', () => adapter.serverEnrich!(link))
+        : null
+      if (detail?.location_hidden !== undefined) {
+        yield* updateEventEnrichmentEffect(catalog, id, detail.location_hidden
+          ? { location_hidden: true, venue_id: null }
+          : { location_hidden: false })
+      }
       enrichmentResult = {
-        organizer,
+        organizer: detail?.organizer,
+        location_hidden: detail?.location_hidden,
         // A stored description may have changed since a prior full pass.
         // Without an acquisition receipt for these exact inputs, age is unknown.
         sourceObservedAt: null,
@@ -361,7 +368,7 @@ export function enrichSingleEventEffect(
       }))
     }
 
-    if (enrichmentResult?.organizer && !input.organizer_name) {
+    if (source !== 'ba-tourism' && enrichmentResult?.organizer && !input.organizer_name) {
       const { name: organizerName, url } = enrichmentResult.organizer
       yield* updateEventEnrichmentEffect(catalog, id, { organizer_name: organizerName,
         organizer_url: url ?? null })

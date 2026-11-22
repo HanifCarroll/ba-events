@@ -83,6 +83,7 @@ Event detail JSON-LD SHALL use recorded times, status, admission facts, and visi
 - **WHEN** event details include a stored organizer, performer lineup, or door time
 - **THEN** the event page shows the credited people and identifies doors separately from the performance start, including the local door date when it differs from the event date
 - **AND** JSON-LD uses `doorTime` without treating it as the performance start, and includes a sale opening time only on an offer with a usable ticket or registration link
+- **AND** chat and saved Event Cards show that same localized doors label, and MCP reads include the door timestamp separately from the start
 
 ### Requirement: Source presentation preserves provenance
 Event detail and summaries SHALL distinguish BA Eventos pages, original event sources, and ticket links using the stored source fields. Sanitization or summary generation MUST NOT create a source URL.
@@ -112,6 +113,7 @@ The homepage SHALL load scheduled events with `events.scope = 'in'`, from the st
 - **WHEN** an upcoming occurrence has a door time and its start is time TBA
 - **THEN** the row shows localized door time instead of time TBA, including the local door date if different, and uses the door timestamp for ordering within the advertised Buenos Aires date
 - **AND** these choices do not change the stored start date or publish a guessed start
+- **AND** the row stays eligible after doors open through the existing date-only night cutoff at 04:00 Buenos Aires time (or a later recorded end), rather than expiring at doors
 
 #### Scenario: An agenda card has linked evidence
 - **WHEN** an event has a valid stored Instagram post URL linked through intake evidence

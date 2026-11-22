@@ -17,7 +17,7 @@ import type { EventInsert } from '#shared/lib/types.ts'
 import { importTry, ImportOperationError } from '../core/effect-utils.ts'
 import { mostSimilarVenue, similarIntakeVenues } from '../core/venue-similarity-d1.ts'
 import { pickVenue, venueNameKey } from '../core/venue-identity.ts'
-import { baDate, canonicalTicket, searchInputsChanged, type Media } from './planning.ts'
+import { baDate, searchInputsChanged, ticketDestinationChanged, type Media } from './planning.ts'
 import type { Source } from './schema.ts'
 import type { IntakePlanRow, IntakePolicy, IntakeStore, Reservation, VenueRow } from './store.ts'
 
@@ -361,14 +361,20 @@ export function d1Intake({ db, evidence, artwork, vectors }: IntakeBindings, sit
       const observed = evidenceRows.map(row => row.observed_at).sort().at(-1)!
       const previous = plan.action === 'create' ? null : await first(db.prepare('SELECT * FROM events WHERE id = ?').bind(plan.event_id))
       if (plan.action !== 'create' && !previous) throw new Error('Catalog changed after preview')
+      const oldStart = typeof previous?.starts_at === 'string' ? previous.starts_at : undefined
+      const moved = oldStart !== undefined && Date.parse(oldStart) !== Date.parse(startsAt)
+      const sameDay = oldStart !== undefined && baDate(oldStart) === baDate(startsAt)
+      const changedTicket = ticketDestinationChanged(previous?.ticket_url, e.ticket_url)
       if (plan.action === 'update' && previous) {
         const protection = await db.prepare('SELECT authority, observed_at FROM event_intake_protection WHERE event_id = ?').bind(plan.event_id)
           .first<{ authority: number; observed_at: string }>()
         if (level < 2 || protection && (level < protection.authority || observed < protection.observed_at)) {
           throw new Error('Correction needs current organizer or venue evidence')
         }
-        const moved = Date.parse(previous.starts_at as string) !== Date.parse(startsAt)
-        const changed = { status: previous.status !== (e.status ?? 'scheduled'), date: moved, time: moved && !e.time_tba,
+        if (sameDay && !previous.time_tba && e.time_tba) throw new Error('Cannot replace a known start with time TBA on the same date')
+        if (e.doors_at && !e.time_tba && Date.parse(e.doors_at) > Date.parse(startsAt)) throw new Error('Doors cannot follow the known start time')
+        const changed = { status: previous.status !== (e.status ?? 'scheduled'), date: moved, time: !e.time_tba && (moved || !!previous.time_tba),
+          ticket: changedTicket || (e.offers_valid_from !== undefined && e.offers_valid_from !== previous.offers_valid_from),
           venue: (previous.venue_id ?? null) !== (e.venue_id ?? null),
           price: (previous.price ?? null) !== (e.price ?? null) || !!previous.is_free !== !!e.is_free,
           organizer: e.organizer_name !== undefined, performers: e.performers !== undefined,
@@ -384,9 +390,7 @@ export function d1Intake({ db, evidence, artwork, vectors }: IntakeBindings, sit
       if (needsEmbedding && (!e.embedding || e.search_document == null)) throw new Error('Search preparation is required')
 
       const performers = e.performers ?? previous?.performers
-      const oldTicket = typeof previous?.ticket_url === 'string' ? previous.ticket_url : null
-      const replacedTicket = !!oldTicket && !!e.ticket_url && (canonicalTicket(e.ticket_url) ?? e.ticket_url) !== (canonicalTicket(oldTicket) ?? oldTicket)
-      const sameDay = typeof previous?.starts_at === 'string' && baDate(previous.starts_at) === baDate(startsAt)
+      const replacedTicket = !!previous?.ticket_url && changedTicket
       const retainedDoors = sameDay && typeof previous?.doors_at === 'string' && (e.time_tba || previous.doors_at <= startsAt) ? previous.doors_at : null
       const details = [e.organizer_name ?? previous?.organizer_name ?? null,
         e.organizer_url ?? (e.organizer_name === undefined || e.organizer_name === previous?.organizer_name ? previous?.organizer_url ?? null : null),
@@ -415,7 +419,8 @@ export function d1Intake({ db, evidence, artwork, vectors }: IntakeBindings, sit
             categories = ?, price = ?, is_free = ?, image_url = COALESCE(?, image_url), image_width = ?, image_height = ?,
             ticket_url = COALESCE(?, ticket_url), status = ?, search_document = ?, embedding_version = ?, enrichment_status = ?,
             description_unavailable = ?, organizer_name = ?, organizer_url = ?, performers = ?, offers_valid_from = ?, doors_at = ?
-          WHERE id = ?`).bind(e.name, startsAt, iso(e.ends_at), bit(e.time_tba) ?? 0, e.venue_id ?? null, e.description_es ?? null,
+          WHERE id = ?`).bind(e.name, startsAt, !moved && typeof previous?.ends_at === 'string' ? iso(previous.ends_at) : null,
+          bit(e.time_tba) ?? 0, e.venue_id ?? null, e.description_es ?? null,
           e.description_en ?? null, e.description_display_es ?? null, e.description_display_en ?? null, e.description_summary_es ?? null,
           e.description_summary_en ?? null, JSON.stringify(e.categories ?? []), e.price ?? null, bit(e.is_free) ?? 0, e.image_url ?? null,
           e.image_width ?? null, e.image_height ?? null, e.ticket_url ?? null, e.status ?? 'scheduled', e.search_document ?? null,

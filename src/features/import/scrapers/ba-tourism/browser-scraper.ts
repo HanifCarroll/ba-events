@@ -13,7 +13,6 @@ import type { Browser } from '@cloudflare/playwright'
 import { withOwnedBrowser, type OpenBrowser } from '../../acquisition/run.ts'
 import type { BATourismEvent, WeekContext } from './types.ts'
 import { parseWeekContext } from './date-parser.ts'
-import { baTourismOrganizerNames } from './organizers.ts'
 import { logger } from '#shared/lib/logger.ts'
 
 const BA_TOURISM_URL = 'https://turismo.buenosaires.gob.ar/es/article/que-hacer-esta-semana'
@@ -33,7 +32,6 @@ interface ExtractionResult {
     moreInfoUrl: string
   }>
   weekContextText: string
-  schema: string
 }
 
 /**
@@ -172,7 +170,7 @@ const extractionScript = `(() => {
     }
   }
 
-  return { events, weekContextText, schema: document.querySelector('script.schema-masivo-ia')?.textContent || '' }
+  return { events, weekContextText }
 })()`
 
 async function scrapeWithBrowser(browser: Browser): Promise<{
@@ -216,9 +214,8 @@ async function scrapeWithBrowser(browser: Browser): Promise<{
 
     const weekContext = parseWeekContext(result.weekContextText)
 
-    const organizers = baTourismOrganizerNames(result.schema)
     return {
-      events: result.events.map(event => ({ ...event, organizerName: organizers.get(event.name) })),
+      events: result.events as BATourismEvent[],
       weekContext,
     }
   } finally {

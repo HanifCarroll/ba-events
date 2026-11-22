@@ -15,6 +15,8 @@ it('previews without writing and records only successful, guarded scheduled upda
       seed.bind('e', 'Cancelado', from, 'canceled', 'Nada.', null),
       seed.bind('f', 'Anterior', '2026-11-19T08:00:00.000Z', 'scheduled', 'Nada.', null),
       seed.bind('g', 'Sin descripción', from, 'scheduled', null, null),
+      db.prepare(`INSERT INTO events (id, name, starts_at, source, status, description_es)
+        VALUES ('h', 'Agenda turística', ?, 'ba-tourism', 'scheduled', 'Actúa el Trío Nube.')`).bind(from),
     ])
     const participants = { organizer: { name: 'Asociación Puente' }, performers: [{ name: 'Trío Nube' }] }
     const extract = vi.fn(async ([text]: readonly (string | null)[]) => text === 'Actúa el Trío Nube.' ? participants : {})
@@ -33,12 +35,14 @@ it('previews without writing and records only successful, guarded scheduled upda
       return extract(descriptions)
     } })
     expect(apply.map(({ id, status }) => [id, status])).toEqual([
-      ['a', 'applied'], ['b', 'applied'], ['c', 'extraction-failed'], ['d', 'changed-since-read'],
+      ['a', 'applied'], ['b', 'applied'], ['c', 'extraction-failed'], ['d', 'changed-since-read'], ['h', 'applied'],
     ])
     expect(await db.prepare('SELECT organizer_name, performers FROM events WHERE id = \'a\'').first())
       .toEqual({ organizer_name: 'Grupo existente', performers: JSON.stringify(participants.performers) })
     expect(await db.prepare('SELECT organizer_name, performers FROM events WHERE id = \'d\'').first())
       .toEqual({ organizer_name: null, performers: null })
+    expect(await db.prepare("SELECT organizer_name, performers FROM events WHERE id = 'h'").first())
+      .toEqual({ organizer_name: null, performers: JSON.stringify(participants.performers) })
     expect((await backfillEventCredits(db, { from, limit: 10, apply: false, extract })).map(r => r.id)).toEqual(['c'])
   } finally { await dispose() }
 })

@@ -2,7 +2,7 @@
 import type { D1Database } from '@cloudflare/workers-types'
 import type { ChatEventPayload, EventCredit, Venue } from '../types.ts'
 import { isPayWhatYouCan } from '#features/events/lib/admission.ts'
-import { HOME_EVENT_DEFAULT_DURATION_MS, HOME_FALLBACK_LIMIT, type HomeAgendaEvent, type HomeWindow } from '#features/events/lib/home-feed.ts'
+import { HOME_DOORS_ONLY_DURATION_MS, HOME_EVENT_DEFAULT_DURATION_MS, HOME_FALLBACK_LIMIT, type HomeAgendaEvent, type HomeWindow } from '#features/events/lib/home-feed.ts'
 import { EVENT_COLUMNS, FROM_EVENTS, toPayload } from './search-d1.server.ts'
 
 /** Events visible to the public. */
@@ -17,14 +17,14 @@ const PRICE_NOTE = `(SELECT json_extract(r.payload, '$.price_note') FROM event_s
 /** One event with its venue, or null. `displayableOnly` keeps it to scheduled and past events. */
 export async function eventByIdD1(db: D1Database, id: string, displayableOnly = false) {
   const row = await db.prepare(`SELECT ${EVENT_COLUMNS},
-    ${PRICE_NOTE} AS priceNote, e.organizer_name, e.organizer_url, e.performers, e.offers_valid_from, e.doors_at
+    ${PRICE_NOTE} AS priceNote, e.organizer_name, e.organizer_url, e.performers, e.offers_valid_from
     FROM ${FROM_EVENTS} WHERE e.id = ?${displayableOnly ? ` AND ${DISPLAYABLE}` : ''}`)
     .bind(id).first<{ priceNote: string | null; organizer_name: string | null; organizer_url: string | null;
-      performers: string | null; offers_valid_from: string | null; doors_at: string | null }>()
+      performers: string | null; offers_valid_from: string | null }>()
   if (!row) return null
   const event = toPayload(row)
-  const { organizer_name, organizer_url, performers, offers_valid_from, doors_at } = row
-  return { ...event, organizer_name, organizer_url, offers_valid_from, doors_at,
+  const { organizer_name, organizer_url, performers, offers_valid_from } = row
+  return { ...event, organizer_name, organizer_url, offers_valid_from,
     performers: performers ? JSON.parse(performers) as EventCredit[] : null,
     payWhatYouCan: isPayWhatYouCan(event.name, event.description_es, row.priceNote) }
 }
@@ -56,6 +56,7 @@ const AGENDA_ELIGIBLE = "e.scope = 'in' AND e.status = 'scheduled' AND e.image_u
 /** Ongoing occurrences and the local week, plus four later dates for date-filter fallback. */
 export async function homeAgendaD1(db: D1Database, window: HomeWindow): Promise<HomeAgendaEvent[]> {
   const earliestOvernightStart = new Date(Date.parse(window.start) - HOME_EVENT_DEFAULT_DURATION_MS).toISOString()
+  const earliestDoorsOnlyStart = new Date(Date.parse(window.start) - HOME_DOORS_ONLY_DURATION_MS).toISOString()
   // Buenos Aires calendar days currently use UTC−03:00. Keep complete days so grouped slots are not cut off.
   const { results } = await db.prepare(`
     WITH tail AS (
@@ -65,7 +66,7 @@ export async function homeAgendaD1(db: D1Database, window: HomeWindow): Promise<
       SELECT e.id FROM events e WHERE ${AGENDA_ELIGIBLE} AND e.starts_at >= ? AND e.starts_at < ?
       UNION ALL
       SELECT e.id FROM events e WHERE ${AGENDA_ELIGIBLE} AND e.starts_at < ?
-        AND (e.ends_at > ? OR (e.time_tba AND e.doors_at > ?)
+        AND (e.ends_at > ? OR (e.time_tba AND e.doors_at IS NOT NULL AND e.starts_at > ?)
           OR (e.ends_at IS NULL AND NOT e.is_all_day AND NOT e.time_tba AND e.starts_at > ?))
       UNION ALL
       SELECT id FROM tail WHERE day_rank <= ?
@@ -82,7 +83,7 @@ export async function homeAgendaD1(db: D1Database, window: HomeWindow): Promise<
       ${PRICE_NOTE} AS priceNote
     FROM selected JOIN events e ON e.id = selected.id LEFT JOIN venues v ON v.id = e.venue_id
     ORDER BY e.starts_at, e.id
-  `).bind(window.end, window.start, window.end, window.start, window.start, window.start, earliestOvernightStart, HOME_FALLBACK_LIMIT).all<AgendaRow>()
+  `).bind(window.end, window.start, window.end, window.start, window.start, earliestDoorsOnlyStart, earliestOvernightStart, HOME_FALLBACK_LIMIT).all<AgendaRow>()
 
   return results.map(({ is_free, time_tba, is_all_day, location_hidden, location_tba, music, priceNote, description_es, sourceUrl, ...card }) => ({
     ...card, is_free: is_free === 1, time_tba: time_tba === 1, is_all_day: is_all_day === 1,

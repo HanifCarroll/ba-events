@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { agendaEvent } from '../../../../tests/support/home-agenda.ts'
-import { formatDoorsTime } from '#shared/lib/utils/formatting.ts'
+import { formatDoorsTime, formatEventCardTime } from '#shared/lib/utils/formatting.ts'
 import { homeWindow, nextHomeViewChange, pageHomeView, parseHomeFilter, selectHomeView } from './home-feed.ts'
 
 const monday = homeWindow(new Date('2026-11-24T02:59:59.999Z'))
@@ -41,6 +41,23 @@ describe('homepage agenda views', () => {
     expect(formatDoorsTime('2026-11-24T02:59:00.000Z', monday.start, 'en')).toBe('Doors 11:59 PM')
     expect(formatDoorsTime('2026-11-21T03:30:00.000Z', '2026-11-20T03:00:00.000Z', 'es')).toMatch(/^Puerta 00:30 · sáb/i)
     expect(formatDoorsTime('2026-11-21T02:30:00.000Z', '2026-11-21T04:00:00.000Z', 'en')).toMatch(/^Doors 11:30 PM · Fri/)
+  })
+
+  it('keeps a doors-only event after doors open until the end of the Buenos Aires night', () => {
+    const overnight = agendaEvent('Doors only', monday.start, { time_tba: true, doors_at: '2026-11-24T03:30:00.000Z' })
+    const asOf = Date.parse('2026-11-24T04:15:00.000Z')
+    const window = homeWindow(new Date(asOf))
+    const agenda = { window, asOf, events: [overnight] }
+    expect(selectHomeView(agenda, 'hoy').events).toEqual([overnight])
+    expect(nextHomeViewChange(agenda, asOf)).toEqual(Date.parse('2026-11-24T07:00:00.000Z'))
+    expect(selectHomeView(agenda, null, Date.parse('2026-11-24T07:00:00.000Z')).events).toEqual([])
+  })
+
+  it('labels doors rather than a made-up start or Time TBA on chat and saved cards', () => {
+    const event = { starts_at: monday.start, doors_at: '2026-11-24T02:59:00.000Z', time_tba: true }
+    expect(formatEventCardTime(event, 'es')).toBe('Puerta 23:59')
+    expect(formatEventCardTime(event, 'en')).toBe('Doors 11:59 PM')
+    expect(formatEventCardTime({ ...event, starts_at: '2026-11-24T03:30:00.000Z', time_tba: false }, 'en')).toMatch(/^12:30 AM · Doors 11:59 PM · Mon/i)
   })
 
   it('shows a Thursday-to-Saturday exhibition in Finde on Wednesday', () => {

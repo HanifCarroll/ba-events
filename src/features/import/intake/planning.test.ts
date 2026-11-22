@@ -45,13 +45,47 @@ describe('Instagram candidate publication rules', () => {
   it('rejects credits that are not present in their cited caption', () => {
     const input = { ...candidate(), performers: [{ name: 'Uncredited Band' }],
       evidence: [{ ...candidate().evidence[0], fields: [...candidate().evidence[0].fields, 'performers' as const] }] }
-    expect(validateEvidence(input, [post], [], now)).toContain('Instagram evidence must name performers: Uncredited Band')
+    expect(validateEvidence(input, [post], [], now)).toContain('Instagram evidence must explicitly credit performers: Uncredited Band')
   })
   it('does not take a posting account as the credited organizer without a stated credit', () => {
     const input = { ...candidate(), organizer: { name: 'Synthetic Producer' },
       evidence: [{ ...candidate().evidence[0], fields: [...candidate().evidence[0].fields, 'organizer' as const] }] }
     expect(validateEvidence(input, [{ ...post, authority: 'organizer', source_username: 'synthetic_producer' }], [], now))
-      .toContain('Instagram evidence must name organizer: Synthetic Producer')
+      .toContain('Instagram evidence must explicitly credit organizer: Synthetic Producer')
+  })
+  it('binds clocks to the show and doors labels, including a trimmed quote from a caption', () => {
+    const excerpt = 'Synthetic Jazz — Puertas 21 hs - Show 22 hs'
+    const evidence = [{ observation_id: observationId, fields: ['name', 'venue', 'date', 'time', 'doors_time'] as const, excerpt, media_id: null }]
+    const input = { ...candidate(), time: '22:00', doors_time: '21:00', evidence }
+    const posts = [{ ...post, caption: excerpt }]
+    expect(validateEvidence(input, posts, [], now)).toEqual([])
+    expect(validateEvidence({ ...input, time: '21:00' }, posts, [], now)).toContain('Start time must match the labeled show clock, not doors')
+    expect(validateEvidence({ ...input, doors_time: '22:00' }, posts, [], now)).toContain('Door time must match the labeled doors clock')
+    const trimmed = [{ ...evidence[0], excerpt: '21 hs', fields: ['time'] as const }]
+    expect(validateEvidence({ ...input, time: '21:00', evidence: trimmed }, posts, [], now)).toContain('Start time must match the labeled show clock, not doors')
+  })
+  it('requires an explicit doors date before 06:00 even when only doors are known', () => {
+    const excerpt = 'Synthetic Jazz, Puerta 00:30'
+    const evidence = [{ observation_id: observationId, fields: ['name', 'venue', 'date', 'doors_time'] as const, excerpt, media_id: null }]
+    const input = { ...candidate(), time: null, doors_time: '00:30', evidence }
+    expect(validateEvidence(input, [{ ...post, caption: excerpt }], [], now)).toContain('State doors_date for an after-midnight door time')
+    expect(validateEvidence({ ...input, doors_date: '2026-11-21' }, [{ ...post, caption: excerpt }], [], now)).toEqual([])
+  })
+  it.each(['Entradas a la venta desde el lunes', 'Entradas a la venta desde el 15/11', 'Entradas a la venta desde el 16/11 a las 15:00', 'Entradas a la venta desde el 15/11 a las 16:00'])('rejects an unstated or mismatched sale opening: %s', excerpt => {
+    const evidence = [...candidate().evidence, { observation_id: observationId, fields: ['offers_valid_from'] as const, excerpt, media_id: null }]
+    const input = { ...candidate(), offers_valid_from: '2026-11-15T18:00:00.000Z', evidence }
+    expect(validateEvidence(input, [{ ...post, caption: `${post.caption}\n${excerpt}` }], [], now)).toContain('Ticket-sale opening needs the stated calendar date and time')
+  })
+  it.each([
+    ['organizer', 'Passline', 'Presenta: Passline'],
+    ['organizer', 'Colectivo Nube', 'Entradas: Colectivo Nube'],
+    ['organizer', 'Colectivo Nube', 'Con el apoyo de Colectivo Nube'],
+    ['performers', 'Trío Sol', 'After-party\nDJ: Trío Sol'],
+  ] as const)('rejects unsupported %s roles even when the name is quoted', (role, name, caption) => {
+    const excerpt = caption.split('\n').at(-1)!
+    const evidence = [...candidate().evidence, { observation_id: observationId, fields: [role], excerpt, media_id: null }]
+    const input = { ...candidate(), evidence, ...(role === 'organizer' ? { organizer: { name } } : { performers: [{ name }] }) }
+    expect(validateEvidence(input, [{ ...post, caption: `${post.caption}\n${caption}` }], [], now)).toContain(`Instagram evidence must explicitly credit ${role}: ${name}`)
   })
   it('does not reinterpret conditional admission as free', () => {
     expect(validateEvidence({ ...candidate(), price_kind: 'conditional', price_ars: 0 }, [post], [], now)).toContain('Only a fixed price may set price_ars')

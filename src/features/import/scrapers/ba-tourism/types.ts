@@ -51,7 +51,6 @@ export interface BATourismEvent {
 
   /** Event description */
   description: string
-  organizerName?: string
 
   /** URL to more information / detail page */
   moreInfoUrl: string

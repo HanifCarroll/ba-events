@@ -1,6 +1,8 @@
 import type { EventInsert } from '#shared/lib/types.ts'
 import type { Candidate } from './schema.ts'
 import { isOfficialPage, validPublicUrl } from './schema.ts'
+import { statesCreditRole, isAfterPartyCredit } from '#shared/lib/event-credit-evidence.ts'
+import { statesDoorsTime, statesSaleOpening, supportsStartTime } from './clock-evidence.ts'
 
 export type Observation = {
   id: string; post_id: string; source_username: string; caption: string;
@@ -23,6 +25,11 @@ export function canonicalTicket(value: string | null): string | null {
   url.searchParams.sort()
   return `${url.origin}${url.pathname.replace(/\/$/, '')}${url.search}`
 }
+export function ticketDestinationChanged(before: unknown, after: string | null | undefined): boolean {
+  if (!after) return false
+  return typeof before !== 'string' || (canonicalTicket(before) ?? before) !== (canonicalTicket(after) ?? after)
+}
+
 export const descriptionChanged = (before: Record<string, unknown>, after: EventInsert) =>
   (before.description_es ?? null) !== (after.description_es ?? null) || (before.description_en ?? null) !== (after.description_en ?? null)
 
@@ -33,6 +40,8 @@ export const searchInputsChanged = (before: Record<string, unknown>, after: Even
   JSON.stringify(before.categories ?? []) !== JSON.stringify(after.categories ?? [])
 
 export const baDate = (iso: string) => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' }).format(new Date(iso))
+export const baTime = (iso: string) => new Intl.DateTimeFormat('en-GB', { timeZone: 'America/Argentina/Buenos_Aires',
+  hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(iso))
 
 function localTimestamp(date: string, time: string): string {
   const parsed = new Date(`${date}T${time}:00-03:00`)
@@ -64,6 +73,7 @@ export function validateEvidence(candidate: Candidate, observations: Observation
     if (new Date(start).getTime() > now.getTime() + 370 * 86400000) reasons.push('Event is outside the supported discovery horizon')
   } catch { reasons.push('Invalid calendar date') }
   if (candidate.doors_date && !candidate.doors_time) reasons.push('A separate doors date needs a door time')
+  if (candidate.doors_time && candidate.doors_time < '06:00' && !candidate.doors_date) reasons.push('State doors_date for an after-midnight door time')
   try {
     const doors = candidateDoors(candidate)
     if (doors) {
@@ -88,28 +98,37 @@ export function validateEvidence(candidate: Candidate, observations: Observation
     if (evidence.media_id) {
       if (!media.some(item => item.id === evidence.media_id && item.observation_id === post.id)) reasons.push('Flyer evidence is not attached to this observation')
     } else if (!post.caption.includes(evidence.excerpt)) reasons.push('Caption evidence must be an exact excerpt')
+    if (candidate.time && evidence.fields.includes('time') && !supportsStartTime(evidence.excerpt, candidate.time, evidence.media_id ? undefined : post.caption)) {
+      reasons.push('Start time must match the labeled show clock, not doors')
+    }
     for (const field of evidence.fields) supported.add(field)
   }
   const postEvidence = candidate.evidence.filter(item => 'observation_id' in item)
   for (const field of suppliedDetailFacts(candidate)) {
     if (field === 'doors_time') {
       if (!supported.has(field)) reasons.push('Missing evidence for doors_time')
+      if (candidate.doors_time && postEvidence.some(item => item.fields.includes(field) && !statesDoorsTime(item.excerpt, candidate.doors_time!))) {
+        reasons.push('Door time must match the labeled doors clock')
+      }
     } else if (!postEvidence.some(item => item.fields.some(value => value === field))) reasons.push(`Missing Instagram evidence for ${field}`)
   }
   for (const [field, credits] of [['organizer', candidate.organizer ? [candidate.organizer] : []], ['performers', candidate.performers ?? []]] as const) {
     for (const credit of credits) {
-      const name = normalizeTitle(credit.name)
-      if (!name || !postEvidence.some(item => item.fields.includes(field) && ` ${normalizeTitle(item.excerpt)} `.includes(` ${name} `))) {
-        reasons.push(`Instagram evidence must name ${field}: ${credit.name}`)
-      }
-      if (credit.url && (!validPublicUrl(credit.url) || !postEvidence.some(item => item.fields.includes(field) && item.excerpt.includes(credit.url!)))) {
+      const support = postEvidence.filter(item => item.fields.includes(field) && statesCreditRole(field, credit.name, item.excerpt) &&
+        (field !== 'performers' || item.media_id || !isAfterPartyCredit(observations.find(post => post.id === item.observation_id)?.caption ?? '', item.excerpt)))
+      if (!support.length) reasons.push(`Instagram evidence must explicitly credit ${field}: ${credit.name}`)
+      if (credit.url && (!validPublicUrl(credit.url) || !support.some(item => item.excerpt.includes(credit.url!)))) {
         reasons.push(`Instagram evidence must explicitly give the HTTPS URL for ${credit.name}`)
       }
     }
   }
   if (candidate.offers_valid_from) {
     const sales = new Date(candidate.offers_valid_from)
-    if (!Number.isFinite(sales.getTime()) || sales.toISOString() !== candidate.offers_valid_from) reasons.push('Invalid ticket-sale opening timestamp')
+    if (!Number.isFinite(sales.getTime()) || sales.toISOString() !== candidate.offers_valid_from || sales.getUTCSeconds() !== 0 || sales.getUTCMilliseconds() !== 0) {
+      reasons.push('Invalid ticket-sale opening timestamp')
+    } else if (!postEvidence.some(item => item.fields.includes('offers_valid_from') && statesSaleOpening(item.excerpt, baDate(sales.toISOString()), baTime(sales.toISOString())))) {
+      reasons.push('Ticket-sale opening needs the stated calendar date and time')
+    }
   }
   const required = ['name', 'date', 'venue', ...(candidate.time ? ['time'] : []),
     ...(candidate.status !== 'scheduled' ? ['status'] : []), ...(candidate.price_kind !== 'unknown' ? ['price'] : []),

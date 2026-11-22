@@ -69,7 +69,7 @@ const EVENT_ADMIN_COLUMNS = `
 // not leave the database for chat display or message attachment paths.
 const PUBLIC_EVENT_COLUMNS = `
   id, name, description_display_es, description_display_en, description_summary_es, description_summary_en,
-  starts_at, ends_at, is_all_day, time_tba, venue_id, categories, price, is_free, min_age, image_url,
+  starts_at, ends_at, doors_at, is_all_day, time_tba, venue_id, categories, price, is_free, min_age, image_url,
   link, ticket_url, status, location_hidden, venue_name, venue_neighborhood, venue_address
 `
 

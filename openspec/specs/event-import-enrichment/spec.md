@@ -40,19 +40,22 @@ Each source SHALL use its registered transformer and enrichment capabilities. So
 The catalog SHALL keep source-stated organizer names and URLs, performer lineups, and ticket-sale opening times as separate event fields. Missing or unstated facts SHALL remain unknown. The scope classifier and search document SHALL NOT depend on these fields.
 
 #### Scenario: A source names the organizer
-- **WHEN** Luma identifies an event host, Meetup identifies its group, or BA Tourism explicitly identifies the organizer
-- **THEN** the catalog stores the source-backed identity and any source-provided organizer URL without treating the venue, promoter's social account, or ticket seller as evidence by itself
+- **WHEN** Luma identifies an event host or Meetup identifies its group
+- **THEN** the catalog stores the source-backed identity and any associated public profile URL without treating the venue, promoter's social account, or ticket seller as evidence by itself
+- **AND** BA Tourism import, enrichment, and description backfill do not assign an organizer on BA Tourism rows
 
 #### Scenario: Intake sees a credit or a ticket-sale opening time
 - **WHEN** an Instagram intake candidate supplies an organizer, a lineup, or a ticket-sale opening time
 - **THEN** the fact needs a corresponding retained source excerpt or image, and accepted explicit intake facts are protected against later importer or enrichment writes
-- **AND** a posting account alone does not count as an organizer credit
-- **AND** a correction needs direct organizer or venue evidence, and an omitted field leaves the prior fact untouched unless a door date or ticket destination has changed
+- **AND** the excerpt must explicitly credit the role for this occurrence; a posting account, seller, sponsor, or after-party performer is not a credit
+- **AND** a ticket-sale timestamp requires a quoted calendar date and clock; changing that timestamp or the ticket destination requires current direct ticket evidence, so an unsupported correction changes neither field
+- **AND** an omitted field leaves the prior fact untouched unless a verified door date or ticket destination has changed
 
 #### Scenario: An Instagram flyer gives only doors
 - **WHEN** the flyer explicitly states a door time but no performance start
-- **THEN** intake stores the evidenced Buenos Aires door timestamp, including its next-day calendar date when the doors open after midnight, and leaves the start time TBA
-- **AND** a later intake revision can add doors to the existing event without changing its identity or claiming a start; a reschedule to another date clears stale doors when the revision has no new door evidence
+- **THEN** intake stores the evidenced Buenos Aires door timestamp; each clock matches its own label, and a doors clock before 06:00 requires an explicit local `doors_date`
+- **AND** the door clock does not become the start; when an update adds doors to the same date with no new start, it keeps the existing verified start and end and checks doors against that start
+- **AND** a reschedule to another date clears stale doors when the revision has no new door evidence
 
 #### Scenario: An ordinary official page states doors and show time
 - **WHEN** a candidate cites an official-page excerpt for `doors_time`
@@ -118,7 +121,7 @@ Enrichment SHALL use the registered source strategy, retain available source dat
 #### Scenario: Model expresses an unknown optional facet as null
 - **WHEN** an otherwise valid model facet object uses null for unknown energy or social interaction
 - **THEN** the model boundary normalizes those scalars to omitted canonical values while retaining supported array facets
-- **AND** invalid non-null enum values still fail validation
+- **AND** invalid non-null enum values still fail validation, but malformed credit fields are validated separately and do not erase valid facets
 
 ### Requirement: Enrichment selects each event once and skips retired sources
 Enrichment SHALL move an imported `pending` event to a terminal status in the pass that processes it, so reselection and step retries do not repeat model or embedding calls. Events from the retired `passline`, `eventbrite`, and `venti` sources SHALL be excluded from enrichment selection and counts without changing or deleting them.

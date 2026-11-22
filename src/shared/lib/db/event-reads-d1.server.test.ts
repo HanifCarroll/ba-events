@@ -16,6 +16,8 @@ import {
   getVenueById,
 } from './client.server.ts'
 import { createWorkerHandler } from '../../../mcp-worker/index.ts'
+import { toPublicEvent } from '../../../mcp-worker/public.ts'
+import { eventsByIdsD1 } from './event-reads-d1.server.ts'
 import { homeWindow, selectHomeView } from '#features/events/lib/home-feed.ts'
 import { getEventDetailDataEffect } from '#features/events/api/detail.server.ts'
 import { Effect } from 'effect'
@@ -173,6 +175,19 @@ describe('public event reads on D1', () => {
     const detail = await Effect.runPromise(getEventDetailDataEffect(id))
     expect(detail.meta.jsonLd).toMatchObject({ startDate: '2026-11-20', doorTime: doorsAt,
       organizer: { name: 'Asociación Sur' }, performer: [{ name: 'Trío Sol' }], offers: { validFrom } })
+  })
+
+  it('keeps a previous-night event after doors and carries its doors clock in shared and MCP reads', async () => {
+    const now = new Date('2026-11-21T04:15:00.000Z')
+    const window = homeWindow(now)
+    const starts_at = '2026-11-20T03:00:00.000Z', doorsAt = '2026-11-21T02:00:00.000Z'
+    const eventId = await event('Noche anterior', { starts_at, scope: 'in' })
+    await db.prepare('UPDATE events SET time_tba = 1, doors_at = ? WHERE id = ?').bind(doorsAt, eventId).run()
+    const events = await getHomeAgendaEvents(window)
+    expect(selectHomeView({ window, asOf: now.getTime(), events }, 'hoy').events.map(event => event.id)).toContain(eventId)
+    expect((await eventsByIdsD1(db, [eventId]))[0]).toMatchObject({ starts_at, time_tba: true, doors_at: doorsAt })
+    const publicEvent = await getDisplayableEventById(eventId)
+    expect(publicEvent && toPublicEvent(publicEvent)).toMatchObject({ startsAt: starts_at, timeTba: true, doorsAt })
   })
 
   it('MCP get_event: displayable events only, with the public columns', async () => {

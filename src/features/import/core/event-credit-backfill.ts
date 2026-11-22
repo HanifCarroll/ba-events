@@ -4,6 +4,7 @@ import type { requestEventCredits } from '#shared/lib/ai/extract-facets.ts'
 interface CreditRow {
   id: string
   name: string
+  source: string
   starts_at: string
   updated_at: string
   description_es: string | null
@@ -24,8 +25,8 @@ export async function backfillEventCredits(db: D1Database, options: {
   const schema = await db.prepare('PRAGMA table_info(events)').all<{ name: string }>()
   const migrated = schema.results.some(column => column.name === 'organizer_name')
   if (options.apply && !migrated) throw new Error('Apply the event details migration before writing credits')
-  const missingPeople = "(nullif(trim(organizer_name), '') IS NULL OR coalesce(json_array_length(performers), 0) = 0)"
-  const { results } = await db.prepare(`SELECT id, name, starts_at, updated_at, description_es, description_en,
+  const missingPeople = "((source <> 'ba-tourism' AND nullif(trim(organizer_name), '') IS NULL) OR coalesce(json_array_length(performers), 0) = 0)"
+  const { results } = await db.prepare(`SELECT id, name, source, starts_at, updated_at, description_es, description_en,
       ${migrated ? 'organizer_name, coalesce(json_array_length(performers), 0) AS performer_count' : 'NULL AS organizer_name, 0 AS performer_count'} FROM events
     WHERE status = 'scheduled' AND starts_at >= ? AND (trim(coalesce(description_es, '')) <> '' OR trim(coalesce(description_en, '')) <> '')
       AND json_extract(enrichment_provenance, '$.creditsBackfilledAt') IS NULL ${migrated ? `AND ${missingPeople}` : ''}
@@ -45,7 +46,7 @@ export async function backfillEventCredits(db: D1Database, options: {
     let credits: Awaited<ReturnType<ExtractCredits>>
     try { credits = await options.extract([row.description_es?.slice(0, 6000) ?? null, row.description_en?.slice(0, 6000) ?? null]) }
     catch { report.push({ ...sample, status: 'extraction-failed' as const }); continue }
-    const organizer = row.organizer_name?.trim() ? undefined : credits.organizer
+    const organizer = row.source === 'ba-tourism' || row.organizer_name?.trim() ? undefined : credits.organizer
     const performers = row.performer_count ? undefined : credits.performers
     const result = await write?.bind(organizer?.name ?? null, organizer?.url ?? null, performers ? JSON.stringify(performers) : null,
       new Date().toISOString(), row.id, row.updated_at, row.description_es, row.description_en, options.from).run()

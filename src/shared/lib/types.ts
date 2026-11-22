@@ -184,6 +184,7 @@ export type PublicEventRecord = Pick<
   | 'description_summary_en'
   | 'starts_at'
   | 'ends_at'
+  | 'doors_at'
   | 'is_all_day'
   | 'time_tba'
   | 'venue_id'

@@ -6,7 +6,7 @@ import { buildDescriptionPresentationFields } from '#features/events/lib/descrip
 import { importTry, ImportOperationError } from '../core/effect-utils.ts'
 import { candidateError, decodeCandidate, isOfficialPage, type Candidate } from './schema.ts'
 import { officialSites, verifyOfficialPagesEffect, type ReadPage, type RenderPage } from './official-page.ts'
-import { baDate, candidateStart, candidateDoors, decideMatch, descriptionChanged, searchInputsChanged, validateEvidence, normalizeTitle,
+import { baDate, baTime, candidateStart, candidateDoors, decideMatch, descriptionChanged, searchInputsChanged, validateEvidence, normalizeTitle, ticketDestinationChanged,
   suppliedDetailFacts, type CatalogMatch, type Observation } from './planning.ts'
 import type { IntakePlanRow, IntakeStore } from './store.ts'
 
@@ -113,20 +113,30 @@ export const previewCandidateEffect = Effect.fn('intake.preview')(function*(stor
     description_unavailable: !description && !old?.description_es,
     enrichment_status: description || old?.description_es ? 'completed' : 'skipped',
   }
-  if (decision.action === 'update' && old && Boolean(old.time_tba) === payload.time_tba &&
-    Math.floor(Date.parse(String(old.starts_at)) / 60_000) === Math.floor(Date.parse(payload.starts_at) / 60_000)) {
-    // Candidate times have only minute precision, so resubmitting the same time does not round the stored timestamp.
-    payload.starts_at = String(old.starts_at)
-  }
-  payload.ends_at = old && Date.parse(String(old.starts_at)) === Date.parse(payload.starts_at) ? old.ends_at as string | null : null
-  if (decision.action === 'update' && old) {
+  const oldStart = typeof old?.starts_at === 'string' ? old.starts_at : undefined
+  if (decision.action === 'update' && old && oldStart) {
+    const sameAdvertisedDay = baDate(oldStart) === candidate.date
+    const sameReportedMinute = Boolean(old.time_tba) === payload.time_tba &&
+      Math.floor(Date.parse(oldStart) / 60_000) === Math.floor(Date.parse(payload.starts_at) / 60_000)
+    // Null on the same advertised date means no new start evidence, not a retraction of the known start.
+    if ((sameAdvertisedDay && candidate.time === null) || sameReportedMinute) {
+      payload.starts_at = oldStart
+      payload.time_tba = Boolean(old.time_tba)
+    }
+    if (payload.doors_at && !payload.time_tba && Date.parse(payload.doors_at) > Date.parse(payload.starts_at)) {
+      decision.action = 'held'; decision.reasons.push('Doors cannot follow the known start time')
+    }
+    if (Date.parse(oldStart) === Date.parse(payload.starts_at)) payload.ends_at = old.ends_at as string | null
     if (!descriptionChanged(old, payload)) Object.assign(payload, storedPresentation(old), {
       description_unavailable: old.description_unavailable, enrichment_status: old.enrichment_status,
     })
     if (!searchInputsChanged(old, payload)) Object.assign(payload, storedSearch(old))
     const changes = suppliedDetailFacts(candidate)
     if (old.status !== payload.status) changes.push('status')
-    if (new Date(String(old.starts_at)).getTime() !== new Date(payload.starts_at).getTime()) changes.push('date', ...(candidate.time ? ['time'] : []))
+    if (Date.parse(oldStart) !== Date.parse(payload.starts_at)) changes.push('date')
+    if (!payload.time_tba && (Date.parse(oldStart) !== Date.parse(payload.starts_at) || Boolean(old.time_tba))) changes.push('time')
+    if (ticketDestinationChanged(old.ticket_url, candidate.ticket_url) ||
+      (payload.offers_valid_from !== undefined && old.offers_valid_from !== payload.offers_valid_from)) changes.push('ticket')
     if (old.venue_id !== payload.venue_id) changes.push('venue')
     if (old.price !== payload.price || old.is_free !== payload.is_free) changes.push('price')
     // An official page can support a new event, but a correction still needs the organizer's or venue's own post.
@@ -157,11 +167,9 @@ const officialPageSitesEffect = (store: IntakeStore, venueId: string | null, tic
 
 /** Reconstruct the local facts from the plan before verifying the cited pages again. */
 const planFacts = ({ payload }: IntakePlanRow) => {
-  const localTime = new Intl.DateTimeFormat('en-GB', { timeZone: 'America/Argentina/Buenos_Aires',
-    hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
   return { name: payload.name, date: baDate(payload.starts_at),
-    time: payload.time_tba ? null : localTime.format(new Date(payload.starts_at)),
-    ...(payload.doors_at ? { doorsDate: baDate(payload.doors_at), doorsTime: localTime.format(new Date(payload.doors_at)) } : {}) }
+    time: payload.time_tba ? null : baTime(payload.starts_at),
+    ...(payload.doors_at ? { doorsDate: baDate(payload.doors_at), doorsTime: baTime(payload.doors_at) } : {}) }
 }
 
 const storedPresentation = (event: Record<string, unknown>) => ({

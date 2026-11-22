@@ -8,7 +8,6 @@ import * as cheerio from 'cheerio'
 import { Effect } from 'effect'
 import type { BATourismEvent, Coordinates, WeekContext } from './types.ts'
 import { parseWeekContext } from './date-parser.ts'
-import { baTourismOrganizerNames } from './organizers.ts'
 
 const BA_TOURISM_URL = 'https://turismo.buenosaires.gob.ar/es/article/que-hacer-esta-semana'
 
@@ -145,7 +144,6 @@ export function extractWeekContext(html: string): WeekContext {
 export function parseBATourismEvents(html: string): BATourismEvent[] {
   const $ = cheerio.load(html)
   const events: BATourismEvent[] = []
-  const organizers = baTourismOrganizerNames($('script.schema-masivo-ia').first().text())
 
   // Events are in .card-landing divs
   $('.card-landing').each((_, card) => {
@@ -246,7 +244,6 @@ export function parseBATourismEvents(html: string): BATourismEvent[] {
         address,
         coordinates,
         description,
-        organizerName: organizers.get(name),
         moreInfoUrl,
       })
     }

@@ -1,6 +1,6 @@
 import { toZonedTime } from 'date-fns-tz'
 import { getLocale } from '#paraglide/runtime.js'
-import { event_doors } from '#paraglide/messages.js'
+import { concierge_time_tba, event_doors } from '#paraglide/messages.js'
 import { BA_TIMEZONE } from '#shared/lib/constants.ts'
 
 /**
@@ -45,9 +45,9 @@ export function formatDateTime(date: Date | string): string {
 /**
  * Format time only in the user's locale
  */
-export function formatTime(date: Date | string): string {
+export function formatTime(date: Date | string, locale = getLocale()): string {
   const d = typeof date === 'string' ? new Date(date) : date
-  return d.toLocaleTimeString(getLocale(), {
+  return d.toLocaleTimeString(locale, {
     hour: 'numeric',
     minute: '2-digit',
     timeZone: BA_TIMEZONE,
@@ -64,6 +64,13 @@ export function formatDoorsTime(date: string, eventStartsAt: string, locale = ge
   const day = (value: Date) => value.toLocaleDateString('en-CA', { timeZone: BA_TIMEZONE })
   if (day(doors) === day(new Date(eventStartsAt))) return label
   return `${label} · ${doors.toLocaleDateString(locale, { weekday: 'short', month: 'short', day: 'numeric', timeZone: BA_TIMEZONE })}`
+}
+
+export function formatEventCardTime(event: { starts_at: string; time_tba: boolean; doors_at?: string | null }, locale = getLocale()): string {
+  const doors = event.doors_at ? formatDoorsTime(event.doors_at, event.starts_at, locale) : null
+  if (event.time_tba) return doors ?? concierge_time_tba({}, { locale })
+  const start = formatTime(event.starts_at, locale)
+  return doors ? `${start} · ${doors}` : start
 }
 
 /**

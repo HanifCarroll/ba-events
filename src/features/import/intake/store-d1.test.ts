@@ -479,6 +479,51 @@ describe.skipIf(bun)('the operator flow on D1', () => {
       .toEqual({ starts_at: `${newDate}T03:00:00.000Z`, ticket_url: newTicket, offers_valid_from: null, doors_at: null, organizer_name: 'Nube' })
   })
 
+  it.each(['20:00', '22:00'])('checks doors at %s against a kept verified start and end', async doors_time => {
+    await source()
+    const runId = (await run(store.reserveCollection)).id
+    const venueId = await venue(), candidate = id(), event = id(), date = shiftDay(baToday(), 5)
+    const starts_at = new Date(`${date}T21:00:37-03:00`).toISOString()
+    const ends_at = new Date(`${date}T23:30:00-03:00`).toISOString()
+    await db.prepare(`INSERT INTO events (id, name, starts_at, ends_at, venue_id, source, categories, search_document) VALUES
+      (?, 'Synthetic Jazz', ?, ?, ?, 'instagram', '["music"]', 'Existing search')`).bind(event, starts_at, ends_at, venueId).run()
+    const excerpt = `Synthetic Jazz — Puerta ${doors_time}`
+    const post = await observation(runId, excerpt)
+    await run(submitCandidateEffect(store, candidateInput(candidate, post, venueId, { intent: 'update', target_event_id: event, date, time: null,
+      doors_time, evidence: [{ observation_id: post, fields: ['name', 'date', 'venue', 'doors_time'], excerpt, media_id: null }] })))
+    const preview = await run(previewCandidateEffect(store, candidate))
+    if (doors_time === '22:00') {
+      expect(preview).toMatchObject({ action: 'held', reasons: ['Doors cannot follow the known start time'] })
+    } else {
+      expect(preview).toMatchObject({ action: 'update', payload: { starts_at, ends_at, time_tba: false } })
+      const noProvider = async () => { throw new Error('A doors-only update must not call a provider') }
+      await run(commitPlanEffect(store, preview.id, { embed: noProvider, presentation: noProvider }))
+    }
+    expect(await db.prepare('SELECT starts_at, ends_at, time_tba, doors_at FROM events WHERE id = ?').bind(event).first()).toEqual({
+      starts_at, ends_at, time_tba: 0, doors_at: doors_time === '20:00' ? new Date(`${date}T20:00:00-03:00`).toISOString() : null,
+    })
+  })
+
+  it('refuses a prepared ticket replacement without direct ticket evidence and keeps the protected opening time', async () => {
+    await source()
+    const runId = (await run(store.reserveCollection)).id
+    const venueId = await venue(), candidate = id(), date = shiftDay(baToday(), 5)
+    const ticket_url = 'https://tickets.example/original', offers_valid_from = '2026-11-20T18:00:00.000Z'
+    const excerpt = `Synthetic Jazz. Entradas a la venta desde el 20/11 a las 15:00: ${ticket_url}`
+    const post = await observation(runId, excerpt)
+    const evidence = [{ observation_id: post, fields: ['name', 'date', 'venue', 'ticket', 'offers_valid_from'], excerpt, media_id: null }]
+    await run(submitCandidateEffect(store, candidateInput(candidate, post, venueId, { date, time: null, ticket_url, offers_valid_from, evidence })))
+    const create = await run(previewCandidateEffect(store, candidate))
+    await run(commitPlanEffect(store, create.id, publishers))
+    await run(submitCandidateEffect(store, candidateInput(candidate, post, venueId, { date, time: null, expected_revision: 1,
+      intent: 'update', target_event_id: create.event_id, evidence: [{ ...evidence[0], fields: ['name', 'date', 'venue'] }] })))
+    const update = await run(previewCandidateEffect(store, candidate))
+    expect(update.action).toBe('update')
+    await run(store.preparePlan(update.id, { ...update.payload, ticket_url: 'https://tickets.example/unsupported' }))
+    expect(await fails(store.commitPlan(update.id))).toContain('Correction field lacks current direct evidence: ticket')
+    expect(await db.prepare('SELECT ticket_url, offers_valid_from FROM events WHERE id = ?').bind(create.event_id).first()).toEqual({ ticket_url, offers_valid_from })
+  })
+
   it('refuses a candidate whose venue_id or target_event_id is not in the catalog, naming the ID, and stores nothing', async () => {
     await source()
     const post = await observation((await run(store.reserveCollection)).id)
