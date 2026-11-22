@@ -163,3 +163,49 @@ If an event in an approved draft is cancelled before the post goes out, the draf
 If an event in the draft is no longer marked in scope, the thread gets "Held: {title} is no longer marked in scope. Ask Hermes to regenerate it."
 
 If an event in the draft has already happened by the time the post would go out (it has ended, or it has started and has no end time), the draft is held the same way, and the thread gets "Held: {title} has already happened. Ask Hermes to regenerate it."
+
+## Threads
+
+Hoy:
+```
+Hoy en Buenos Aires, {n} planes de cultura independiente:
+
+{HH:MM} · {título} · {venue}, {barrio} · {precio}
+
+Toda la agenda de hoy: baeventos.com
+```
+
+Este finde (`{día}` is Vie, Sáb, or Dom):
+```
+Este finde en Buenos Aires: {n} planes de cultura independiente.
+
+{día} {HH:MM} · {título} · {venue}, {barrio} · {precio}
+
+Horarios, precios y direcciones: baeventos.com
+```
+
+Gratis esta semana (`{día}` is Lun, Mar, Mié, Jue, Vie, Sáb, or Dom; no price column):
+```
+Gratis esta semana en Buenos Aires: {n} planes.
+
+{día} {HH:MM} · {título} · {venue}, {barrio}
+
+Lista completa: baeventos.com
+```
+
+Slack preview, appended after the existing preview text:
+```
+Threads (se publica con el mismo ✅, {HH:MM}):
+{the exact Threads text, as a quote block}
+```
+
+With auto mode on, use this heading instead: `Threads (se publica solo a las {HH:MM} salvo que reacciones ❌):`.
+
+On an Instagram rebuild after Threads has published, use `Threads ya se publicó con la versión anterior.` instead of the quote. If the send is still unclear, Threads was skipped or failed, or the Threads cutoff has passed without a publish, omit the Threads section.
+
+Outcome replies in the original preview's thread:
+- `Threads: publicado {permalink}`
+- `Threads: omitido, no se publicó antes de las {HH:MM}.`
+- `Threads: omitido, reaccionaste ❌.`
+- `Threads: retenido, {title} cambió (se canceló, ya pasó o salió de la agenda).`
+- `Threads: falló ({short reason}). Hermes lo revisa.`

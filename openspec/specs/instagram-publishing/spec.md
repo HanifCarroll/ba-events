@@ -118,8 +118,9 @@ Each draft MUST go to #ba-eventos as a new top-level message with every frame at
 - **THEN** it publishes at once
 
 #### Scenario: Auto mode
-- **WHEN** a format's auto mode is on
+- **WHEN** both the saved Instagram preview mode and the current config allow auto mode for the format
 - **THEN** the preview is still posted and the post goes out at its slot unless Hanif reacted ❌
+- **AND** if either setting is false or the preview predates saved modes, a ✅ is required
 
 ### Requirement: Hoy can publish with Instagram link stickers
 
@@ -205,9 +206,73 @@ The job MUST log every failed attempt, persist failure streaks across ticks, and
 - **WHEN** an open tick, publishing, or Slack reply alert is no longer failing because the job succeeded
 - **THEN** the job closes the alert with a one-line recovery message that names the outcome
 
+### Requirement: Eligible Instagram drafts share their Slack preview and approval with Threads
+
+With Threads enabled, a Hoy, Este finde, or Gratis esta semana preview MUST append the exact Threads text in a quote block unless an earlier revision already dispatched Threads. The preview MUST distinguish manual approval from auto mode. Publishing without ✅ requires both the saved Threads preview mode and the current config to allow auto mode. The Reel MUST NOT preview or publish to Threads. The same Slack message and only Hanif's reactions govern both posts; ❌ skips both, including in auto mode. Threads auto mode is separate per format.
+
+#### Scenario: Publishing window
+- **WHEN** the job considers a new Threads write
+- **THEN** it may start it at its slot or later, but strictly before its cutoff. All times are Buenos Aires: Hoy 11:30 to 17:00; Este finde Thursday 12:00 to Friday 12:00; Gratis Monday 12:00 to Tuesday 12:00.
+
+#### Scenario: Approval arrives after the slot
+- **WHEN** Hanif's ✅ is first read after the Threads slot but before its cutoff
+- **THEN** the job may publish to Threads on that tick, regardless of whether Instagram has published
+
+#### Scenario: Instagram needs a new revision after a Threads send
+- **WHEN** a confirmed or unclear Threads send already exists and the Instagram draft has not started publishing or passed its cutoff
+- **THEN** the operator can regenerate Instagram independently. The job retains the original Threads attempt, text, and reply thread. The new preview offers no second Threads post and notes a confirmed one.
+
+#### Scenario: Instagram is regenerated after the Threads cutoff or after a skipped or failed Threads draft
+- **WHEN** the operator regenerates an Instagram draft still eligible for rebuilding
+- **THEN** the new preview does not offer a Threads post in those cases, and the job keeps any previous Threads state and original reply thread
+
+#### Scenario: The picks change or approval is withdrawn
+- **WHEN** a Threads write would begin
+- **THEN** the job re-reads reactions and the cutoff, and before the first write of each attempt checks every saved pick using Instagram's current catalog check. An event that would hold Instagram also holds Threads. With auto off, removing ✅ pauses further writes. A confirmed or unclear publish still gets reconciled without new writes.
+
+#### Scenario: Threads is disabled
+- **WHEN** Threads is disabled or absent from config
+- **THEN** the job adds no Threads preview or outcome text, makes no Threads API calls, and does not backfill a preview sent without Threads text. The job re-reads the enabled flag just before creating or publishing a container. If disabled during the tick, it pauses new writes and keeps any saved container. An explicit `dry-run --threads` can still write the text locally.
+
+### Requirement: Threads uses plain text from the saved picks
+
+The text MUST use the copy in `copy.md`, the cards' cleaned titles and price labels, venue names in title case when all-caps, Buenos Aires start times (`HH:MM`), and no emoji or hashtags. A leading `@` on a word in the title, venue, or barrio MUST be removed so it does not tag an account. An unknown price adds neither a label nor a separator. The post MUST be no more than 500 Unicode code points including its link line.
+
+#### Scenario: A title repeats its venue
+- **WHEN** a title ends in a dash followed by its own venue name, ignoring case, accents, and punctuation
+- **THEN** the Threads text omits the suffix without changing the Instagram frames
+
+#### Scenario: The full list exceeds 500 code points
+- **WHEN** the full draft cannot fit
+- **THEN** remove the latest pick on the day with the most picks until the text fits, the list reaches its minimum, or every remaining day has only one pick. If it still does not fit, shorten titles to at most 40 code points including the ellipsis before dropping any more picks. Then drop the latest pick overall as needed. Keep chronological order and at least two picks for Hoy or three for each carousel. If the minimum still cannot fit, do not post Threads or block Instagram.
+
+### Requirement: Threads publishes independently and reconciles unclear sends without duplicates
+
+Threads MUST save its own state, retries, container ID, media ID, permalink, and pending Slack outcome in the draft. The job MUST verify the Threads username is `baeventos.app`, create a `TEXT` container with topic `Buenos Aires` and link `https://baeventos.com`, wait for `FINISHED`, and check the account publishing limit before creating a container and before publishing. A container that is still processing after the tick's polling budget MUST be saved for the next tick without counting a failure.
+
+#### Scenario: `threads_publish` returns an unclear result
+- **WHEN** the publish sends without a confirmed answer
+- **THEN** the job only reconciles it by a unique exact text match at or after the saved attempt's second, excluding media IDs seen before dispatch. A recovered publication timestamp MUST be stored as canonical ISO. The job never matches by time alone and only retries a publish write after a known rejection that rules out dispatch.
+
+#### Scenario: One channel fails
+- **WHEN** Instagram or Threads fails, or Slack cannot deliver an outcome reply
+- **THEN** the other channel keeps its own outcome and retry schedule, and pending Threads replies are retried in the original preview thread without republishing. A final Threads failure also raises `ba-events/instagram/draft/<id>/threads`. If the alert command fails, the alert remains pending for another tick.
+
+#### Scenario: Slack approval cannot be read
+- **WHEN** a Slack reaction read fails at or after the Threads slot
+- **THEN** Threads waits for a successful read until the cutoff without counting a Threads API failure
+
+#### Scenario: The Threads token needs attention
+- **WHEN** a live tick uses Threads and the long-lived token is over seven days old and not yet expired
+- **THEN** the job attempts a refresh and writes a successful refresh atomically in mode 600. It raises `ba-events/instagram/threads-token` on refresh failure or when the token has at most ten days left.
+
+#### Scenario: An operator requests the Threads report
+- **WHEN** the operator runs `threads-report` with a day count (default 28)
+- **THEN** the job reads saved Threads publications and the verified account's insights to report the date, format, views, likes, replies, reposts, quotes, link clicks if returned, permalink, and account follower count without writing anything.
+
 ### Requirement: The job never writes the catalog and never exposes secrets
-The job MUST read D1 only through read-only SELECT statements, MUST NOT print the Instagram, Slack, or Cloudflare tokens or pass them in any process's arguments, and MUST NOT publish when the Instagram token file is missing.
+The job MUST read D1 only through read-only SELECT statements, MUST NOT print the Instagram, Threads, Slack, or Cloudflare tokens or pass them in any process's arguments, and MUST NOT publish to Instagram when the Instagram token file is missing.
 
 #### Scenario: Token file missing
 - **WHEN** `~/.config/ba-events/instagram-token.json` does not exist
-- **THEN** drafts and previews still happen, and publishing is logged and skipped
+- **THEN** drafts and previews still happen, and Instagram publishing is logged and skipped

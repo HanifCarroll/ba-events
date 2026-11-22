@@ -59,6 +59,18 @@ export function describeFailure(error: unknown): Failure {
 export const draftKey = (item: Item) => `draft/${item.id}`
 export const draftTitle = (item: Item) => `Instagram ${label(item)}`
 
+export function threadsFailed(item: Item, reason: string | null, unclear: boolean, stateFile: string) {
+  const title = `Threads ${label(item)}`
+  const outcome = unclear ? `The publisher could not confirm whether the ${label(item)} went out on Threads`
+    : `The ${label(item)} did not publish to Threads`
+  return {
+    title,
+    text: [`🚨 *${outcome}*. ${TRIAGE}`, 'Check @baeventos.app on Threads. The publisher will not send this post again.',
+      codes(item.id, reason ? errorCode(reason) : undefined, `state ${homeRelative(stateFile)}`)].join('\n'),
+    fingerprint: JSON.stringify([unclear, reason]),
+  }
+}
+
 export function tokenAlert(warning: string, now: Date) {
   const text = homeRelative(warning.split(/\r?\n/)[0]!).replace(/\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z/g, time => when(time, now))
   return `⚠️ *The Instagram token needs attention*. ${TRIAGE}\n${text}`

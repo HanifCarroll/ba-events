@@ -13,6 +13,7 @@ import type { FormatKey, RunWindow } from './formats.ts'
 import { writeExcerpt, type ReadyTrack } from './reel/music.ts'
 import { REEL_FAILURE, reelProject, type ReelTiming } from './reel/project.ts'
 import type { CatalogEvent, PostEvent } from './select.ts'
+import type { ThreadsFormat } from './threads-copy.ts'
 
 const HOME = homedir()
 export const REPO = resolve(dirname(new URL(import.meta.url).pathname), '../../..')
@@ -61,6 +62,7 @@ export interface Config {
   auto: Record<FormatKey, boolean>
   /** Hoy can use Business Suite when enabled. Off by default. */
   linkStickers: { hoy: boolean }
+  threads: { enabled: boolean; auto: Record<ThreadsFormat, boolean> }
   /** R2 bucket and its public base URL (no trailing slash). Publishing is skipped until both are set. */
   r2: { bucket: string; publicBaseUrl: string } | null
   /** The Reel's music directory (tracks.json and the audio files), outside the repo. */
@@ -74,7 +76,11 @@ export function readConfig(path = CONFIG_FILE): Config {
   const publicBaseUrl = typeof raw.r2?.publicBaseUrl === 'string' ? raw.r2.publicBaseUrl.trim().replace(/\/+$/, '') : ''
   const r2 = bucket && publicBaseUrl ? { bucket, publicBaseUrl } : null
   const musicDir = typeof raw.reel?.musicDir === 'string' ? raw.reel.musicDir.replace(/^~(?=\/)/, HOME) : join(HOME, '.local/share/ba-events/reel-music')
-  return { auto, linkStickers: { hoy: raw.linkStickers?.hoy === true }, r2, reel: { musicDir } }
+  const threads = {
+    enabled: raw.threads?.enabled === true,
+    auto: { hoy: raw.threads?.auto?.hoy === true, finde: raw.threads?.auto?.finde === true, gratis: raw.threads?.auto?.gratis === true },
+  }
+  return { auto, linkStickers: { hoy: raw.linkStickers?.hoy === true }, threads, r2, reel: { musicDir } }
 }
 
 // Lock: one tick or command at a time.
@@ -490,10 +496,11 @@ export async function loadToken(now: Date, fetchImpl: typeof fetch = fetch, file
 
 const ALERT_TIMEOUT_MS = 180_000
 
-export async function alert(key: string, title: string, text: string, fingerprint?: string) {
-  const { err, code } = await run([ALERT, 'raise', `ba-events/instagram/${key}`, '--title', title, '--text', text,
+export async function alert(key: string, title: string, text: string, fingerprint?: string, runner: Runner = run) {
+  const { err, code } = await runner([ALERT, 'raise', `ba-events/instagram/${key}`, '--title', title, '--text', text,
     ...(fingerprint === undefined ? [] : ['--fingerprint', fingerprint])], ALERT_TIMEOUT_MS)
   if (code !== 0) log(`alert raise failed: ${err.trim()}`)
+  return code === 0
 }
 
 export async function resolveAlert(key: string, text?: string) {

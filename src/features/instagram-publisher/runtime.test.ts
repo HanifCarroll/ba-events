@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { runWindow } from './formats.ts'
-import { catalogSql, loadToken, mediaBin, readConfig, renderFrames, renderReel, toCatalogEvent, type Runner } from './runtime.ts'
+import { alert, catalogSql, loadToken, mediaBin, readConfig, renderFrames, renderReel, toCatalogEvent, type Runner } from './runtime.ts'
 import { reelTiming } from './reel/project.ts'
 
 describe('publisher config', () => {
@@ -29,6 +29,16 @@ describe('publisher config', () => {
       writeFileSync(path, '{"r2":{"bucket":" test-media ","publicBaseUrl":" https://media.example.com/ "}}')
       expect(readConfig(path).r2).toEqual({ bucket: 'test-media', publicBaseUrl: 'https://media.example.com' })
     } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+})
+
+describe('alert command', () => {
+  it.each([0, 1, null])('reports success only on exit 0 (exit %s)', async code => {
+    const runner: Runner = async argv => {
+      expect(argv.slice(1, 3)).toEqual(['raise', 'ba-events/instagram/draft/test/threads'])
+      return { out: '', err: 'fake alert command result', code }
+    }
+    expect(await alert('draft/test/threads', 'Title', 'Body', undefined, runner)).toBe(code === 0)
   })
 })
 

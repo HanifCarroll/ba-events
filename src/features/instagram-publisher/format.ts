@@ -82,9 +82,10 @@ const SMALL_WORDS = new Set(['de', 'del', 'la', 'las', 'el', 'los', 'y', 'e', 'e
 
 /**
  * Titles stay as the catalog has them, except an all-uppercase title becomes title case: each word capitalized, small
- * words lowercase unless first, and words of one or two letters (other than the small words) or with digits kept as written (DJ, FEJA 2026 → Feja 2026).
+ * words lowercase unless first, and words with digits kept as written. By default it also preserves short acronyms
+ * (DJ, FEJA 2026 → Feja 2026). Threads venue names opt out of that rule.
  */
-export function displayTitle(name: string): string {
+export function displayTitle(name: string, keepShortAcronyms = true): string {
   const title = name.trim()
   const letters = title.replace(/[^\p{L}]/gu, '')
   if (!letters || letters !== letters.toLocaleUpperCase('es') || letters === letters.toLocaleLowerCase('es')) return title
@@ -93,7 +94,7 @@ export function displayTitle(name: string): string {
     const isFirst = first
     first = false
     const bare = word.replace(/['’]/g, '')
-    if (/\p{N}/u.test(word) || bare.length <= 2 && !SMALL_WORDS.has(bare.toLocaleLowerCase('es'))) return word
+    if (/\p{N}/u.test(word) || keepShortAcronyms && bare.length <= 2 && !SMALL_WORDS.has(bare.toLocaleLowerCase('es'))) return word
     const lower = word.toLocaleLowerCase('es')
     if (!isFirst && SMALL_WORDS.has(lower)) return lower
     return lower.replace(/\p{L}/u, c => c.toLocaleUpperCase('es'))
