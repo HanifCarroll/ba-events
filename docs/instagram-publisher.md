@@ -2,14 +2,14 @@
 
 A VPS job drafts four recurring posts for @baeventos.app from the catalog, previews each one in Slack #ba-eventos, and publishes it once Hanif approves. It uses the Instagram Graph API (`graph.facebook.com`) unless Hoy's optional Business Suite link stickers are on. The token is the system-user token of the Meta app "BA Eventos Publisher" (id 2298370517615574, business portfolio HC Studio), made with Facebook Login for Business, because new Meta apps no longer offer Instagram Login. The specification is `openspec/specs/instagram-publishing/spec.md`. Post and preview copy lives in `src/features/instagram-publisher/copy.md`, and alert copy lives in `src/features/instagram-publisher/alerts.ts`.
 
-| Format | Draft id | Kind | Events | Draft (Slack) | Publishes | Approval cutoff | Deadline |
-|---|---|---|---|---|---|---|---|
-| Hoy | `hoy-YYYY-MM-DD` | story, 1080 × 1920 | today from 18:00, 2–4 | daily 11:00 | 17:00 | 17:00 | 19:00 |
-| Este finde | `finde-<Friday>` | carousel, 1080 × 1350 | Friday–Sunday, 4–6 | Wednesday 18:00 | Thursday 12:00 | Friday 18:00 | Friday 18:00 |
-| Gratis esta semana | `gratis-<Monday>` | carousel, 1080 × 1350 | Monday–Sunday, free, 5–8 | Sunday 18:00 | Monday 12:00 | Tuesday 20:00 | Tuesday 20:00 |
-| Este finde Reel | `reel-<Friday>` | reel, 1080 × 1920 MP4 with music | Friday–Sunday, 4–6, the carousel's selection minus events over by Friday 18:00 | Thursday 18:00 | Friday 12:00 | Friday 18:00 | Friday 18:00 |
+| Format | Draft id | Kind | Events | Draft (Slack) | Instagram slot | Instagram approval cutoff | Instagram deadline | Threads slot → cutoff |
+|---|---|---|---|---|---|---|---|---|
+| Hoy | `hoy-YYYY-MM-DD` | story, 1080 × 1920 | today from 18:00, 2–4 | daily 11:00 | 17:00 | 17:00 | 19:00 | 11:30 → 17:00 |
+| Este finde | `finde-<Friday>` | carousel, 1080 × 1350 | Friday–Sunday, 4–6 | Wednesday 18:00 | Thursday 12:00 | Friday 18:00 | Friday 18:00 | Thursday 12:00 → Friday 12:00 |
+| Gratis esta semana | `gratis-<Monday>` | carousel, 1080 × 1350 | Monday–Sunday, free, 5–8 | Sunday 18:00 | Monday 12:00 | Tuesday 20:00 | Tuesday 20:00 | Monday 12:00 → Tuesday 12:00 |
+| Este finde Reel | `reel-<Friday>` | reel, 1080 × 1920 MP4 with music | Friday–Sunday, 4–6, the carousel's selection minus events over by Friday 18:00 | Thursday 18:00 | Friday 12:00 | Friday 18:00 | Friday 18:00 | — |
 
-The approval cutoff is the last moment a ✅ counts. The deadline is the last moment any new Instagram write may start; after it the job only reconciles requests it already sent.
+The Instagram approval cutoff is the last moment a ✅ counts. At the Instagram deadline or the Threads cutoff, that channel stops making new writes and only reconciles requests it already sent.
 
 All times are Buenos Aires (UTC−3).
 
@@ -19,7 +19,10 @@ Run from `~/projects/ba-events` on the VPS:
 
 ```sh
 mise exec -- bun scripts/instagram-publisher.ts status
-mise exec -- bun scripts/instagram-publisher.ts dry-run finde --date 2026-11-20 --out /tmp/finde   # no Slack, R2, or Instagram
+mise exec -- bun scripts/instagram-publisher.ts dry-run hoy --date 2026-11-21 --out /tmp/hoy --threads
+mise exec -- bun scripts/instagram-publisher.ts dry-run finde --date 2026-11-20 --out /tmp/finde --threads
+mise exec -- bun scripts/instagram-publisher.ts dry-run gratis --date 2026-11-23 --out /tmp/gratis --threads
+mise exec -- bun scripts/instagram-publisher.ts threads-report --days 28
 mise exec -- bun scripts/instagram-publisher.ts dry-run reel --date 2026-11-20 --out /tmp/reel     # renders the real MP4 (about 75 s)
 mise exec -- bun scripts/instagram-publisher.ts regenerate finde-2026-11-20 --exclude <event id>
 mise exec -- bun scripts/instagram-publisher.ts regenerate reel-2026-11-20 --track <track id>      # keeps exclusions; --exclude works too
@@ -27,7 +30,7 @@ mise exec -- node --experimental-transform-types scripts/instagram-publisher.ts 
 mise exec -- node --experimental-transform-types scripts/instagram-publisher.ts stickers-dry-run hoy-2026-11-19 --out /tmp/hoy-stickers
 ```
 
-`dry-run` takes the run's first day (any day for Hoy, a Friday for Este finde and the Reel, a Monday for Gratis) and writes the frames, `caption.txt`, the Slack text in `slack.txt`, and `events.txt` (the picks with their ids). For the Reel it writes `reel.mp4`, `cover.jpg`, and `timing.json` instead of frames, says which track it chose, and takes `--track <id>` to try another. `regenerate` keeps earlier exclusions, posts the rebuilt draft as a new top-level preview, and resets the approval: reactions on the old message no longer count. It refuses a draft that's publishing or published, or past its cutoff.
+`dry-run` takes the run's first day (any day for Hoy, a Friday for Este finde and the Reel, a Monday for Gratis) and writes the frames, `caption.txt`, the Slack text in `slack.txt`, and `events.txt` (the picks with their ids). It never calls Slack, R2, Instagram, or Threads. For Hoy and the carousels, it also writes the exact `threads.txt` when Threads is enabled or `--threads` is passed. For the Reel it writes `reel.mp4`, `cover.jpg`, and `timing.json` instead of frames, says which track it chose, and takes `--track <id>` to try another. `regenerate` keeps earlier exclusions, posts the rebuilt draft as a new top-level preview, and resets the approval: reactions on the old message no longer count. It refuses a draft that's publishing or published, or past its cutoff.
 
 ## How a tick works
 
@@ -48,13 +51,36 @@ Each failed attempt goes in the service log. Alerts go to #ba-eventos and put th
 | `tick` | An item fails across three consecutive ticks, or a failing run still has no preview at least an hour after its draft time. The thread updates only when the qualifying draft IDs or their causes change. |
 | `draft/<id>` | Publishing fails three ticks in a row, fails with less than an hour left, or gives up. A hold, a partial post that cannot continue, an interrupted rebuild, or a preview that misses its cutoff also alerts immediately. |
 | `draft/<id>/slack` | The outcome message fails to send three ticks in a row. |
-| `token` | Token refresh fails, the token file is invalid, or a dated token has fewer than 10 days left. |
+| `token` | Instagram token refresh fails, the token file is invalid, or a dated token has fewer than 10 days left. |
+| `threads-token` | The Threads token refresh fails, the token file cannot be read, or the token still has at most 10 days left. |
 
 A draft's alert streak counts failed ticks across steps, so changing from a reaction read failure to a publish failure doesn't reset it. The first alert's thread follows the draft across steps, while a final publish failure gets a draft alert. Publishing retries every tick. After six publishing failures the draft is marked `failed` unless a `media_publish` result is still unclear, in which case the job keeps checking it. The alert streak resets when publishing pauses; the six-failure retry budget does not. When a preview misses its cutoff or a rebuild stops part-way, the job won't publish the draft. A successful retry closes the open alert with a ✅ line. If the draft ends skipped, held, or failed, the alert names that outcome rather than claiming recovery. The alert command has up to three minutes to raise or resolve an alert; the publisher does not queue alert delivery separately.
 
+## Threads trial
+
+Add this key to `~/.config/ba-events/instagram-publisher.json`. Threads is off if the key is absent. Once the token is ready and the preview text looks right, set `enabled` to `true`. The existing `ba-events-instagram.timer` handles the Threads slots; no new timer or service change is needed. Run the report before switching `enabled` off at the end of the 28-day trial.
+
+```json
+{"threads": {"enabled": false, "auto": {"hoy": false, "finde": false, "gratis": false}}}
+```
+
+Use a long-lived Threads user token for `@baeventos.app` with `threads_basic`, `threads_content_publish`, and `threads_manage_insights`. Store it in `~/.config/ba-events/threads-token.json` (mode 600) with `access_token`, `account`, `obtained` (ISO timestamp), and `app_id`. The job verifies the handle with `/me`, refreshes a token more than seven days old before its 60-day expiration, and saves a successful refresh atomically. It uses in-process `fetch`; never put the token in an invocation or a log. `threads-report` runs only with Threads enabled, does not refresh the token or write draft state, and shows the follower count and one row per known published post in the requested window. A dash means the API didn't return that metric.
+
+New Hoy and carousel previews include the exact Threads text in the same Slack message. A ✅ on that message counts for both channels, and ❌ stops both even in auto mode. Threads has its own auto flags and uses the existing timer's first tick on or after its slot or a later ✅, strictly before its cutoff. It never backfills a draft that did not preview Threads text. The list uses the saved picks, drops picks from the end if needed, and shortens titles only when the minimum list still exceeds 500 code points. If that still doesn't fit, Instagram continues without a Threads post.
+
+The two channels save and retry independently. Threads doesn't need the Instagram token or R2; both paths check the saved picks against the current catalog before writing. Threads rechecks reactions and the cutoff before each write, waits up to about a minute per tick for the same container, checks the publishing quota, and saves the attempt before publishing. When the send's outcome is unclear, later ticks read recent posts for a unique exact text match after the attempt, never by time alone and never by sending again. After the cutoff or one tick after the attempt, whichever is later, a final read without a match reports failure. Definite failures retry on later ticks, up to six failures or the cutoff for new writes.
+
+The Threads outcome is a separate reply in the original preview's thread. A Slack failure leaves the reply pending without repeating the Threads post:
+
+- `Threads: publicado {permalink}`
+- `Threads: omitido, no se publicó antes de las {HH:MM}.`
+- `Threads: omitido, reaccionaste ❌.`
+- `Threads: retenido, {title} se canceló o ya pasó.`
+- `Threads: falló ({short reason}). Hermes lo revisa.`
+
 ## Regenerate
 
-`regenerate` refuses a draft that has started publishing, or is past its cutoff. It first saves the draft as revision n+1 in state `rebuilding` with approval cleared, then renders into `rev-<n+1>/` (old frames are never overwritten) and posts a new top-level preview. If it stops before rendering finishes, the next tick marks the draft `failed` and raises its alert with the exact command to run again if the cutoff is still open. If the frames are saved and Slack's response was lost, the next tick checks whether the preview arrived before trying to upload again. Publishing uploads only frames that sit in the saved revision's directory and match its hash.
+`regenerate` refuses a draft that has started publishing on Instagram, has published or has an unclear publish on Threads, or is past its Instagram cutoff. It first saves the draft as revision n+1 in state `rebuilding` with approval cleared, then renders into `rev-<n+1>/` (old frames are never overwritten) and posts a new top-level preview. If it stops before rendering finishes, the next tick marks the draft `failed` and raises its alert with the exact command to run again if the cutoff is still open. If the frames are saved and Slack's response was lost, the next tick checks whether the preview arrived before trying to upload again. Publishing uploads only frames that sit in the saved revision's directory and match its hash.
 
 ## The Reel
 
@@ -120,7 +146,7 @@ Each container and media id is saved to the draft's state file before the next s
 ## State and files
 
 - State: `~/.local/state/ba-events-instagram/drafts/<id>.json` (one per draft) and the rendered frames in `drafts/<id>/current/`. Frames of finished drafts are removed after 14 days; the state files stay.
-- Config: `~/.config/ba-events/instagram-publisher.json`, for example `{"auto": {"hoy": false, "finde": false, "gratis": false, "reel": false}, "r2": {"bucket": "baeventos-instagram-media", "publicBaseUrl": "https://ig-media.baeventos.com"}, "reel": {"musicDir": "~/.local/share/ba-events/reel-music"}}`. Auto mode is off unless set to `true`, and `reel.musicDir` defaults to that path. Without `r2`, the job stays preview-only.
+- Config: `~/.config/ba-events/instagram-publisher.json`, for example `{"auto": {"hoy": false, "finde": false, "gratis": false, "reel": false}, "r2": {"bucket": "baeventos-instagram-media", "publicBaseUrl": "https://ig-media.baeventos.com"}, "reel": {"musicDir": "~/.local/share/ba-events/reel-music"}}`. Auto mode is off unless set to `true`, and `reel.musicDir` defaults to that path. Without `r2`, Instagram stays preview-only; Threads does not use it.
 - Instagram token: `~/.config/ba-events/instagram-token.json` (mode 600) with `access_token`, `ig_user_id`, and `expires_at`. A system-user token never expires: write `"expires_at": "never"` and the job skips refreshing and the expiry warning. For a dated token, once the token is more than 7 days old (by `refreshed_at`, or the file's modification time) the job refreshes it with `refresh_access_token` and writes it back atomically. A failed refresh or fewer than 10 days left raises `ba-events/instagram/token`. Without the file the job drafts and previews, then logs that it skipped publishing.
 - R2: frames go to `instagram/<draft id>/<hash>/frame-N.jpg` (a Reel's to `reel.mp4` and `cover.jpg`) through the Cloudflare API, using the token `bin/ba-d1-read.sh` reads (`~/.config/ba-events/cloudflare-deploy-token`). A bucket lifecycle rule deletes them after 7 days.
 - Slack: `~/.hermes/skills/productivity/slack-workspace/scripts/slack_api.py` (it reads the bot token itself).

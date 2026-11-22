@@ -20,6 +20,10 @@ import * as runtime from './runtime.ts'
 import type { Config, EventNow, TokenCheck } from './runtime.ts'
 import { selectEvents, type CatalogEvent, type PostEvent } from './select.ts'
 import { confirmsStory, liveStories, stickerFrames, StoryComposerError, type ComposeStory, type StickerFailure, type StoryShareAttempt } from './story-stickers.ts'
+import { ThreadsError, threadsApi, type ThreadsApi } from './threads-api.ts'
+import { isThreadsFormat, threadsPreview, threadsText, threadsWindow } from './threads-copy.ts'
+import { advanceThreads, newThreadsDraft, stopThreads, type ThreadsDraft } from './threads-publish.ts'
+import { loadThreadsToken, type ThreadsTokenCheck } from './threads-token.ts'
 
 export type DraftState = 'previewing' | 'previewed' | 'publishing' | 'published' | 'skipped' | 'failed' | 'held' | 'rebuilding'
 
@@ -48,6 +52,8 @@ export interface Draft {
   approvedSeenAt: string | null
   r2Uploaded: string | null
   publish: PublishState | null
+  /** Present only when a new preview was built with Threads enabled. It owns its own outcome and Slack reply. */
+  threads?: ThreadsDraft
   /** Saved before the Business Suite Share click. Its presence permanently forbids another write. */
   storyShare?: StoryShareAttempt
   /** A pre-Share browser failure fixes this draft on the Graph route, including retries. */
@@ -82,6 +88,8 @@ export interface Services {
   r2Put(bucket: string, key: string, path: string): Promise<void>
   loadToken(now: Date): Promise<TokenCheck>
   instagram(accessToken: string): InstagramApi
+  loadThreadsToken(now: Date): Promise<ThreadsTokenCheck>
+  threads(accessToken: string): Promise<ThreadsApi>
   composeStory: ComposeStory
   alert(key: string, title: string, text: string, fingerprint?: string): Promise<void>
   resolveAlert(key: string, text?: string): Promise<boolean | void>
@@ -107,6 +115,8 @@ export const liveServices = (): Services => ({
   r2Put: runtime.r2Put,
   loadToken: now => runtime.loadToken(now),
   instagram: token => instagramApi(token),
+  loadThreadsToken,
+  threads: token => threadsApi(token),
   composeStory: async (...args) => (await import('./story-composer.ts')).composeStory(...args),
   alert: runtime.alert,
   resolveAlert: runtime.resolveAlert,
@@ -212,7 +222,13 @@ export class Job {
     }
     if (!draft.slack.ts) {
       this.verifyFrames(draft)
-      const text = slackPreview(draft.format, runWindow(draft.format, draft.from), draft.caption, this.s.config().auto[draft.format], draft.track ?? undefined)
+      const config = this.s.config()
+      const format = draft.format
+      let text = slackPreview(format, runWindow(format, draft.from), draft.caption, config.auto[format], draft.track ?? undefined)
+      if (config.threads.enabled && isThreadsFormat(format)) {
+        draft.threads = newThreadsDraft(threadsText(format, draft.events))
+        if (draft.threads.text) text += threadsPreview(draft.threads.text, threadsWindow(format, draft.from).publishAt)
+      } else if (draft.threads) delete draft.threads
       // A Reel's preview attaches the video only.
       const files = await this.s.slackUploadFiles(draft.format === 'reel' ? draft.frames.slice(0, 1) : draft.frames, draft.id)
       // Saved before sharing: if the share's answer is lost, the next tick looks the message up instead of posting again.
@@ -256,6 +272,7 @@ export class Job {
   }
 
   private async skip(draft: Draft, reason: SkipReason) {
+    if (reason.kind === 'rejected' && draft.threads && this.s.config().threads.enabled) stopThreads(draft.threads, 'rejected')
     const text = skipText(reason)
     await this.settle(draft, 'skipped', text, { skipReason: text })
     if (draft.publishFailures && reason.kind !== 'too-few') {
@@ -437,6 +454,7 @@ export class Job {
     if (stop.kind === 'stale' && out === 0) {
       const { id, title, why, detail } = stop.stale!
       const text = heldText(title, why)
+      if (draft.threads && this.s.config().threads.enabled) stopThreads(draft.threads, { title })
       await this.settle(draft, 'held', text, { note: `${id} ${detail}` })
       await this.s.alert(alerts.draftKey(draft), alerts.draftTitle(draft), alerts.heldAlert(draft, stop.stale!, this.s.now()))
       return
@@ -531,16 +549,49 @@ export class Job {
         failures.record(draft, Boolean(draft.slack.ts), error)
       }
     }
+    await this.tickThreads()
     this.prune()
     // Exit 0 for handled failures; notify-failure reports crashes the tick couldn't catch.
     await failures.report(id => this.loadDraft(id))
+  }
+
+  private async tickThreads() {
+    const config = this.s.config().threads
+    if (!config.enabled) return
+    const token = await this.s.loadThreadsToken(this.s.now()).catch(() => ({ accessToken: null, warning: 'Could not check the Threads token.' }))
+    let client: Promise<ThreadsApi> | undefined
+    const api = () => {
+      if (!token.accessToken) throw new ThreadsError('falta un token de Threads vigente')
+      return client ??= this.s.threads(token.accessToken)
+    }
+    for (const draft of this.allDrafts()) {
+      const { threads, format, slack: { ts } } = draft
+      if (!threads || !ts || !isThreadsFormat(format)) continue
+      await advanceThreads(threads, threadsWindow(format, draft.from), config.auto[format], {
+        api,
+        now: () => this.s.now(),
+        sleep: ms => this.s.sleep(ms),
+        save: () => this.save(draft),
+        reactions: () => this.s.slackReactions(ts),
+        checkEvents: () => this.checkEvents(draft),
+        reply: text => this.s.slackPost(text, ts),
+        log: text => this.s.log(`${draft.id}: ${text}`),
+      }).catch(() => this.s.log(`${draft.id}: could not advance Threads state; see the saved draft`))
+    }
+    // Alerts use the same namespace, but a Threads token issue is never counted as an Instagram failure.
+    try {
+      if (token.warning) await this.s.alert('threads-token', 'Threads token needs attention', token.warning, token.warning)
+      else await this.s.resolveAlert('threads-token')
+    } catch { this.s.log('Could not update the Threads token alert') }
   }
 
   async regenerate(id: string, excludeIds: string[], trackId: string | null = null): Promise<Draft> {
     const { format, from } = parseDraftId(id)
     const old = this.loadDraft(id)
     if (!old) throw new Error(`No draft ${id}; see \`status\``)
-    if (old.storyShare || old.publish || ['publishing', 'published'].includes(old.state)) throw new Error(`${id} has started publishing; it can't be rebuilt`)
+    if (old.storyShare || old.publish || old.threads?.attemptedAt || old.threads?.mediaId || ['publishing', 'published'].includes(old.state)) {
+      throw new Error(`${id} has started publishing; it can't be rebuilt`)
+    }
     if (this.s.now() >= runWindow(format, from).cutoff) throw new Error(`${id} is past its cutoff`)
     const exclude = [...new Set([...old.exclude, ...excludeIds])]
     const revision = (old.revision ?? 1) + 1
@@ -551,7 +602,7 @@ export class Job {
     const ready = track ? readyTrack(this.s.config().reel.musicDir, track) : null
     // The requested track is saved with the rebuilding state, so a crash's recovery command restores it.
     const savedTrack = ready ? { id: ready.id, title: ready.title, artist: ready.artist, credit: ready.credit } : old.track
-    this.save({ ...old, revision, state: 'rebuilding', exclude, track: savedTrack, approvedSeenAt: null, slack: { fileIds: [], ts: null }, notify: null, r2Uploaded: null })
+    this.save({ ...old, revision, state: 'rebuilding', exclude, track: savedTrack, approvedSeenAt: null, slack: { fileIds: [], ts: null }, notify: null, r2Uploaded: null, threads: undefined })
     const draft = await this.createDraft(format, from, exclude, revision, track)
     if (draft.state === 'skipped') throw new Error(`Without ${exclude.join(', ')} only ${draft.events.length} events qualify; the draft is skipped`)
     return draft
@@ -560,12 +611,15 @@ export class Job {
 
 // CLI entry points
 
-export async function dryRun(format: FormatKey, from: string, outDir: string, trackId: string | null = null) {
-  const job = new Job(liveServices())
+export async function dryRun(format: FormatKey, from: string, outDir: string, { trackId = null, threads = false, job = new Job(liveServices()) }: {
+  trackId?: string | null; threads?: boolean; job?: Job
+} = {}) {
   const work = join(outDir, '.render')
   const track = format === 'reel' ? trackId ?? job.chooseTrack() : null
   const built = await job.build(format, from, [], work, track)
   mkdirSync(outDir, { recursive: true })
+  const threadsFile = join(outDir, 'threads.txt')
+  rmSync(threadsFile, { force: true })
   const summary = built.events.map(event => `${event.id}  ${event.date} ${event.time}  ${event.title} · ${event.venue} (${event.barrio})${event.handle ? ` ${footerHandle(event)}` : ''}${event.price ? ` · ${event.price}` : ''}`)
   writeFileSync(join(outDir, 'events.txt'), `${summary.join('\n')}\n`)
   if (!built.frames) {
@@ -580,7 +634,17 @@ export async function dryRun(format: FormatKey, from: string, outDir: string, tr
   if (built.timing) writeFileSync(join(outDir, 'timing.json'), `${JSON.stringify({ track: built.track!.id, ...built.timing }, null, 2)}\n`)
   rmSync(work, { recursive: true, force: true })
   writeFileSync(join(outDir, 'caption.txt'), `${built.caption ?? 'Stories have no caption.'}\n`)
-  writeFileSync(join(outDir, 'slack.txt'), `${slackPreview(format, built.window, built.caption, runtime.readConfig().auto[format], built.track ?? undefined)}\n`)
+  const config = job.s.config()
+  let preview = slackPreview(format, built.window, built.caption, config.auto[format], built.track ?? undefined)
+  if ((config.threads.enabled || threads) && isThreadsFormat(format)) {
+    const text = threadsText(format, built.events)
+    if (!text) console.log('No Threads text: the minimum event list does not fit in 500 characters.')
+    else {
+      writeFileSync(threadsFile, text)
+      preview += threadsPreview(text, threadsWindow(format, from).publishAt)
+    }
+  }
+  writeFileSync(join(outDir, 'slack.txt'), `${preview}\n`)
   if (built.track) console.log(`Track: ${built.track.id} ("${built.track.title}" by ${built.track.artist}), ${built.timing!.total} s at ${built.timing!.bpm} BPM`)
   console.log(`${names.join(', ')} and the caption written to ${outDir}`)
 }

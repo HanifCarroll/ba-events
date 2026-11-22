@@ -6,13 +6,15 @@ import { describe, expect, it } from 'vitest'
 import { describeFailure, TickFailures } from './alerts.ts'
 import { HANIF } from './approval.ts'
 import { FakeInstagram } from './fake-instagram.ts'
-import { baInstant } from './format.ts'
+import { FakeThreads } from './fake-threads.ts'
+import { addDays, baInstant } from './format.ts'
 import type { RunWindow } from './formats.ts'
 import { LAYOUT_VERSION } from './html.ts'
-import { Job, type Draft, type Services } from './job.ts'
+import { Job, dryRun, type Draft, type Services } from './job.ts'
 import type { Config } from './runtime.ts'
 import type { CatalogEvent } from './select.ts'
 import { StoryComposerError, type ComposeStory, type StickerFrame } from './story-stickers.ts'
+import { threadsReport } from './threads-report.ts'
 
 /** A music directory with three synthetic tracks (the files only need to exist; the fake render never reads them). */
 function musicDir(tracks = [{ id: 'a', bpm: 90, startSec: 1 }, { id: 'b', bpm: 120, startSec: 2 }, { id: 'c', bpm: 100, startSec: 0 }]) {
@@ -50,6 +52,10 @@ class World {
   dir = mkdtempSync(join(tmpdir(), 'ig-job-'))
   clock = baInstant('2026-11-18', 18, 5)
   ig = new FakeInstagram()
+  threads = new FakeThreads()
+  threadsTokenReads = 0
+  threadsConnections = 0
+  threadsWarning: string | null = null
   catalog = weekend()
   statuses = new Map<string, string>()
   notInScope = new Set<string>()
@@ -67,7 +73,7 @@ class World {
   recovery: Array<{ key: string; text: string }> = []
   r2: string[] = []
   music = musicDir()
-  config: Config = { auto: { hoy: false, finde: false, gratis: false, reel: false }, linkStickers: { hoy: false }, r2: { bucket: 'b', publicBaseUrl: 'https://ig.example' }, reel: { musicDir: this.music } }
+  config: Config = { auto: { hoy: false, finde: false, gratis: false, reel: false }, linkStickers: { hoy: false }, threads: { enabled: false, auto: { hoy: false, finde: false, gratis: false } }, r2: { bucket: 'b', publicBaseUrl: 'https://ig.example' }, reel: { musicDir: this.music } }
   composeStory: ComposeStory = async () => { throw new Error('Unexpected call to the browser') }
   reelRenders: Array<{ track: string; total: number; events: string[]; flyers: number }> = []
   /** The page the last still-frame render got, and every directory the flyers were downloaded into. */
@@ -126,6 +132,11 @@ class World {
       r2Put: async (_bucket, key) => { this.r2.push(key) },
       loadToken: async () => ({ state: 'ok', token: { access_token: 'T', ig_user_id: '17841', expires_at: '2027-01-01T00:00:00.000Z' }, warning: this.tokenWarning }),
       instagram: () => this.ig,
+      loadThreadsToken: async () => {
+        this.threadsTokenReads++
+        return { accessToken: 'fake-threads-token', warning: this.threadsWarning }
+      },
+      threads: async () => { this.threadsConnections++; return this.threads },
       composeStory: (...args) => this.composeStory(...args),
       alert: async (key, _title, text, fingerprint) => {
         const headline = text.split('\n').slice(0, 2).join('\n')
@@ -143,7 +154,7 @@ class World {
   }
 
   job() { return new Job(this.services()) }
-  at(date: string, hour: number, minute = 0) { this.clock = baInstant(date, hour, minute); this.ig.clock = this.clock.getTime() }
+  at(date: string, hour: number, minute = 0) { this.clock = baInstant(date, hour, minute); this.ig.clock = this.threads.clock = this.clock.getTime() }
   approve() { this.reactions = [{ name: 'white_check_mark', users: [HANIF] }] }
   reject() { this.reactions = [{ name: 'x', users: [HANIF] }] }
   draft(): Draft { return JSON.parse(readFileSync(join(this.dir, 'drafts', 'finde-2026-11-20.json'), 'utf8')) }
@@ -1268,5 +1279,250 @@ describe('Este finde Reel: recovering a failed track-only regenerate', () => {
     await w.job().tick()
     const alert = w.alerts.find(a => a.key === 'draft/reel-2026-11-20')!
     expect(alert.text).toContain('regenerate reel-2026-11-20 --track b')
+  })
+})
+
+async function threadsPreviewed() {
+  const w = new World()
+  w.config.threads.enabled = true
+  await w.job().tick()
+  expect(w.draft().threads?.state).toBe('waiting')
+  return w
+}
+
+describe('Threads in the publisher tick', () => {
+  it('appends the saved text to one preview and publishes both channels from that same later approval', async () => {
+    const w = await threadsPreviewed()
+    const { ts } = w.draft().slack
+    expect(w.slackPosts).toHaveLength(1)
+    expect(w.slackPosts[0]!.text).toContain(`Threads (se publica con el mismo ✅, 12:00):\n> ${w.draft().threads!.text!.split('\n').join('\n> ')}`)
+    w.at('2026-11-19', 12)
+    w.reactions = [{ name: 'white_check_mark', users: ['NOT_HANIF'] }]
+    await w.job().tick()
+    expect(w.threads.calls).toEqual([])
+    expect(w.ig.published).toHaveLength(0)
+    w.approve()
+    w.at('2026-11-19', 12, 10)
+    await w.job().tick()
+    expect(w.ig.published).toHaveLength(1)
+    expect(w.threads.posts[0]?.text).toBe(w.draft().threads?.text)
+    expect(w.threads.calls).toEqual(['create', 'status c1', 'limit', 'publish c1', 'permalink m2'])
+    expect(w.draft()).toMatchObject({ state: 'published', threads: { state: 'published', containerId: 'c1', mediaId: 'm2', permalink: w.threads.posts[0]!.permalink } })
+    expect(w.slackPosts).toContainEqual({ text: `Threads: publicado ${w.threads.posts[0]!.permalink}`, threadTs: ts })
+    expect(await threadsReport(w.job().allDrafts(), w.threads, baInstant('2026-11-20', 16), 28)).toContain(`2026-11-19\tfinde\t100\t2\t—\t—\t—\t3\t${w.threads.posts[0]!.permalink}\nFollowers: 31`)
+    expect(await threadsReport(w.job().allDrafts(), w.threads, baInstant('2027-01-01', 12), 28)).not.toContain('finde')
+  })
+
+  it('skips both on ❌, even with both auto flags and a ✅', async () => {
+    const w = await threadsPreviewed()
+    w.config.auto.finde = w.config.threads.auto.finde = true
+    w.at('2026-11-19', 12)
+    w.reject()
+    w.reactions.push({ name: 'white_check_mark', users: [HANIF] })
+    await w.job().tick()
+    expect(w.draft()).toMatchObject({ state: 'skipped', threads: { state: 'skipped' } })
+    expect(w.threads.calls).toEqual([])
+    expect(w.replies()).toEqual(['Skipped: you reacted ❌', 'Threads: omitido, reaccionaste ❌.'])
+  })
+
+  it('publishes Hoy at 11:30 with Threads auto on and does not approve Instagram', async () => {
+    const w = new World()
+    w.config.threads.enabled = w.config.threads.auto.hoy = true
+    w.catalog = weekend().slice(0, 2).map(event => ({ ...event, startsAt: baInstant('2026-11-17', 20).toISOString() }))
+    w.at('2026-11-17', 11, 20)
+    await w.job().tick()
+    expect(w.slackPosts[0]?.text).toContain('Threads (se publica con el mismo ✅, 11:30):')
+    expect(w.threads.calls).toEqual([])
+    w.at('2026-11-17', 11, 30)
+    await w.job().tick()
+    expect(w.threads.posts).toHaveLength(1)
+    expect(w.ig.published).toHaveLength(0)
+    expect(w.job().loadDraft('hoy-2026-11-17')).toMatchObject({ state: 'previewed', threads: { state: 'published' } })
+  })
+
+  it.each(['hoy', 'finde', 'gratis'] as const)('does not start %s Threads at its cutoff', async format => {
+    const w = new World()
+    const from = { hoy: '2026-11-17', finde: '2026-11-20', gratis: '2026-11-16' }[format]
+    w.config.threads.enabled = true
+    const eventDay = format === 'gratis' ? addDays(from, 1) : from
+    w.catalog = weekend().map(event => ({ ...event, isFree: true, startsAt: baInstant(eventDay, 21).toISOString() }))
+    const job = w.job()
+    const draft = await job.createDraft(format, from, [], 1)
+    // No new runs to draft during the cutoff check.
+    job.s.readCatalog = async () => []
+    w.approve()
+    w.at(eventDay, format === 'hoy' ? 17 : 12)
+    await job.tick()
+    expect(w.job().loadDraft(draft.id)?.threads?.state).toBe('skipped')
+    expect(w.threads.calls).toEqual([])
+    expect(w.replies()).toContain(`Threads: omitido, no se publicó antes de las ${format === 'hoy' ? '17:00' : '12:00'}.`)
+  })
+
+  it('keeps a slow container, then checks fresh reactions and cutoff after the publishing-limit read', async () => {
+    const w = await threadsPreviewed()
+    w.approve()
+    w.threads.containerStatus = 'IN_PROGRESS'
+    w.at('2026-11-19', 12)
+    await w.job().tick()
+    expect(w.draft().threads).toMatchObject({ state: 'publishing', containerId: 'c1', failures: 0, attemptedAt: null })
+    w.threads.containerStatus = 'FINISHED'
+    w.threads.checkLimit = async () => { w.reactions = [] }
+    await w.job().tick()
+    expect(w.threads.posts).toHaveLength(0)
+    w.approve()
+    w.threads.checkLimit = async () => { w.at('2026-11-20', 12) }
+    await w.job().tick()
+    expect(w.draft().threads?.state).toBe('skipped')
+    expect(w.threads.posts).toHaveLength(0)
+    expect(w.threads.calls.filter(call => call === 'create')).toHaveLength(1)
+  })
+
+  it.each([true, false])('holds a cancelled pick before any Threads write (Instagram can write: %s)', async instagramAvailable => {
+    const w = await threadsPreviewed()
+    if (!instagramAvailable) w.config.r2 = null
+    const event = w.draft().events[0]!
+    w.statuses.set(event.id, 'cancelled')
+    w.approve()
+    w.at('2026-11-19', 12)
+    await w.job().tick()
+    expect(w.draft().state).toBe(instagramAvailable ? 'held' : 'previewed')
+    expect(w.draft().threads?.state).toBe('held')
+    expect(w.threads.calls).toEqual([])
+    expect(w.replies()).toContain(`Threads: retenido, ${event.title} se canceló o ya pasó.`)
+  })
+
+  it('recovers an unclear publish by exact later text after ❌ and cutoff, without a second write', async () => {
+    const w = await threadsPreviewed()
+    const text = w.draft().threads!.text!
+    w.threads.publishFault = 'after'
+    w.approve()
+    w.at('2026-11-19', 12)
+    w.threads.post(text, w.clock.getTime() - 1000)
+    await w.job().tick()
+    const ownedId = w.threads.posts[0]!.id
+    expect(w.draft().threads).toMatchObject({ mediaId: null, attemptedAt: w.clock.toISOString(), containerId: expect.any(String) })
+    w.threads.post(`${text}!`)
+    w.reject()
+    w.at('2026-11-20', 12)
+    await w.job().tick()
+    expect(w.draft().threads).toMatchObject({ state: 'published', mediaId: ownedId })
+    expect(w.threads.calls.filter(call => call.startsWith('publish'))).toHaveLength(1)
+  })
+
+  it('never adopts a different post by time or an older exact match, and does not blindly retry', async () => {
+    const w = await threadsPreviewed()
+    w.threads.publishFault = 'before'
+    w.approve()
+    w.at('2026-11-19', 12)
+    w.threads.post(w.draft().threads!.text!, w.clock.getTime() - 1000)
+    await w.job().tick()
+    w.threads.post('Publicación manual')
+    w.reactions = []
+    w.at('2026-11-20', 12)
+    await w.job().tick()
+    expect(w.draft().threads).toMatchObject({ state: 'failed', mediaId: null })
+    expect(w.threads.calls.filter(call => call.startsWith('publish'))).toHaveLength(1)
+    expect(w.replies()).toContain('Threads: falló (no se pudo confirmar la publicación). Hermes lo revisa.')
+  })
+
+  it('saves IDs across a definite publish rejection and a subsequent permalink failure', async () => {
+    const w = await threadsPreviewed()
+    const publish = w.threads.publish.bind(w.threads)
+    w.threads.publish = async id => {
+      expect(w.draft().threads).toMatchObject({ containerId: id, attemptedAt: w.clock.toISOString() })
+      return publish(id)
+    }
+    w.approve()
+    w.at('2026-11-19', 12)
+    w.threads.publishFault = 'rejected'
+    await w.job().tick()
+    expect(w.draft().threads).toMatchObject({ containerId: 'c1', mediaId: null, attemptedAt: null })
+    w.threads.publishFault = null
+    w.threads.permalinkUnavailable = true
+    await w.job().tick()
+    expect(w.draft().threads).toMatchObject({ containerId: 'c1', mediaId: 'm2', permalink: null })
+    w.threads.permalinkUnavailable = false
+    w.reactions = []
+    await w.job().tick()
+    expect(w.draft().threads?.state).toBe('published')
+    expect(w.threads.calls.filter(call => call.startsWith('publish'))).toEqual(['publish c1', 'publish c1'])
+    expect(w.threads.posts).toHaveLength(1)
+  })
+
+  it('does not block Instagram on Threads quota errors and resumes on the same container', async () => {
+    const w = await threadsPreviewed()
+    w.threads.atLimit = true
+    w.approve()
+    w.at('2026-11-19', 12)
+    await w.job().tick()
+    expect(w.draft()).toMatchObject({ state: 'published', threads: { state: 'publishing', containerId: 'c1', failures: 1 } })
+    w.threads.atLimit = false
+    await w.job().tick()
+    expect(w.draft().threads?.state).toBe('published')
+    expect(w.threads.calls.filter(call => call === 'create')).toHaveLength(1)
+  })
+
+  it('publishes Threads through Instagram and Slack failures without resending the post', async () => {
+    const w = await threadsPreviewed()
+    w.ig.publishFault = 'before'
+    w.slackFails = 1
+    w.slackFailPrefix = 'Threads:'
+    w.threadsWarning = 'Could not refresh the Threads token.'
+    w.approve()
+    w.at('2026-11-19', 12)
+    await w.job().tick()
+    expect(w.ig.published).toHaveLength(0)
+    expect(w.alerts).toContainEqual(expect.objectContaining({ key: 'threads-token' }))
+    expect(w.draft().threads).toMatchObject({ state: 'published', notify: expect.stringContaining('Threads: publicado') })
+    await w.job().tick()
+    expect(w.draft().threads?.notify).toBeNull()
+    expect(w.threads.posts).toHaveLength(1)
+  })
+
+  it('never contacts Threads when disabled and never backfills one of those previews', async () => {
+    const w = await previewed()
+    w.at('2026-11-19', 12)
+    w.approve()
+    await w.job().tick()
+    expect(w.slackPosts.every(post => !post.text.includes('Threads'))).toBe(true)
+    expect(w.draft().threads).toBeUndefined()
+    expect(w.threadsTokenReads).toBe(0)
+    expect(w.threadsConnections).toBe(0)
+    w.config.threads.enabled = true
+    await w.job().tick()
+    expect(w.draft().threads).toBeUndefined()
+    expect(w.threadsConnections).toBe(0)
+    w.at('2026-11-19', 18)
+    await w.job().tick()
+    expect(w.reel()?.threads).toBeUndefined()
+  })
+})
+
+const titles = ['LA NOCHE DE LOS FAROLES @ Sala Jacarandá', 'Cuarteto del Patio', 'Obra breve: Un mapa de la lluvia', 'Cineclub: La Casa del Viento', 'Taller de fanzines y collage', 'Lecturas junto al río']
+const venues = ['Sala Jacarandá', 'Club del Patio', 'La Linterna', 'Cine La Vuelta', 'Casa Aguafuerte', 'Biblioteca del Pasaje']
+
+describe('Threads fixture dry runs', () => {
+  it.each(['hoy', 'finde', 'gratis'] as const)('writes the exact %s Threads text from a synthetic catalog', async format => {
+    const w = new World()
+    const from = { hoy: '2026-11-21', finde: '2026-11-20', gratis: '2026-11-16' }[format]
+    const long = ' — piezas inéditas para escuchar de cerca en una noche de encuentros entre artistas y vecinos del barrio'.repeat(2)
+    w.catalog = weekend().map((event, i) => ({
+      ...event, name: format === 'finde' ? `${titles[i]!.split(' @ ')[0]}${long}` : titles[i]!, venue: venues[i]!,
+      startsAt: baInstant(addDays(from, format === 'hoy' ? 0 : i % 3), 18 + i, 30).toISOString(),
+      isFree: format === 'gratis' || i === 0, price: i === 1 ? 12000 : null, payWhatYouWant: i === 2,
+    }))
+    w.config.threads.enabled = format !== 'hoy'
+    const out = join(w.dir, 'dry-run')
+    await dryRun(format, from, out, { threads: format === 'hoy', job: w.job() })
+    const text = readFileSync(join(out, 'threads.txt'), 'utf8')
+    expect([...text].length).toBeLessThanOrEqual(500)
+    if (format === 'finde') {
+      expect(text).toContain('3 planes')
+      expect(text.match(/…/g)).toHaveLength(3)
+    }
+    await expect(text).toMatchFileSnapshot(`./fixtures/threads/${format}/threads.txt`)
+    expect(w.threadsTokenReads).toBe(0)
+    expect(w.threadsConnections).toBe(0)
+    expect(w.slackPosts).toHaveLength(0)
   })
 })
