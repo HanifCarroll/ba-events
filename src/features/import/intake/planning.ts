@@ -1,8 +1,8 @@
 import type { EventInsert } from '#shared/lib/types.ts'
 import type { Candidate } from './schema.ts'
 import { isOfficialPage, validPublicUrl } from './schema.ts'
-import { statesCreditRole, isAfterPartyCredit } from '#shared/lib/event-credit-evidence.ts'
-import { statesDoorsTime, statesSaleOpening, supportsStartTime } from './clock-evidence.ts'
+import { citesCreditName, isExcludedCreditName } from '#shared/lib/event-credit-evidence.ts'
+import { citesDateAndClock, quotedClocks } from './clock-evidence.ts'
 
 export type Observation = {
   id: string; post_id: string; source_username: string; caption: string;
@@ -19,17 +19,35 @@ export type MatchDecision = { action: 'create' | 'update' | 'link' | 'held'; tar
 
 export const normalizeTitle = (value: string) => value.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
 export function canonicalTicket(value: string | null): string | null {
-  if (!value || !validPublicUrl(value)) return null
-  const url = new URL(value)
+  const https = value?.replace(/^http:\/\//i, 'https://')
+  if (!https || !validPublicUrl(https)) return null
+  const url = new URL(https)
+  url.hostname = url.hostname.replace(/^www\./i, '')
   for (const key of [...url.searchParams.keys()]) if (/^(utm_|fbclid$|igshid$)/i.test(key)) url.searchParams.delete(key)
   url.searchParams.sort()
   return `${url.origin}${url.pathname.replace(/\/$/, '')}${url.search}`
 }
-/** A correction must cite the destination itself, not just tag a quote as ticket evidence. */
-export function citesTicketDestination(excerpt: string, ticket: string | null | undefined): boolean {
-  const normalize = (url: string) => canonicalTicket(url.replace(/^https?:\/\/(?:www\.)?/i, 'https://'))
-  const destination = ticket && normalize(ticket)
-  return Boolean(destination && [...excerpt.matchAll(/\bhttps?:\/\/[^\s<>"']+/giu)].some(([url]) => normalize(url) === destination))
+/** Read complete URL tokens from the source, so a quote cannot cut off a path or query. */
+export function citesTicketDestination(excerpt: string, ticket: string, caption = excerpt): boolean {
+  const destination = canonicalTicket(ticket), quote = excerpt.trim()
+  if (!destination || !quote) return false
+  const tokens = [...caption.matchAll(/\bhttps?:\/\/[^\s<>"“”]+/giu)].flatMap(({ 0: raw, index }) => {
+    const url = raw.replace(/[.,;:!?…)\]}’']+$/u, '')
+    return canonicalTicket(url) === destination ? [{ start: index, end: index + url.length }] : []
+  })
+  for (let start = caption.indexOf(quote); start !== -1; start = caption.indexOf(quote, start + 1)) {
+    if (tokens.some(token => token.start >= start && token.end <= start + quote.length)) return true
+  }
+  return false
+}
+
+export function hasPostTicketEvidence(evidence: Candidate['evidence'], observations: Observation[], ticket: string | null | undefined, direct = false): boolean {
+  return Boolean(ticket && evidence.some(item => {
+    if (isOfficialPage(item) || !item.fields.includes('ticket')) return false
+    const post = observations.find(post => post.id === item.observation_id)
+    return post && (!direct || post.authority === 'venue' || post.authority === 'organizer') &&
+      citesTicketDestination(item.excerpt, ticket, item.media_id ? undefined : post.caption)
+  }))
 }
 
 export function ticketDestinationChanged(before: unknown, after: string | null | undefined): boolean {
@@ -72,7 +90,23 @@ export function suppliedDetailFacts(candidate: Candidate): string[] {
     .filter(([, value]) => value !== undefined).map(([field]) => field)
 }
 
-export function validateEvidence(candidate: Candidate, observations: Observation[], media: Media[], now: Date): string[] {
+const wholeLineFields: readonly string[] = ['organizer', 'performers', 'doors_time', 'offers_valid_from']
+
+export function isWholeCaptionExcerpt(caption: string, excerpt: string): boolean {
+  const lines = (text: string) => text.trim().split(/\r?\n/u).map(line => line.trim())
+  const source = lines(caption), quote = lines(excerpt)
+  return Boolean(excerpt.trim()) && source.some((_, start) => quote.every((line, offset) => source[start + offset] === line))
+}
+
+export const SAME_CLOCK_REASON = 'Equal doors and start times need two separate clocks in the doors excerpt'
+
+export const citesSeparateClocks = (excerpt: string, time: string) => quotedClocks(excerpt).filter(clock => clock === time).length >= 2
+
+export function separatelyCitedDoors(evidence: Candidate['evidence'], time: string): boolean {
+  return evidence.some(item => item.fields.includes('doors_time') && citesSeparateClocks(item.excerpt, time))
+}
+
+export function validateEvidence(candidate: Candidate, observations: Observation[], media: Media[], now: Date, venueName = candidate.venue_name): string[] {
   const reasons = [...candidate.issues]
   try {
     const start = candidateStart(candidate)
@@ -89,6 +123,8 @@ export function validateEvidence(candidate: Candidate, observations: Observation
       if (candidate.time && doors > candidateStart(candidate)) reasons.push('Doors cannot follow the known start time')
     }
   } catch { reasons.push('Invalid doors date') }
+  const doorTime = candidate.doors_time
+  if (doorTime && doorTime === candidate.time && !separatelyCitedDoors(candidate.evidence, doorTime)) reasons.push(SAME_CLOCK_REASON)
   if (!candidate.venue_id) reasons.push('Venue must be resolved before publishing')
   if (candidate.price_kind === 'fixed' && (!candidate.price_ars || candidate.price_ars < 0)) reasons.push('Fixed price must be positive')
   if (candidate.price_kind !== 'fixed' && candidate.price_ars !== null) reasons.push('Only a fixed price may set price_ars')
@@ -104,13 +140,11 @@ export function validateEvidence(candidate: Candidate, observations: Observation
     if (post.media_urls && media.filter(item => item.observation_id === post.id).length !== post.media_urls.length) reasons.push('Some source images have not been retained; resolve incomplete evidence')
     if (evidence.media_id) {
       if (!media.some(item => item.id === evidence.media_id && item.observation_id === post.id)) reasons.push('Flyer evidence is not attached to this observation')
+    } else if (evidence.fields.some(field => wholeLineFields.includes(field))) {
+      if (!isWholeCaptionExcerpt(post.caption, evidence.excerpt)) reasons.push('Credit, doors, and sale-opening caption evidence must quote complete lines')
     } else if (!post.caption.includes(evidence.excerpt)) reasons.push('Caption evidence must be an exact excerpt')
-    const caption = evidence.media_id ? undefined : post.caption
-    if (candidate.time && evidence.fields.includes('time') && !supportsStartTime(evidence.excerpt, candidate.time, caption)) {
-      reasons.push('Start time must match the labeled show clock, not doors')
-    }
-    if (candidate.doors_time && evidence.fields.includes('doors_time') && !statesDoorsTime(evidence.excerpt, candidate.doors_time, caption)) {
-      reasons.push('Door time must match the labeled doors clock')
+    if (doorTime && evidence.fields.includes('doors_time') && !quotedClocks(evidence.excerpt).includes(doorTime)) {
+      reasons.push('Door time must appear in the cited excerpt')
     }
     for (const field of evidence.fields) supported.add(field)
   }
@@ -122,9 +156,12 @@ export function validateEvidence(candidate: Candidate, observations: Observation
   }
   for (const [field, credits] of [['organizer', candidate.organizer ? [candidate.organizer] : []], ['performers', candidate.performers ?? []]] as const) {
     for (const credit of credits) {
-      const support = postEvidence.filter(item => item.fields.includes(field) && statesCreditRole(field, credit.name, item.excerpt) &&
-        (field !== 'performers' || item.media_id || !isAfterPartyCredit(observations.find(post => post.id === item.observation_id)?.caption ?? '', item.excerpt)))
-      if (!support.length) reasons.push(`Instagram evidence must explicitly credit ${field}: ${credit.name}`)
+      if (isExcludedCreditName(credit.name, venueName)) {
+        reasons.push(`A ticket seller or the venue itself cannot be credited as ${field}: ${credit.name}`)
+        continue
+      }
+      const support = postEvidence.filter(item => item.fields.includes(field) && citesCreditName(item.excerpt, credit.name))
+      if (!support.length) reasons.push(`Instagram evidence must quote the name for ${field}: ${credit.name}`)
       if (credit.url && (!validPublicUrl(credit.url) || !support.some(item => item.excerpt.includes(credit.url!)))) {
         reasons.push(`Instagram evidence must explicitly give the HTTPS URL for ${credit.name}`)
       }
@@ -134,7 +171,7 @@ export function validateEvidence(candidate: Candidate, observations: Observation
     const sales = new Date(candidate.offers_valid_from)
     if (!Number.isFinite(sales.getTime()) || sales.toISOString() !== candidate.offers_valid_from || sales.getUTCSeconds() !== 0 || sales.getUTCMilliseconds() !== 0) {
       reasons.push('Invalid ticket-sale opening timestamp')
-    } else if (!postEvidence.some(item => item.fields.includes('offers_valid_from') && statesSaleOpening(item.excerpt, baDate(sales.toISOString()), baTime(sales.toISOString())))) {
+    } else if (!postEvidence.some(item => item.fields.includes('offers_valid_from') && citesDateAndClock(item.excerpt, baDate(sales.toISOString()), baTime(sales.toISOString())))) {
       reasons.push('Ticket-sale opening needs the stated calendar date and time')
     }
   }

@@ -11,25 +11,16 @@ it('keeps only source-quoted names and URLs, separately from facets', () => {
   expect(statedEventCredits({ organizer: null, performers: [] }, descriptions)).toEqual({})
 })
 
-it('requires a role, stops organizer evidence at the first comma or period, and excludes sellers, sponsors, and after-party DJs', () => {
-  const excerpt = 'Organizado por Colectivo Nube, texto que no se debe guardar. Actúa Trío Sol.'
-  expect(statedEventCredits({ organizer: { name: 'Colectivo Nube', excerpt } }, [excerpt])).toEqual({ organizer: { name: 'Colectivo Nube' } })
-  expect(statedEventCredits({ organizer: { name: 'Colectivo Nube, texto que no se debe guardar', excerpt } }, [excerpt])).toEqual({})
-  expect(statedEventCredits({ organizer: { name: 'Passline', excerpt: 'Presenta: Passline.' }, performers: [
-    { name: 'Falso', excerpt: 'Auspicia Falso.' }, { name: 'Otro', excerpt: 'DJ: Otro' },
-    { name: 'Invitado', excerpt: 'Invitado estuvo en el público.' },
-  ] }, ['Presenta: Passline. Auspicia Falso. Invitado estuvo en el público.\nAfter-party\nDJ: Otro'])).toEqual({})
-})
-
-it.each(['\n\n', '\n## Show principal\n', '\nShow principal:\n'])('limits the after-party to its own section (%j)', separator => {
-  const source = `After-party\nDJ: Uno\nDJ: Dos${separator}DJ: Tres`
-  const performers = ['Uno', 'Dos', 'Tres'].map(name => ({ name, excerpt: `DJ: ${name}` }))
-  expect(statedEventCredits({ performers }, [source])).toEqual({ performers: [{ name: 'Tres' }] })
-})
-
-it.each(['Organizador', 'Organizadora'])('accepts %s and keeps a performer name containing y intact', label => {
-  const excerpt = `${label}: Nube. Actúa: Luz y Sombra`
-  const organizer = { name: 'Nube', excerpt }
-  const performers = ['Luz y Sombra', 'Luz', 'Sombra'].map(name => ({ name, excerpt }))
-  expect(statedEventCredits({ organizer, performers }, [excerpt])).toEqual({ organizer: { name: 'Nube' }, performers: [{ name: 'Luz y Sombra' }] })
+it('checks verbatim citations, whole names, and exact seller identities without reinterpreting the role', () => {
+  const excerpt = '🎭 A cargo de Pássline Sur, con Luz y Sómbrá y Trío Bruma.'
+  const organizer = { name: 'Passline Sur', excerpt }
+  const performers = [
+    { name: 'LUZ Y SOMBRA', excerpt },
+    { name: 'Brum', excerpt },
+    { name: 'Pássline', excerpt },
+    { name: 'Trío Bruma', excerpt: 'con Luz y Sómbrá y Trío  Bruma.' },
+    { name: 'Venti.live', excerpt: 'Invitados: Venti.live' },
+  ]
+  expect(statedEventCredits({ organizer, performers }, [`${excerpt}\nInvitados: Venti.live`]))
+    .toEqual({ organizer: { name: 'Passline Sur' }, performers: [{ name: 'LUZ Y SOMBRA' }] })
 })

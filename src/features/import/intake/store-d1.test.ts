@@ -479,7 +479,7 @@ describe.skipIf(bun)('the operator flow on D1', () => {
       .toEqual({ starts_at: `${newDate}T03:00:00.000Z`, ticket_url: newTicket, offers_valid_from: null, doors_at: null, organizer_name: 'Nube' })
   })
 
-  it.each(['20:00', '22:00'])('checks doors at %s against a kept verified start and end', async doors_time => {
+  it.each(['20:00', '21:00', '22:00'])('checks doors at %s against a kept verified start and end', async doors_time => {
     await source()
     const runId = (await run(store.reserveCollection)).id
     const venueId = await venue(), candidate = id(), event = id(), date = shiftDay(baToday(), 5)
@@ -494,6 +494,8 @@ describe.skipIf(bun)('the operator flow on D1', () => {
     const preview = await run(previewCandidateEffect(store, candidate))
     if (doors_time === '22:00') {
       expect(preview).toMatchObject({ action: 'held', reasons: ['Doors cannot follow the known start time'] })
+    } else if (doors_time === '21:00') {
+      expect(preview).toMatchObject({ action: 'held', reasons: ['Equal doors and start times need two separate clocks in the doors excerpt'] })
     } else {
       expect(preview).toMatchObject({ action: 'update', payload: { starts_at, ends_at, time_tba: false } })
       const noProvider = async () => { throw new Error('A doors-only update must not call a provider') }
@@ -525,12 +527,13 @@ describe.skipIf(bun)('the operator flow on D1', () => {
   })
 
   it.each([
-    ['http://www.tickets.example/replacement/?utm_source=instagram&fbclid=synthetic', 'https://tickets.example/replacement', true],
-    ['https://tickets.example/original', 'https://tickets.example/replacement', false],
-    ['https://tickets.example/replacement-extra', 'https://tickets.example/replacement', false],
-    ['https://tickets.example/replacement?id=2', 'https://tickets.example/replacement?id=1', false],
-    ['https://tickets.example/replacement', 'https://tickets.example/original', false],
-  ])('requires the exact destination in %s when writing %s', async (citedUrl, proposedUrl, supported) => {
+    ['http://www.tickets.example/replacement/?utm_source=instagram&fbclid=synthetic', 'https://tickets.example/replacement', true, null],
+    ['https://tickets.example/original', 'https://tickets.example/replacement', false, null],
+    ['https://tickets.example/replacement-extra', 'https://tickets.example/replacement', false, null],
+    ['https://tickets.example/replacement-extra', 'https://tickets.example/replacement', false, 'https://tickets.example/replacement'],
+    ['https://tickets.example/replacement?id=2', 'https://tickets.example/replacement?id=1', false, null],
+    ['https://tickets.example/replacement', 'https://tickets.example/original', false, null],
+  ])('requires the exact destination in %s when writing %s (%s, quote %s)', async (citedUrl, proposedUrl, supported, ticketQuote) => {
     await source()
     const runId = (await run(store.reserveCollection)).id
     const venueId = await venue(), candidate = id(), event = id(), date = shiftDay(baToday(), 5)
@@ -539,9 +542,12 @@ describe.skipIf(bun)('the operator flow on D1', () => {
     const replacementOpening = '2026-11-21T18:00:00.000Z'
     await db.prepare(`INSERT INTO events (id, name, venue_id, starts_at, time_tba, ticket_url, offers_valid_from, source, categories)
       VALUES (?, 'Synthetic Jazz', ?, ?, 1, ?, ?, 'instagram', '["music"]')`).bind(event, venueId, starts_at, ticket_url, offers_valid_from).run()
-    const excerpt = `Synthetic Jazz. Entradas a la venta desde el 21/11 a las 15:00: ${citedUrl}`
+    const excerpt = `Synthetic Jazz. Entradas a la venta desde el 21/11 a las 15:00: ${citedUrl}.`
     const post = await observation(runId, excerpt)
-    const evidence = [{ observation_id: post, fields: ['name', 'date', 'venue', 'ticket', 'offers_valid_from'], excerpt, media_id: null }]
+    const evidence = [
+      { observation_id: post, fields: ['name', 'date', 'venue', 'offers_valid_from'], excerpt, media_id: null },
+      { observation_id: post, fields: ['ticket'], excerpt: ticketQuote ?? excerpt, media_id: null },
+    ]
     await run(submitCandidateEffect(store, candidateInput(candidate, post, venueId, { date, time: null, intent: 'update',
       target_event_id: event, ticket_url: proposedUrl, offers_valid_from: replacementOpening, evidence })))
     const preview = await run(previewCandidateEffect(store, candidate))
@@ -558,6 +564,47 @@ describe.skipIf(bun)('the operator flow on D1', () => {
     }
     expect(await db.prepare('SELECT ticket_url, offers_valid_from FROM events WHERE id = ?').bind(event).first())
       .toEqual(supported ? { ticket_url: proposedUrl, offers_valid_from: replacementOpening } : { ticket_url, offers_valid_from })
+  })
+
+  it('holds a new ticket link when its caption excerpt cuts the URL short', async () => {
+    await source()
+    const venueId = await venue(), candidate = id()
+    const ticket_url = 'https://tickets.example/replacement'
+    const caption = `Synthetic Jazz. Entradas: ${ticket_url}-extra`
+    const post = await observation((await run(store.reserveCollection)).id, caption)
+    await run(submitCandidateEffect(store, candidateInput(candidate, post, venueId, { time: null, ticket_url, evidence: [
+      { observation_id: post, fields: ['name', 'date', 'venue'], excerpt: caption, media_id: null },
+      { observation_id: post, fields: ['ticket'], excerpt: ticket_url, media_id: null },
+    ] })))
+    expect(await run(previewCandidateEffect(store, candidate))).toMatchObject({ action: 'held',
+      reasons: ['Ticket evidence must quote the complete destination URL'] })
+  })
+
+  it('preserves the sale opening when rewriting only the www prefix on a ticket', async () => {
+    await source()
+    const venueId = await venue(), candidate = id(), event = id(), date = shiftDay(baToday(), 5)
+    const startsAt = new Date(`${date}T21:00:00-03:00`).toISOString()
+    const post = await observation((await run(store.reserveCollection)).id)
+    const opening = '2026-11-20T18:00:00.000Z'
+    await db.prepare(`INSERT INTO events (id, name, starts_at, venue_id, source, categories, ticket_url, offers_valid_from)
+      VALUES (?, 'Synthetic Jazz', ?, ?, 'instagram', '["music"]', 'https://tickets.example/original', ?)`).bind(event, startsAt, venueId, opening).run()
+    const input = candidateInput(candidate, post, venueId, { intent: 'update', target_event_id: event, date, ticket_url: 'https://www.tickets.example/original' })
+    await run(submitCandidateEffect(store, { ...input, evidence: [{ ...input.evidence[0], fields: [...input.evidence[0].fields, 'ticket'] }] }))
+    const preview = await run(previewCandidateEffect(store, candidate))
+    expect(preview.action).toBe('update')
+    await run(commitPlanEffect(store, preview.id, publishers))
+    expect(await db.prepare('SELECT offers_valid_from FROM events WHERE id = ?').bind(event).first('offers_valid_from')).toBe(opening)
+  })
+
+  it('holds a venue credit using the looked-up venue name even when the candidate omits it', async () => {
+    await source()
+    const venueId = await venue(), candidate = id()
+    const excerpt = 'Synthetic Jazz — presenta Synthetic Venue'
+    const post = await observation((await run(store.reserveCollection)).id, excerpt)
+    await run(submitCandidateEffect(store, candidateInput(candidate, post, venueId, { venue_name: null, time: null,
+      organizer: { name: 'Synthetic Venue' }, evidence: [{ observation_id: post, fields: ['name', 'date', 'venue', 'organizer'], excerpt, media_id: null }] })))
+    expect(await run(previewCandidateEffect(store, candidate))).toMatchObject({ action: 'held',
+      reasons: ['A ticket seller or the venue itself cannot be credited as organizer: Synthetic Venue'] })
   })
 
   it('refuses a candidate whose venue_id or target_event_id is not in the catalog, naming the ID, and stores nothing', async () => {

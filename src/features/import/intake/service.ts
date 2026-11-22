@@ -7,7 +7,7 @@ import { importTry, ImportOperationError } from '../core/effect-utils.ts'
 import { candidateError, decodeCandidate, isOfficialPage, type Candidate } from './schema.ts'
 import { officialSites, verifyOfficialPagesEffect, type ReadPage, type RenderPage } from './official-page.ts'
 import { baDate, baTime, candidateStart, candidateDoors, decideMatch, descriptionChanged, searchInputsChanged, validateEvidence, normalizeTitle, ticketDestinationChanged,
-  citesTicketDestination, suppliedDetailFacts, type CatalogMatch, type Observation } from './planning.ts'
+  hasPostTicketEvidence, SAME_CLOCK_REASON, separatelyCitedDoors, suppliedDetailFacts, type CatalogMatch, type Observation } from './planning.ts'
 import type { IntakePlanRow, IntakeStore } from './store.ts'
 
 export type IntakePlan = IntakePlanRow
@@ -44,7 +44,7 @@ export const previewCandidateEffect = Effect.fn('intake.preview')(function*(stor
   const row = yield* store.candidate(id)
   const candidate = yield* Effect.try({ try: () => decodeCandidate({ ...row.payload, expected_revision: row.revision }), catch: () => failure('Stored candidate is invalid') })
   const { observations, media } = yield* readEvidenceEffect(store, candidate)
-  const reasons = validateEvidence(candidate, observations, media, now)
+  const reasons: string[] = []
   if (candidate.evidence.some(isOfficialPage)) {
     const pageSites = yield* officialPageSitesEffect(store, candidate.venue_id, candidate.ticket_url, candidate.evidence, observations)
     reasons.push(...yield* verifyOfficialPagesEffect(candidate.evidence, { name: candidate.name, date: candidate.date, time: candidate.time,
@@ -70,6 +70,7 @@ export const previewCandidateEffect = Effect.fn('intake.preview')(function*(stor
     const hint = yield* store.venueHint(candidate.venue_name).pipe(Effect.orElseSucceed(() => null))
     if (hint) reasons.push(`Possible venue: ${hint.name} (${hint.id}); confirm and submit a new revision`)
   }
+  reasons.push(...validateEvidence(candidate, observations, media, now, venueName))
   const linkedIds = yield* store.linkedEventIds(candidate.id)
   const explicitIds = [...new Set([...linkedIds, ...(candidate.target_event_id ? [candidate.target_event_id] : [])])]
   const day = new Date(`${candidate.date}T00:00:00-03:00`)
@@ -82,6 +83,9 @@ export const previewCandidateEffect = Effect.fn('intake.preview')(function*(stor
   const artworkNote = candidate.artwork_note?.trim() || null
   if (decision.action !== 'link' && candidate.intent !== 'link' && !candidate.artwork_media_id && !artworkNote) {
     decision.action = 'held'; decision.reasons.push('Select retained artwork or give a reason in artwork_note')
+  }
+  if (decision.action === 'create' && candidate.ticket_url && !hasPostTicketEvidence(candidate.evidence, observations, candidate.ticket_url)) {
+    decision.action = 'held'; decision.reasons.push('Ticket evidence must quote the complete destination URL')
   }
   if (decision.action === 'update' && !observations.some(post => post.authority === 'venue' || post.authority === 'organizer')) {
     decision.action = 'held'; decision.reasons.push('Corrections need organizer or venue evidence')
@@ -123,8 +127,14 @@ export const previewCandidateEffect = Effect.fn('intake.preview')(function*(stor
       payload.starts_at = oldStart
       payload.time_tba = Boolean(old.time_tba)
     }
-    if (payload.doors_at && !payload.time_tba && Date.parse(payload.doors_at) > Date.parse(payload.starts_at)) {
-      decision.action = 'held'; decision.reasons.push('Doors cannot follow the known start time')
+    if (payload.doors_at && !payload.time_tba) {
+      if (Date.parse(payload.doors_at) > Date.parse(payload.starts_at)) {
+        decision.action = 'held'; decision.reasons.push('Doors cannot follow the known start time')
+      }
+      const doorsTime = baTime(payload.doors_at)
+      if (doorsTime === baTime(payload.starts_at) && !separatelyCitedDoors(candidate.evidence, doorsTime)) {
+        decision.action = 'held'; decision.reasons.push(SAME_CLOCK_REASON)
+      }
     }
     if (Date.parse(oldStart) === Date.parse(payload.starts_at)) payload.ends_at = old.ends_at as string | null
     if (!descriptionChanged(old, payload)) Object.assign(payload, storedPresentation(old), {
@@ -140,9 +150,9 @@ export const previewCandidateEffect = Effect.fn('intake.preview')(function*(stor
     if (old.venue_id !== payload.venue_id) changes.push('venue')
     if (old.price !== payload.price || old.is_free !== payload.is_free) changes.push('price')
     // An official page can support a new event, but a correction still needs the organizer's or venue's own post.
-    for (const field of changes) if (!candidate.evidence.some(evidence => !isOfficialPage(evidence) && evidence.fields.some(item => item === field) &&
-      (field !== 'ticket' || citesTicketDestination(evidence.excerpt, payload.ticket_url)) &&
-      observations.some(post => post.id === evidence.observation_id && (post.authority === 'organizer' || post.authority === 'venue')))) {
+    for (const field of changes) if (!(field === 'ticket' ? hasPostTicketEvidence(candidate.evidence, observations, payload.ticket_url, true) :
+      candidate.evidence.some(evidence => !isOfficialPage(evidence) && evidence.fields.some(item => item === field) &&
+        observations.some(post => post.id === evidence.observation_id && (post.authority === 'organizer' || post.authority === 'venue'))))) {
       decision.action = 'held'; decision.reasons.push(`Correction of ${field} needs direct organizer or venue evidence`)
     }
   }

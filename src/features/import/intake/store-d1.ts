@@ -17,8 +17,9 @@ import type { EventInsert } from '#shared/lib/types.ts'
 import { importTry, ImportOperationError } from '../core/effect-utils.ts'
 import { mostSimilarVenue, similarIntakeVenues } from '../core/venue-similarity-d1.ts'
 import { pickVenue, venueNameKey } from '../core/venue-identity.ts'
-import { baDate, citesTicketDestination, searchInputsChanged, ticketDestinationChanged, type Media } from './planning.ts'
-import type { Source } from './schema.ts'
+import { baDate, baTime, citesSeparateClocks, citesTicketDestination, isWholeCaptionExcerpt, SAME_CLOCK_REASON,
+  searchInputsChanged, separatelyCitedDoors, ticketDestinationChanged, type Media } from './planning.ts'
+import { isOfficialPage, type Source } from './schema.ts'
 import type { IntakePlanRow, IntakePolicy, IntakeStore, Reservation, VenueRow } from './store.ts'
 
 type Row = Record<string, unknown>
@@ -360,6 +361,21 @@ export function d1Intake({ db, evidence, artwork, vectors }: IntakeBindings, sit
         .all<{ fields: string | null; observed_at: string; authority: string; excerpt: string | null; caption: string;
           media_id: string | null; retained_media: number }>()).results
       if (!evidenceRows.length) throw new Error('Retained evidence is required')
+      const fields = (row: typeof evidenceRows[number]) => JSON.parse(row.fields ?? '[]') as string[]
+      const quotesTicket = (row: typeof evidenceRows[number], ticket: string | null | undefined) =>
+        Boolean(ticket && row.excerpt && (!row.media_id || row.retained_media) &&
+          citesTicketDestination(row.excerpt, ticket, row.media_id ? undefined : row.caption))
+      if (plan.action === 'create' && e.ticket_url && !evidenceRows.some(row => fields(row).includes('ticket') && quotesTicket(row, e.ticket_url))) {
+        throw new Error('Ticket evidence must quote the complete destination URL')
+      }
+      if (plan.action !== 'link' && e.doors_at && !e.time_tba) {
+        const time = baTime(e.doors_at)
+        if (time === baTime(startsAt) && !separatelyCitedDoors(plan.evidence.filter(isOfficialPage), time) &&
+          !evidenceRows.some(row => row.excerpt && fields(row).includes('doors_time') &&
+            (row.media_id ? row.retained_media : isWholeCaptionExcerpt(row.caption, row.excerpt)) && citesSeparateClocks(row.excerpt, time))) {
+          throw new Error(SAME_CLOCK_REASON)
+        }
+      }
       const level = Math.max(...evidenceRows.map(row => row.authority === 'curator' ? 1 : 2))
       const observed = evidenceRows.map(row => row.observed_at).sort().at(-1)!
       const previous = plan.action === 'create' ? null : await first(db.prepare('SELECT * FROM events WHERE id = ?').bind(plan.event_id))
@@ -385,8 +401,8 @@ export function d1Intake({ db, evidence, artwork, vectors }: IntakeBindings, sit
         const ticket = e.ticket_url ?? (typeof previous.ticket_url === 'string' ? previous.ticket_url : null)
         for (const [fact, needsEvidence] of Object.entries(changed)) {
           if (needsEvidence && !evidenceRows.some(row => (row.authority === 'venue' || row.authority === 'organizer') &&
-            (JSON.parse(row.fields ?? '[]') as string[]).includes(fact) && (!protection || row.observed_at >= protection.observed_at) &&
-            (fact !== 'ticket' || row.excerpt && (row.media_id ? row.retained_media : row.caption.includes(row.excerpt)) && citesTicketDestination(row.excerpt, ticket)))) {
+            fields(row).includes(fact) && (!protection || row.observed_at >= protection.observed_at) &&
+            (fact !== 'ticket' || quotesTicket(row, ticket)))) {
             throw new Error(`Correction field lacks current direct evidence: ${fact}`)
           }
         }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { candidateError, decodeCandidate } from './schema.ts'
-import { candidateDoors, candidateStart, canonicalTicket, decideMatch, validateEvidence, type Observation, type Media, type CatalogMatch } from './planning.ts'
+import { candidateDoors, candidateStart, canonicalTicket, citesTicketDestination, decideMatch, ticketDestinationChanged,
+  validateEvidence, type Observation, type Media, type CatalogMatch } from './planning.ts'
 import { allowedInstagramMedia, fetchInstagramImage, mediaUrls } from './collection.ts'
 
 const id = '10000000-0000-4000-8000-000000000001'
@@ -45,45 +46,45 @@ describe('Instagram candidate publication rules', () => {
   it('rejects credits that are not present in their cited caption', () => {
     const input = { ...candidate(), performers: [{ name: 'Uncredited Band' }],
       evidence: [{ ...candidate().evidence[0], fields: [...candidate().evidence[0].fields, 'performers' as const] }] }
-    expect(validateEvidence(input, [post], [], now)).toContain('Instagram evidence must explicitly credit performers: Uncredited Band')
+    expect(validateEvidence(input, [post], [], now)).toContain('Instagram evidence must quote the name for performers: Uncredited Band')
   })
-  it('does not take a posting account as the credited organizer without a stated credit', () => {
-    const input = { ...candidate(), organizer: { name: 'Synthetic Producer' },
-      evidence: [{ ...candidate().evidence[0], fields: [...candidate().evidence[0].fields, 'organizer' as const] }] }
-    expect(validateEvidence(input, [{ ...post, authority: 'organizer', source_username: 'synthetic_producer' }], [], now))
-      .toContain('Instagram evidence must explicitly credit organizer: Synthetic Producer')
+  it('holds a performer quote cut short, but accepts a verbatim name and complete trimmed lines', () => {
+    const caption = `${post.caption}\r\n  Nuestra función:  \r\n  Actúa: Luz y Sómbrá  `
+    const credit = { observation_id: observationId, fields: ['performers'] as const, excerpt: 'Actúa: Luz', media_id: null }
+    const input = { ...candidate(), performers: [{ name: 'Luz' }], evidence: [...candidate().evidence, credit] }
+    expect(validateEvidence(input, [{ ...post, caption }], [], now)).toContain('Credit, doors, and sale-opening caption evidence must quote complete lines')
+    expect(validateEvidence({ ...input, performers: [{ name: 'LUZ Y SOMBRA' }], evidence: [...candidate().evidence,
+      { ...credit, excerpt: 'Nuestra función:\nActúa: Luz y Sómbrá' }] }, [{ ...post, caption }], [], now)).toEqual([])
   })
-  it('binds clocks to the show and doors labels, including a trimmed quote from a caption', () => {
-    const excerpt = 'Synthetic Jazz — Puertas 21 hs - Show 22 hs'
-    const evidence = [{ observation_id: observationId, fields: ['name', 'venue', 'date', 'time', 'doors_time'] as const, excerpt, media_id: null }]
-    const input = { ...candidate(), time: '22:00', doors_time: '21:00', evidence }
-    const posts = [{ ...post, caption: excerpt }]
+  it('lets the operator interpret an ordinary showtime and quotes a multiline doors label without interpreting it', () => {
+    const excerpt = 'Puertas:\n20 hs\nStand up show — sábado 21 hs'
+    const posts = [{ ...post, caption: `${post.caption}\n${excerpt}` }]
+    const evidence = [{ ...candidate().evidence[0], fields: ['name', 'venue', 'date', 'time', 'doors_time'] as const, excerpt }]
+    expect(validateEvidence({ ...candidate(), doors_time: '20:00', evidence }, posts, [], now)).toEqual([])
+  })
+  it.each([['21 hs', '21:00'], ['21:00', '21:00'], ['21.00 hs', '21:00'], ['9 PM', '21:00'],
+    ['9:30 p. m.', '21:30'], ['9:30 pm', '21:30']])('finds door clock %s as %s without requiring a role label', (clock, time) => {
+    const excerpt = `Apertura:\n${clock}`
+    const evidence = [...candidate().evidence, { observation_id: observationId, fields: ['doors_time'] as const, excerpt, media_id: null }]
+    const input = { ...candidate(), time: null, doors_time: time, evidence }
+    const posts = [{ ...post, caption: `${post.caption}\n${excerpt}` }]
     expect(validateEvidence(input, posts, [], now)).toEqual([])
-    expect(validateEvidence({ ...input, time: '21:00' }, posts, [], now)).toContain('Start time must match the labeled show clock, not doors')
-    expect(validateEvidence({ ...input, doors_time: '22:00' }, posts, [], now)).toContain('Door time must match the labeled doors clock')
-    const trimmed = [{ ...evidence[0], excerpt: '21 hs', fields: ['time'] as const }]
-    expect(validateEvidence({ ...input, time: '21:00', evidence: trimmed }, posts, [], now)).toContain('Start time must match the labeled show clock, not doors')
+    expect(validateEvidence({ ...input, doors_time: '09:30' }, posts, [], now)).toContain('Door time must appear in the cited excerpt')
   })
-  it('checks trimmed clocks against the full caption lines even when a quote spans lines', () => {
-    const caption = 'Synthetic Jazz 20/11\nPuertas 21 hs\nShow 22 hs'
-    const excerpt = { observation_id: observationId, media_id: null }
-    const input = { ...candidate(), time: '22:00', doors_time: '21:00', evidence: [
-      { ...excerpt, fields: ['name', 'date', 'venue'] as const, excerpt: 'Synthetic Jazz 20/11' },
-      { ...excerpt, fields: ['time'] as const, excerpt: '22 hs' },
-      { ...excerpt, fields: ['doors_time'] as const, excerpt: '21 hs' },
-    ] }
-    const posts = [{ ...post, caption }]
-    expect(validateEvidence({ ...input, time: '21:00' }, posts, [], now)).toContain('Start time must match the labeled show clock, not doors')
-    expect(validateEvidence(input, posts, [], now)).toEqual([])
-    expect(validateEvidence({ ...input, evidence: input.evidence.map(item => item.excerpt === '22 hs' ?
-      { ...item, excerpt: '21 hs\nShow 22 hs' } : item) }, posts, [], now)).toEqual([])
+  it.each(['20.11', '20.11 noviembre', '20.11.2026 hs'])('does not read a dotted date as a clock: %s', excerpt => {
+    const evidence = [{ ...candidate().evidence[0], fields: ['name', 'date', 'venue', 'doors_time'] as const, excerpt }]
+    expect(validateEvidence({ ...candidate(), time: null, doors_time: '20:11', evidence }, [{ ...post, caption: excerpt }], [], now))
+      .toContain('Door time must appear in the cited excerpt')
   })
-  it.each(['Show', 'Comienzo', 'Empieza', 'Arranca'])('recognizes %s and reads the complete 12-hour clock', label => {
-    const caption = `Synthetic Jazz 20/11\nPuertas 20 hs - ${label} 9:30 PM`
-    const evidence = [{ ...candidate().evidence[0], excerpt: '9:30 PM' }]
-    expect(validateEvidence({ ...candidate(), time: '21:30', evidence }, [{ ...post, caption }], [], now)).toEqual([])
-    expect(validateEvidence({ ...candidate(), time: '09:30', evidence: [{ ...evidence[0], excerpt: '9:30' }] }, [{ ...post, caption }], [], now))
-      .toContain('Start time must match the labeled show clock, not doors')
+  it('requires two separate clock tokens when the reported doors and start times are equal', () => {
+    const evidence = (excerpt: string) => [{ ...candidate().evidence[0], fields: ['name', 'date', 'venue', 'time', 'doors_time'] as const, excerpt }]
+    const input = { ...candidate(), doors_time: '21:00' }
+    const single = 'Puertas:\n21 hs'
+    const posts = [{ ...post, caption: single }]
+    expect(validateEvidence({ ...input, evidence: [...evidence(single), ...evidence(single)] }, posts, [], now))
+      .toContain('Equal doors and start times need two separate clocks in the doors excerpt')
+    const both = `${single}\nShow: 9 PM`
+    expect(validateEvidence({ ...input, evidence: evidence(both) }, [{ ...post, caption: both }], [], now)).toEqual([])
   })
   it('requires an explicit doors date before 06:00 even when only doors are known', () => {
     const excerpt = 'Synthetic Jazz, Puerta 00:30'
@@ -97,17 +98,23 @@ describe('Instagram candidate publication rules', () => {
     const input = { ...candidate(), offers_valid_from: '2026-11-15T18:00:00.000Z', evidence }
     expect(validateEvidence(input, [{ ...post, caption: `${post.caption}\n${excerpt}` }], [], now)).toContain('Ticket-sale opening needs the stated calendar date and time')
   })
-  it.each([
-    ['organizer', 'Passline', 'Presenta: Passline'],
-    ['organizer', 'Colectivo Nube', 'Entradas: Colectivo Nube'],
-    ['organizer', 'Colectivo Nube', 'Con el apoyo de Colectivo Nube'],
-    ['performers', 'Trío Sol', 'After-party\nDJ: Uno\nDJ: Trío Sol'],
-  ] as const)('rejects unsupported %s roles even when the name is quoted', (role, name, caption) => {
-    const excerpt = caption.split('\n').at(-1)!
-    const evidence = [...candidate().evidence, { observation_id: observationId, fields: [role], excerpt, media_id: null }]
-    const input = { ...candidate(), evidence, ...(role === 'organizer' ? { organizer: { name } } : { performers: [{ name }] }) }
-    expect(validateEvidence(input, [{ ...post, caption: `${post.caption}\n${caption}` }], [], now)).toContain(`Instagram evidence must explicitly credit ${role}: ${name}`)
+  it('requires a full sale-opening line and matches its local date and clock even without a sale keyword', () => {
+    const excerpt = 'Reserva anticipada: 15.11.2026 — 3:00 p. m.'
+    const quote = { observation_id: observationId, fields: ['offers_valid_from'] as const, excerpt, media_id: null }
+    const postWithSale = { ...post, caption: `${post.caption}\n${excerpt}` }
+    const input = { ...candidate(), offers_valid_from: '2026-11-15T18:00:00.000Z', evidence: [...candidate().evidence, quote] }
+    expect(validateEvidence(input, [postWithSale], [], now)).toEqual([])
+    expect(validateEvidence({ ...input, evidence: [...candidate().evidence, { ...quote, excerpt: '15.11.2026 — 3:00 p. m.' }] }, [postWithSale], [], now))
+      .toContain('Credit, doors, and sale-opening caption evidence must quote complete lines')
   })
+  it.each([['organizer', 'Pássline'], ['performers', 'passline.com'], ['performers', 'Synthetic Venue']] as const)(
+    'rejects an exact ticket-seller or venue name for %s: %s', (role, name) => {
+      const excerpt = `Créditos: ${name}`
+      const evidence = [...candidate().evidence, { observation_id: observationId, fields: [role], excerpt, media_id: null }]
+      const input = { ...candidate(), evidence, ...(role === 'organizer' ? { organizer: { name } } : { performers: [{ name }] }) }
+      expect(validateEvidence(input, [{ ...post, caption: `${post.caption}\n${excerpt}` }], [], now))
+        .toContain(`A ticket seller or the venue itself cannot be credited as ${role}: ${name}`)
+    })
   it('does not reinterpret conditional admission as free', () => {
     expect(validateEvidence({ ...candidate(), price_kind: 'conditional', price_ars: 0 }, [post], [], now)).toContain('Only a fixed price may set price_ars')
     expect(validateEvidence({ ...candidate(), price_kind: 'conditional' }, [post], [], now)).toContain('Conditional admission needs its conditions')
@@ -152,8 +159,16 @@ describe('Instagram candidate publication rules', () => {
     expect(decideMatch(candidate(), [existing], [id, eventId], []).action).toBe('held')
     expect(decideMatch(candidate(), [], [], ['Rain date is conditional']).action).toBe('held')
   })
-  it('removes only tracking parameters from ticket identities', () => {
-    expect(canonicalTicket('https://tickets.example/event?session=late&utm_source=ig')).toBe('https://tickets.example/event?session=late')
+  it('uses the same destination for a ticket rewrite and a complete quoted URL token', () => {
+    const url = 'https://tickets.example/replacement?session=late'
+    const equivalent = 'http://www.tickets.example/replacement/?session=late&utm_source=ig'
+    expect(canonicalTicket(equivalent)).toBe(url)
+    expect(ticketDestinationChanged(url, equivalent)).toBe(false)
+    expect(ticketDestinationChanged(url, 'https://www.tickets.example/replacement?session=early')).toBe(true)
+    expect(citesTicketDestination(equivalent, url, `Reserva: (${equivalent}).`)).toBe(true)
+    expect(citesTicketDestination(url, url, `${url}-extra`)).toBe(false)
+    expect(citesTicketDestination('https://tickets.example/replacement', 'https://tickets.example/replacement',
+      'Reserva: https://tickets.example/replacement-extra')).toBe(false)
     expect(canonicalTicket('javascript:alert(1)')).toBeNull()
   })
 })
