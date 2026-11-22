@@ -18,7 +18,7 @@ const temporaryFile = (name: string) => {
 afterEach(() => { for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true }) })
 
 const pick = { id: 'sample', date: '2026-11-20', startsAt: '2026-11-20T22:30:00.000Z', title: 'Cine del barrio', time: '19:30 a 21:30',
-  description: null, venue: 'La Linterna', barrio: 'Boedo', price: null, handle: null, via: false } satisfies PostEvent
+  description: null, imageUrl: null, venue: 'La Linterna', barrio: 'Boedo', price: null, handle: null, via: false } satisfies PostEvent
 
 describe('Threads text fitting', () => {
   it('uses the saved price labels, removes emoji and hashtag sigils, and gives only the start time', () => {
