@@ -144,6 +144,7 @@ class World {
         expect(headline).not.toMatch(/journalctl|\/home\/|bun scripts|\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/)
         if (!this.openAlerts.has(key) || this.openAlerts.get(key) !== (fingerprint ?? text)) this.alerts.push({ key, text, fingerprint })
         this.openAlerts.set(key, fingerprint ?? text)
+        return true
       },
       resolveAlert: async (key, text) => {
         this.resolved.push(key)
@@ -1314,9 +1315,27 @@ describe('Threads in the publisher tick', () => {
     expect(await threadsReport(w.job().allDrafts(), w.threads, baInstant('2027-01-01', 12), 28)).not.toContain('finde')
   })
 
+  it.each([false, true])('needs a ✅ when only the preview or only the current config allows auto (preview auto: %s)', async previewAuto => {
+    const w = new World()
+    w.config.threads.enabled = true
+    w.config.auto.finde = w.config.threads.auto.finde = previewAuto
+    await w.job().tick()
+    expect(w.draft()).toMatchObject({ slack: { auto: previewAuto }, threads: { auto: previewAuto } })
+    w.config.auto.finde = w.config.threads.auto.finde = !previewAuto
+    w.at('2026-11-19', 12)
+    await w.job().tick()
+    expect(w.ig.published).toHaveLength(0)
+    expect(w.threads.calls).toEqual([])
+    w.approve()
+    await w.job().tick()
+    expect(w.ig.published).toHaveLength(1)
+    expect(w.threads.posts).toHaveLength(1)
+  })
+
   it('skips both on ❌, even with both auto flags and a ✅', async () => {
-    const w = await threadsPreviewed()
-    w.config.auto.finde = w.config.threads.auto.finde = true
+    const w = new World()
+    w.config.threads.enabled = w.config.auto.finde = w.config.threads.auto.finde = true
+    await w.job().tick()
     w.at('2026-11-19', 12)
     w.reject()
     w.reactions.push({ name: 'white_check_mark', users: [HANIF] })
@@ -1386,6 +1405,34 @@ describe('Threads in the publisher tick', () => {
     expect(w.threads.calls.filter(call => call.startsWith('publish'))).toHaveLength(1)
   })
 
+  it.each(['past cutoff', 'skipped', 'failed'])('does not promise Threads in an Instagram rebuild when Threads is %s', async phase => {
+    const w = await threadsPreviewed()
+    const job = w.job()
+    const id = w.draft().id
+    if (phase === 'past cutoff') {
+      w.at('2026-11-20', 12, 5)
+    } else if (phase === 'skipped') {
+      w.reject()
+      await job.tick()
+      expect(w.draft().threads?.state).toBe('skipped')
+    } else {
+      w.config.r2 = null
+      w.threads.atLimit = true
+      w.approve()
+      for (let i = 0; i < 6; i++) {
+        w.at('2026-11-19', 12, 10 * i)
+        await job.tick()
+      }
+      expect(w.draft().threads?.state).toBe('failed')
+    }
+    const original = w.draft()
+    const rebuilt = await job.regenerate(id, [])
+    const preview = w.slackPosts.filter(post => !post.threadTs).at(-1)!.text
+    expect(preview).not.toContain('Threads')
+    expect(rebuilt.threads).toEqual(original.threads)
+    expect(rebuilt.slack.ts).not.toBe(original.slack.ts)
+  })
+
   it('does not read Threads approval during six pre-slot Slack outages, then publishes on the noon ✅', async () => {
     const w = await threadsPreviewed()
     const job = w.job()
@@ -1426,6 +1473,7 @@ describe('Threads in the publisher tick', () => {
     w.config.threads.enabled = true
     const eventDay = format === 'gratis' ? addDays(from, 1) : from
     w.catalog = weekend().map(event => ({ ...event, isFree: true, startsAt: baInstant(eventDay, 21).toISOString() }))
+    w.at(from, 11)
     const job = w.job()
     const draft = await job.createDraft(format, from, [], 1)
     // No new runs to draft during the cutoff check.
@@ -1507,11 +1555,15 @@ describe('Threads in the publisher tick', () => {
     w.threads.publish = client.publish
     await w.job().tick()
     const ownPost = w.threads.posts[0]!
-    expect(Date.parse(ownPost.timestamp!)).toBe(Math.floor(w.clock.getTime() / 1000) * 1000)
+    const canonicalTimestamp = ownPost.timestamp!
+    expect(Date.parse(canonicalTimestamp)).toBe(Math.floor(w.clock.getTime() / 1000) * 1000)
+    ownPost.timestamp = '2026-11-19T15:00:00+0000' // Graph's compact offset, not canonical ISO.
     expect(w.draft().threads).toMatchObject({ attemptedAt: w.clock.toISOString(), beforeIds: [existing], mediaId: null })
     w.at('2026-11-19', 12, 10)
     await w.job().tick()
-    expect(w.draft().threads).toMatchObject({ state: 'published', mediaId: ownPost.id })
+    expect(w.draft().threads).toMatchObject({ state: 'published', mediaId: ownPost.id, publishedAt: canonicalTimestamp })
+    const report = await threadsReport(w.job().allDrafts(), w.threads, w.clock, 28)
+    expect(report).toContain('2026-11-19\tfinde\t')
     expect(graphWrites).toEqual(['creation_id=c2'])
   })
 
@@ -1530,6 +1582,34 @@ describe('Threads in the publisher tick', () => {
     expect(w.threads.calls.filter(call => call.startsWith('publish'))).toHaveLength(1)
     expect(w.replies()).toContain('Threads: falló (no se pudo confirmar la publicación). Hermes lo revisa.')
     expect(w.alerts).toContainEqual(expect.objectContaining({ key: 'draft/finde-2026-11-20/threads', text: expect.stringContaining('could not confirm') }))
+  })
+
+  it('keeps a Threads failure alert pending until the alert command reports success', async () => {
+    const w = await threadsPreviewed()
+    const job = w.job()
+    const alert = job.s.alert
+    let raises = 0
+    job.s.alert = async (key, ...args) => {
+      if (key.endsWith('/threads') && ++raises === 1) return false
+      await alert(key, ...args)
+      return true
+    }
+    w.threads.atLimit = true
+    w.config.r2 = null
+    w.approve()
+    for (let i = 0; i < 6; i++) {
+      w.at('2026-11-19', 12, 10 * i)
+      await job.tick()
+    }
+    expect(w.draft().threads?.state).toBe('failed')
+    expect(w.draft().threads?.failureAlertSent).not.toBe(true)
+    expect(raises).toBe(1)
+    w.at('2026-11-19', 13)
+    await job.tick()
+    expect(w.draft().threads?.failureAlertSent).toBe(true)
+    expect(raises).toBe(2)
+    await job.tick()
+    expect(raises).toBe(2)
   })
 
   it('saves IDs across a definite publish rejection and a subsequent permalink failure', async () => {

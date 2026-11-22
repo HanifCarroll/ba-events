@@ -7,6 +7,8 @@ export interface ThreadsDraft {
   state: 'waiting' | 'publishing' | 'published' | 'skipped' | 'held' | 'failed'
   /** Frozen before the preview is sent: this is also the exact recovery key. */
   text: string | null
+  /** Auto mode shown in the original Slack preview; absent on older drafts means manual. */
+  auto?: boolean
   containerId: string | null
   mediaId: string | null
   permalink: string | null
@@ -23,13 +25,17 @@ export interface ThreadsDraft {
   failureAlertSent?: boolean
 }
 
-export function newThreadsDraft(text: string | null): ThreadsDraft {
+export function newThreadsDraft(text: string | null, auto: boolean): ThreadsDraft {
   const error = text === null ? 'la lista no cabe en 500 caracteres' : null
-  return { state: error ? 'failed' : 'waiting', text, containerId: null, mediaId: null, permalink: null, attemptedAt: null,
+  return { state: error ? 'failed' : 'waiting', text, auto, containerId: null, mediaId: null, permalink: null, attemptedAt: null,
     publishedAt: null, error, failures: 0, notify: error ? threadsReplies.failed(error) : null }
 }
 
 const isOpen = (draft: ThreadsDraft) => draft.state === 'waiting' || draft.state === 'publishing'
+
+/** Do not offer a replacement for a sent, skipped, or failed Threads post. A hold can still be repaired. */
+export const retainThreads = (draft: ThreadsDraft) => Boolean(draft.attemptedAt || draft.mediaId)
+  || ['published', 'skipped', 'failed'].includes(draft.state)
 
 function settle(draft: ThreadsDraft, state: 'skipped' | 'held' | 'failed' | 'published', notify: string) {
   draft.state = state
@@ -49,6 +55,7 @@ interface Services {
   sleep(ms: number): Promise<void>
   save(): void
   reactions(): Promise<Parameters<typeof readReactions>[0]>
+  auto(): boolean
   checkEvents(): Promise<void>
   reply(text: string): Promise<unknown>
   log(text: string): void
@@ -56,7 +63,7 @@ interface Services {
 
 const MAX_FAILURES = 6
 
-export async function advanceThreads(draft: ThreadsDraft, window: ReturnType<typeof threadsWindow>, auto: boolean, s: Services) {
+export async function advanceThreads(draft: ThreadsDraft, window: ReturnType<typeof threadsWindow>, s: Services) {
   if (isOpen(draft)) {
     const pendingUntil = draft.attemptedAt ? Math.max(window.cutoff.getTime(), Date.parse(draft.attemptedAt) + TICK_MS) : null
     const fail = (reason: string) => {
@@ -81,7 +88,7 @@ export async function advanceThreads(draft: ThreadsDraft, window: ReturnType<typ
       }))
       if (reactions.rejected) throw new PublishStop('rejected', 'Hanif reacted ❌')
       if (s.now() >= window.cutoff) throw new PublishStop('deadline', 'Threads cutoff reached')
-      if (!auto && !reactions.approved) throw new PublishStop('unapproved', 'Waiting for Threads approval')
+      if (!reactions.approved && !(draft.auto === true && s.auto())) throw new PublishStop('unapproved', 'Waiting for Threads approval')
     }
     const checkEventsOnce = async () => {
       if (!eventsChecked) { await s.checkEvents(); eventsChecked = true }
@@ -94,15 +101,16 @@ export async function advanceThreads(draft: ThreadsDraft, window: ReturnType<typ
         const since = Date.parse(draft.attemptedAt)
         const before = draft.beforeIds && new Set(draft.beforeIds)
         // Older drafts without a pre-dispatch snapshot keep the stricter comparison.
-        const matches = (await api.recent()).filter(post => {
-          if (!post.id || post.text !== draft.text) return false
-          const stamp = Date.parse(post.timestamp ?? '')
-          return before ? stamp >= Math.floor(since / 1000) * 1000 && !before.has(post.id) : stamp > since
+        const matches = (await api.recent()).flatMap(post => {
+          if (!post.id || post.text !== draft.text) return []
+          const stamp = Date.parse(post.timestamp?.replace(/([+-]\d{2})(\d{2})$/, '$1:$2') ?? '')
+          const recent = before ? stamp >= Math.floor(since / 1000) * 1000 && !before.has(post.id) : stamp > since
+          return recent ? [{ id: post.id, stamp }] : []
         })
         if (matches.length === 1) {
           const post = matches[0]!
           draft.mediaId = post.id
-          draft.publishedAt = post.timestamp!
+          draft.publishedAt = new Date(post.stamp).toISOString()
           draft.failures = 0
           s.save()
           await confirm(api)

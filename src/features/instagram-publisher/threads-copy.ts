@@ -19,7 +19,10 @@ const words = {
   gratis: { min: 3, intro: (n: number) => `Gratis esta semana en Buenos Aires: ${n} planes.`, link: 'Lista completa: baeventos.com' },
 }
 const days = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb']
-const plain = (text: string) => text.replace(/\p{RGI_Emoji}/gv, '').replace(/#(?=[\p{L}\p{N}_])/gu, '').replace(/\s+/g, ' ').trim()
+const plain = (text: string) => text.replace(/\p{RGI_Emoji}/gv, '')
+  .replace(/#(?=[\p{L}\p{N}_])/gu, '')
+  .replace(/(?<![\p{L}\p{M}\p{N}_])@+(?=[\p{L}\p{N}_])/gu, '')
+  .replace(/\s+/g, ' ').trim()
 const venueKey = (name: string) => name.normalize('NFD').toLowerCase().replace(/[^\p{L}\p{N}]/gu, '')
 
 function withoutVenue(title: string, venue: string) {

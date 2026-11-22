@@ -22,7 +22,7 @@ import { selectEvents, type CatalogEvent, type PostEvent } from './select.ts'
 import { confirmsStory, liveStories, stickerFrames, StoryComposerError, type ComposeStory, type StickerFailure, type StoryShareAttempt } from './story-stickers.ts'
 import { threadsApi, type ThreadsApi } from './threads-api.ts'
 import { isThreadsFormat, threadsPreview, threadsPreviousRevision, threadsText, threadsWindow } from './threads-copy.ts'
-import { advanceThreads, newThreadsDraft, stopThreads, type ThreadsDraft } from './threads-publish.ts'
+import { advanceThreads, newThreadsDraft, retainThreads, stopThreads, type ThreadsDraft } from './threads-publish.ts'
 import { loadThreadsToken, type ThreadsTokenCheck } from './threads-token.ts'
 
 export type DraftState = 'previewing' | 'previewed' | 'publishing' | 'published' | 'skipped' | 'failed' | 'held' | 'rebuilding'
@@ -48,7 +48,8 @@ export interface Draft {
   /** Reel only: the track this draft uses (kept by regenerate unless --track picks another). */
   track?: DraftTrack | null
   framesHash: string
-  slack: { fileIds: string[]; ts: string | null }
+  /** Auto mode shown on this Instagram revision; absent on older drafts means manual. */
+  slack: { fileIds: string[]; ts: string | null; auto?: boolean }
   approvedSeenAt: string | null
   r2Uploaded: string | null
   publish: PublishState | null
@@ -91,7 +92,7 @@ export interface Services {
   loadThreadsToken(now: Date): Promise<ThreadsTokenCheck>
   threads(accessToken: string): Promise<ThreadsApi>
   composeStory: ComposeStory
-  alert(key: string, title: string, text: string, fingerprint?: string): Promise<void>
+  alert(key: string, title: string, text: string, fingerprint?: string): Promise<boolean>
   resolveAlert(key: string, text?: string): Promise<boolean | void>
   sleep(ms: number): Promise<void>
   log(message: string): void
@@ -224,13 +225,19 @@ export class Job {
       this.verifyFrames(draft)
       const config = this.s.config()
       const format = draft.format
-      let text = slackPreview(format, runWindow(format, draft.from), draft.caption, config.auto[format], draft.track ?? undefined)
-      if (draft.threads?.attemptedAt || draft.threads?.mediaId) {
-        if (config.threads.enabled && draft.threads.mediaId) text += `\n\n${threadsPreviousRevision}`
-      } else if (config.threads.enabled && isThreadsFormat(format)) {
-        draft.threads = newThreadsDraft(threadsText(format, draft.events))
-        if (draft.threads.text) text += threadsPreview(draft.threads.text, threadsWindow(format, draft.from).publishAt, config.threads.auto[format])
-      } else if (draft.threads) delete draft.threads
+      draft.slack.auto = config.auto[format]
+      let text = slackPreview(format, runWindow(format, draft.from), draft.caption, draft.slack.auto, draft.track ?? undefined)
+      if (isThreadsFormat(format)) {
+        const window = threadsWindow(format, draft.from)
+        const beforeCutoff = this.s.now() < window.cutoff
+        if (draft.threads && (retainThreads(draft.threads) || !beforeCutoff)) {
+          if (config.threads.enabled && draft.threads.mediaId) text += `\n\n${threadsPreviousRevision}`
+        } else if (config.threads.enabled && beforeCutoff) {
+          const auto = config.threads.auto[format]
+          draft.threads = newThreadsDraft(threadsText(format, draft.events), auto)
+          if (draft.threads.text) text += threadsPreview(draft.threads.text, window.publishAt, auto)
+        } else delete draft.threads
+      }
       // A Reel's preview attaches the video only.
       const files = await this.s.slackUploadFiles(draft.format === 'reel' ? draft.frames.slice(0, 1) : draft.frames, draft.id)
       // Saved before sharing: if the share's answer is lost, the next tick looks the message up instead of posting again.
@@ -375,6 +382,10 @@ export class Job {
     this.save(draft)
   }
 
+  private instagramAuto(draft: Draft) {
+    return draft.slack.auto === true && this.s.config().auto[draft.format]
+  }
+
   /** Returns true only when the draft is published. A pending Business Suite Share takes precedence over all gates. */
   private async publishDraft(draft: Draft, window: RunWindow): Promise<boolean> {
     if (draft.storyShare) return this.reconcileStory(draft, window)
@@ -382,12 +393,11 @@ export class Job {
     const token = await this.s.loadToken(this.s.now())
     if (token.state === 'missing') { this.s.log(`${draft.id}: no Instagram token file; skipping publishing`); return false }
     if (!config.r2) { this.s.log(`${draft.id}: no R2 bucket in the config; skipping publishing`); return false }
-    const auto = config.auto[draft.format]
     // Every write re-checks the reactions and the deadline; the first write of each attempt also re-checks the events.
     // Reconciling an earlier unclear publish never calls this, so it isn't blocked by any of these checks.
     let eventsChecked = false
     const beforeWrite = async () => {
-      checkWrite(window, readReactions(await this.s.slackReactions(draft.slack.ts!)), auto, this.s.now())
+      checkWrite(window, readReactions(await this.s.slackReactions(draft.slack.ts!)), this.instagramAuto(draft), this.s.now())
       if (!eventsChecked) { await this.checkEvents(draft); eventsChecked = true }
     }
     if (draft.format === 'hoy' && config.linkStickers.hoy && !draft.publish && !draft.stickerFallback) {
@@ -490,7 +500,7 @@ export class Job {
     if (draft.state === 'previewed') {
       const reactions = readReactions(await this.s.slackReactions(draft.slack.ts!))
       if (reactions.approved && !draft.approvedSeenAt) { draft.approvedSeenAt = now.toISOString(); this.save(draft) }
-      const decision = decide(window, reactions, draft.approvedSeenAt ? new Date(draft.approvedSeenAt) : null, this.s.config().auto[draft.format], now)
+      const decision = decide(window, reactions, draft.approvedSeenAt ? new Date(draft.approvedSeenAt) : null, this.instagramAuto(draft), now)
       if (decision.action === 'skip') return this.skip(draft, decision.reason)
       if (decision.action === 'wait') return
     }
@@ -573,12 +583,13 @@ export class Job {
       const { threads, format } = draft
       const ts = threads?.threadTs ?? draft.slack.ts
       if (!threads || !ts || !isThreadsFormat(format)) continue
-      await advanceThreads(threads, threadsWindow(format, draft.from), config.auto[format], {
+      await advanceThreads(threads, threadsWindow(format, draft.from), {
         api,
         now: () => this.s.now(),
         sleep: ms => this.s.sleep(ms),
         save: () => this.save(draft),
         reactions: () => this.s.slackReactions(ts),
+        auto: () => this.s.config().threads.auto[format],
         checkEvents: () => this.checkEvents(draft),
         reply: text => this.s.slackPost(text, ts),
         log: text => this.s.log(`${draft.id}: ${text}`),
@@ -586,9 +597,11 @@ export class Job {
       if (threads.state === 'failed' && !threads.failureAlertSent) {
         const alert = alerts.threadsFailed(draft, threads.error, Boolean(threads.attemptedAt && !threads.mediaId), this.draftFile(draft.id))
         try {
-          await this.s.alert(`${alerts.draftKey(draft)}/threads`, alert.title, alert.text, alert.fingerprint)
-          threads.failureAlertSent = true
-          this.save(draft)
+          const sent = await this.s.alert(`${alerts.draftKey(draft)}/threads`, alert.title, alert.text, alert.fingerprint)
+          if (sent) {
+            threads.failureAlertSent = true
+            this.save(draft)
+          }
         } catch { this.s.log(`${draft.id}: could not raise the Threads failure alert`) }
       }
     }
@@ -606,7 +619,8 @@ export class Job {
     if (old.storyShare || old.publish || ['publishing', 'published'].includes(old.state)) {
       throw new Error(`${id} has started publishing; it can't be rebuilt`)
     }
-    if (this.s.now() >= runWindow(format, from).cutoff) throw new Error(`${id} is past its cutoff`)
+    const now = this.s.now()
+    if (now >= runWindow(format, from).cutoff) throw new Error(`${id} is past its cutoff`)
     const exclude = [...new Set([...old.exclude, ...excludeIds])]
     const revision = (old.revision ?? 1) + 1
     // Approval is cleared and saved before any frame is touched, so a crash can't leave old approval on new frames.
@@ -616,8 +630,8 @@ export class Job {
     const ready = track ? readyTrack(this.s.config().reel.musicDir, track) : null
     // The requested track is saved with the rebuilding state, so a crash's recovery command restores it.
     const savedTrack = ready ? { id: ready.id, title: ready.title, artist: ready.artist, credit: ready.credit } : old.track
-    // A Threads send belongs to the earlier preview, even if reconciliation or notification is still pending.
-    const threads = old.threads && (old.threads.attemptedAt || old.threads.mediaId)
+    // A sent, closed, or past-cutoff Threads draft still owns its earlier preview and any outcome or alert.
+    const threads = old.threads && isThreadsFormat(format) && (retainThreads(old.threads) || now >= threadsWindow(format, from).cutoff)
       ? { ...old.threads, threadTs: old.threads.threadTs ?? old.slack.ts ?? undefined } : undefined
     this.save({ ...old, revision, state: 'rebuilding', exclude, track: savedTrack, approvedSeenAt: null, slack: { fileIds: [], ts: null }, notify: null, r2Uploaded: null, threads })
     const draft = await this.createDraft(format, from, exclude, revision, track, threads)

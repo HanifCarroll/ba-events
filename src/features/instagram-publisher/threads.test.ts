@@ -68,6 +68,14 @@ describe('Threads text fitting', () => {
     expect(events[0]).toMatchObject({ venue, title: 'Bufosa - Cafe Rock la VE' })
   })
 
+  it('removes leading @ from words in the title, venue, and barrio', () => {
+    const event = { ...pick, title: '@laba.arg invita a (@vecinas) y @cine', venue: 'Club @Laba', barrio: '@Boedo' }
+    const text = threadsText('hoy', [event, pick])!
+    expect(text).toContain('laba.arg invita a (vecinas) y cine · Club Laba, Boedo')
+    expect(text).not.toContain('@')
+    expect(event.title).toBe('@laba.arg invita a (@vecinas) y @cine')
+  })
+
   it('quotes styling delimiters and escapes Slack control characters without changing the public text', () => {
     const text = 'Cine *en* _el_ ~patio~ `de noche` & <cine>'
     const preview = threadsPreview(text, baInstant('2026-11-20', 12))

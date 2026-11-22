@@ -201,7 +201,7 @@ Threads (se publica con el mismo ✅, {HH:MM}):
 
 With auto mode on, use this heading instead: `Threads (se publica solo a las {HH:MM} salvo que reacciones ❌):`.
 
-On an Instagram rebuild after Threads has published, use `Threads ya se publicó con la versión anterior.` instead of the quote. If the send is still unclear, omit the Threads section.
+On an Instagram rebuild after Threads has published, use `Threads ya se publicó con la versión anterior.` instead of the quote. If the send is still unclear, Threads was skipped or failed, or the Threads cutoff has passed without a publish, omit the Threads section.
 
 Outcome replies in the original preview's thread:
 - `Threads: publicado {permalink}`

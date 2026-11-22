@@ -118,8 +118,9 @@ Each draft MUST go to #ba-eventos as a new top-level message with every frame at
 - **THEN** it publishes at once
 
 #### Scenario: Auto mode
-- **WHEN** a format's auto mode is on
+- **WHEN** both the saved Instagram preview mode and the current config allow auto mode for the format
 - **THEN** the preview is still posted and the post goes out at its slot unless Hanif reacted ❌
+- **AND** if either setting is false or the preview predates saved modes, a ✅ is required
 
 ### Requirement: Hoy can publish with Instagram link stickers
 
@@ -207,7 +208,7 @@ The job MUST log every failed attempt, persist failure streaks across ticks, and
 
 ### Requirement: Eligible Instagram drafts share their Slack preview and approval with Threads
 
-With Threads enabled, a Hoy, Este finde, or Gratis esta semana preview MUST append the exact Threads text in a quote block unless an earlier revision already dispatched Threads. The preview MUST distinguish manual approval from auto mode. The Reel MUST NOT preview or publish to Threads. The same Slack message and only Hanif's reactions govern both posts; ❌ skips both, including in auto mode. Threads auto mode is separate per format.
+With Threads enabled, a Hoy, Este finde, or Gratis esta semana preview MUST append the exact Threads text in a quote block unless an earlier revision already dispatched Threads. The preview MUST distinguish manual approval from auto mode. Publishing without ✅ requires both the saved Threads preview mode and the current config to allow auto mode. The Reel MUST NOT preview or publish to Threads. The same Slack message and only Hanif's reactions govern both posts; ❌ skips both, including in auto mode. Threads auto mode is separate per format.
 
 #### Scenario: Publishing window
 - **WHEN** the job considers a new Threads write
@@ -221,6 +222,10 @@ With Threads enabled, a Hoy, Este finde, or Gratis esta semana preview MUST appe
 - **WHEN** a confirmed or unclear Threads send already exists and the Instagram draft has not started publishing or passed its cutoff
 - **THEN** the operator can regenerate Instagram independently. The job retains the original Threads attempt, text, and reply thread. The new preview offers no second Threads post and notes a confirmed one.
 
+#### Scenario: Instagram is regenerated after the Threads cutoff or after a skipped or failed Threads draft
+- **WHEN** the operator regenerates an Instagram draft still eligible for rebuilding
+- **THEN** the new preview does not offer a Threads post in those cases, and the job keeps any previous Threads state and original reply thread
+
 #### Scenario: The picks change or approval is withdrawn
 - **WHEN** a Threads write would begin
 - **THEN** the job re-reads reactions and the cutoff, and before the first write of each attempt checks every saved pick using Instagram's current catalog check. An event that would hold Instagram also holds Threads. With auto off, removing ✅ pauses further writes. A confirmed or unclear publish still gets reconciled without new writes.
@@ -231,7 +236,7 @@ With Threads enabled, a Hoy, Este finde, or Gratis esta semana preview MUST appe
 
 ### Requirement: Threads uses plain text from the saved picks
 
-The text MUST use the copy in `copy.md`, the cards' cleaned titles and price labels, venue names in title case when all-caps, Buenos Aires start times (`HH:MM`), and no emoji or hashtags. An unknown price adds neither a label nor a separator. The post MUST be no more than 500 Unicode code points including its link line.
+The text MUST use the copy in `copy.md`, the cards' cleaned titles and price labels, venue names in title case when all-caps, Buenos Aires start times (`HH:MM`), and no emoji or hashtags. A leading `@` on a word in the title, venue, or barrio MUST be removed so it does not tag an account. An unknown price adds neither a label nor a separator. The post MUST be no more than 500 Unicode code points including its link line.
 
 #### Scenario: A title repeats its venue
 - **WHEN** a title ends in a dash followed by its own venue name, ignoring case, accents, and punctuation
@@ -247,11 +252,11 @@ Threads MUST save its own state, retries, container ID, media ID, permalink, and
 
 #### Scenario: `threads_publish` returns an unclear result
 - **WHEN** the publish sends without a confirmed answer
-- **THEN** the job only reconciles it by a unique exact text match at or after the saved attempt's second, excluding media IDs seen before dispatch. It never matches by time alone and only retries a publish write after a known rejection that rules out dispatch.
+- **THEN** the job only reconciles it by a unique exact text match at or after the saved attempt's second, excluding media IDs seen before dispatch. A recovered publication timestamp MUST be stored as canonical ISO. The job never matches by time alone and only retries a publish write after a known rejection that rules out dispatch.
 
 #### Scenario: One channel fails
 - **WHEN** Instagram or Threads fails, or Slack cannot deliver an outcome reply
-- **THEN** the other channel keeps its own outcome and retry schedule, and pending Threads replies are retried in the original preview thread without republishing. A final Threads failure also raises `ba-events/instagram/draft/<id>/threads`.
+- **THEN** the other channel keeps its own outcome and retry schedule, and pending Threads replies are retried in the original preview thread without republishing. A final Threads failure also raises `ba-events/instagram/draft/<id>/threads`. If the alert command fails, the alert remains pending for another tick.
 
 #### Scenario: Slack approval cannot be read
 - **WHEN** a Slack reaction read fails at or after the Threads slot

@@ -496,10 +496,11 @@ export async function loadToken(now: Date, fetchImpl: typeof fetch = fetch, file
 
 const ALERT_TIMEOUT_MS = 180_000
 
-export async function alert(key: string, title: string, text: string, fingerprint?: string) {
-  const { err, code } = await run([ALERT, 'raise', `ba-events/instagram/${key}`, '--title', title, '--text', text,
+export async function alert(key: string, title: string, text: string, fingerprint?: string, runner: Runner = run) {
+  const { err, code } = await runner([ALERT, 'raise', `ba-events/instagram/${key}`, '--title', title, '--text', text,
     ...(fingerprint === undefined ? [] : ['--fingerprint', fingerprint])], ALERT_TIMEOUT_MS)
   if (code !== 0) log(`alert raise failed: ${err.trim()}`)
+  return code === 0
 }
 
 export async function resolveAlert(key: string, text?: string) {
