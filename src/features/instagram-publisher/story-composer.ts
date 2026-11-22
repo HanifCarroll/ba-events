@@ -2,7 +2,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { STEP_MS, openStoryTab, StoryCDPTimeout, type StoryCDP } from './story-cdp.ts'
 import { saveComposerEvidence } from './story-evidence.ts'
-import { exactMentionOption, retryComposerOnce, stickerMisplaced, StoryComposerError, type ComposeStory, type StickerFrame } from './story-stickers.ts'
+import { exactMentionOption, MENTION_MAX, mentionMisplaced, mentionScale, placeChecked, retryComposerOnce, stickerMisplaced, StoryComposerError, type ComposeStory, type StickerFrame } from './story-stickers.ts'
 
 const COMPOSER_URL = new URL('https://business.facebook.com/latest/story_composer/?asset_id=1442212152312492&business_id=1500991868617721')
 const ACCOUNT = 'baeventos.app'
@@ -255,20 +255,28 @@ async function chooseMention(tab: StoryCDP, username: string) {
   return false
 }
 
-async function addMention(tab: StoryCDP, username: string, at: { left: number; centerY: number }) {
+async function addMention(tab: StoryCDP, username: string, at: NonNullable<StickerFrame['mentionAt']>) {
   if (!await chooseMention(tab, username)) return false
   const item = sticker(`^@\\s*${RegExp.escape(username)}$`, 'i')
   const stage = await boxOf(tab, parent(item, 2))
   const px = stage.height / 1920
   for (let attempt = 0; attempt < 2; attempt++) {
     const box = await boxOf(tab, item)
-    if (box.height <= 90 * px) break
-    const scale = 76 * px / box.height
+    // Too tall, or (a long username) wider than the room beside the printed handle.
+    const scale = mentionScale({ width: box.width / px, height: box.height / px }, at)
+    if (scale >= 1) break
     const grip = centerOf(await boxOf(tab, button('resize', item)))
     await drag(tab, grip, { x: grip.x - box.width * (1 - scale), y: grip.y + box.height * (1 - scale) / 2 })
   }
-  if ((await boxOf(tab, item)).height > 90 * px) throw new Error('The mention sticker could not be made small enough.')
-  await placeSticker(tab, item, at.centerY, at.left)
+  if ((await boxOf(tab, item)).height > MENTION_MAX * px) throw new Error('The mention sticker could not be made small enough.')
+  const { area } = at
+  // Its final box, width included, must cover the printed handle and nothing else. A drag can land up to 32 px off and
+  // still count as moved, so a pill outside its area is placed once more. If it is still outside, this error ends the
+  // composer before Share, and the draft goes out through Graph instead.
+  await placeChecked(
+    () => placeSticker(tab, item, at.centerY, at.left),
+    async () => area ? mentionMisplaced(await boxOf(tab, item), await boxOf(tab, parent(item, 2)), area) : null,
+  )
   return true
 }
 

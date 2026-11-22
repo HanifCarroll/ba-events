@@ -712,7 +712,7 @@ describe('Hoy link stickers', () => {
     let centers: number[] = []
     w.composeStory = async frames => { centers = frames.map(frame => frame.centerY); throw new StoryComposerError('place the link sticker') }
     await advance()
-    expect(centers).toEqual([1440, 1590, 1590, 1390])
+    expect(centers).toEqual([1440, 1577, 1577, 1390])
   })
 
   it('keeps the old sticker, mention, and tag positions for a Hoy draft rendered before layout versions', async () => {

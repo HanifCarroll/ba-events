@@ -18,9 +18,30 @@ export const STORY_SAFE = { top: 250, bottom: 1670 } as const
  */
 export const CARD = {
   carousel: { seam: 820, footer: { left: 80, centerY: 1296, size: 34 } },
-  // The footer row is 40 px tall, `gap` px under the barrio row, so the 90 px mention pill over it touches neither.
-  story: { seam: 920, bottom: 1484, footer: { left: 80, centerY: 1440, size: 36, floor: 32, gap: 30, width: 620 } },
+  // The footer row is 40 px tall, with `gap` px above it (to the barrio row) and `pad` px below it (to the panel's end),
+  // so the mention pill over the handle has the same room on both sides. On a curator's card "Vía" has its own `via` px
+  // cell and the handle starts after it; the site's address keeps the last `site` px of the row.
+  story: { seam: 920, bottom: 1484, footer: { left: 80, right: 1000, centerY: 1432, size: 36, floor: 32, gap: 32, pad: 32, via: 96, viaText: 64, site: 270 } },
 } as const
+
+/** Room kept between the mention pill and the end of its area, so a drag that lands a little off still fits. */
+export const MENTION_SLACK = 16
+
+/**
+ * The rectangle a story's mention pill must stay inside, in frame pixels, and where its left edge is aimed. It holds
+ * only the printed handle, which the pill covers on purpose: "Vía" is left of it, the site's address right of it, the
+ * barrio row above it, and the link sticker's band below it.
+ */
+export function mentionArea(via: boolean) {
+  const { left, right, centerY, gap, via: cell, viaText, site } = CARD.story.footer
+  return {
+    left: via ? left + viaText : 44,
+    right: right - site - 10,
+    top: centerY - 20 - gap,
+    bottom: CARD.story.bottom,
+    aim: { left: (via ? left + cell : left) - 14, centerY },
+  }
+}
 
 /**
  * Bumped whenever a sticker, tag, or footer position moves. Each draft saves the version its frames were rendered
@@ -40,9 +61,12 @@ export const LEGACY_LAYOUT = {
  * The centre line of each story frame's link sticker (about 160 px tall), in a band the layout leaves empty: under the
  * headline box on the cover, under the footer on an event frame, and between the body and the footer on the closing frame.
  */
-export const STICKER_Y = { cover: 1440, event: 1590, closing: 1390 } as const
+export const STICKER_Y = { cover: 1440, event: (CARD.story.bottom + STORY_SAFE.bottom) / 2, closing: 1390 } as const
 
-/** The band each link sticker must stay inside, top and bottom: no words are in it, and it ends above the reply bar. */
+/**
+ * The band each link sticker must stay inside, top and bottom: no words are in it, and it ends above the reply bar.
+ * An event frame's sticker is aimed at the middle of its band, so a drag that lands a little high or low still fits.
+ */
 export const STICKER_BAND = {
   cover: [STICKER_Y.cover - 104, 1596],
   event: [CARD.story.bottom, STORY_SAFE.bottom],
@@ -70,10 +94,11 @@ body{width:1080px;background:#000}
 .stack{position:absolute;left:30px;right:30px;display:flex;flex-direction:column;align-items:flex-start}
 .stack .chip{font-size:44px;padding:12px 20px;margin-bottom:10px}
 .stack .hbox{padding:20px 26px 26px}
-.spanel{position:absolute;left:40px;right:40px;bottom:${FRAME.story.height - CARD.story.bottom}px;background:${INK};border-radius:24px;padding:24px 40px}
+.spanel{position:absolute;left:40px;right:40px;bottom:${FRAME.story.height - CARD.story.bottom}px;background:${INK};border-radius:24px;padding:24px 40px ${CARD.story.footer.pad}px}
 .spanel .venue{margin-top:26px}
-.frow{display:flex;justify-content:space-between;color:${SOFT};white-space:nowrap;margin-top:${CARD.story.footer.gap}px;font-size:${CARD.story.footer.size}px;line-height:40px}
-.frow .one{max-width:${CARD.story.footer.width}px}
+.frow{display:flex;color:${SOFT};white-space:nowrap;margin-top:${CARD.story.footer.gap}px;font-size:${CARD.story.footer.size}px;line-height:40px}
+.frow .via{flex:none;width:${CARD.story.footer.via}px}
+.frow .site{flex:none;margin-left:auto}
 .shade{position:absolute;left:0;right:0;top:0;height:420px;background:linear-gradient(180deg,rgba(16,16,18,.8) 0,rgba(16,16,18,.8) 250px,rgba(16,16,18,0) 100%)}
 .fade{position:absolute;left:0;right:0;bottom:0;background:linear-gradient(180deg,rgba(16,16,18,0) 0,rgba(16,16,18,.84) 300px)}
 `
@@ -92,6 +117,21 @@ const SIZES = { top: 28, kicker: 40, title: '60,46,2', tile: [84, 44], desc: 36,
 
 const pricePill = (event: PostEvent, size: number) =>
   event.price ? `<span class="pill${event.price === 'Gratis' ? ' free' : ''}" data-role="pill" style="font-size:${size}px;padding:8px 22px">${esc(event.price)}</span>` : ''
+
+/**
+ * A story frame's footer: "@handle" or "Vía @handle" on the left and the site's address on the right. The handle is its
+ * own element, no wider than the mention pill's area, so the pill can cover it and nothing else.
+ */
+function storyFooter(event: PostEvent): string {
+  const { size, floor } = CARD.story.footer
+  const area = mentionArea(event.via)
+  // No wider than the widest pill, so the pill always covers the whole printed handle.
+  const width = area.right - MENTION_SLACK - (area.aim.left + 14)
+  const handle = event.handle
+    ? `${event.via ? '<span class="via" data-via>Vía</span>' : ''}<span class="one" data-handle data-fit-width="${size},${floor},${width}" style="max-width:${width}px">@${esc(event.handle)}</span>`
+    : ''
+  return `<div class="frow" data-role="foot">${handle}<span class="site" data-site>${SITE}</span></div>`
+}
 
 /**
  * A story's event frame: the flyer's blur fills the frame, the flyer takes the space between the logo row and the panel,
@@ -114,7 +154,7 @@ ${logoImg(layout.logo, 72, top, 48)}
 ${event.description ? `<div class="desc clamp" data-role="desc" style="font-size:38px">${esc(event.description)}</div>` : ''}
 <div class="venue one" data-role="venue" data-fit-width="46,34">${esc(event.venue)}</div>
 <div class="meta" style="min-height:62px"><span class="barrio one" data-role="barrio" style="font-size:40px">${esc(event.barrio)}</span>${pricePill(event, 40)}</div>
-<div class="frow" data-role="foot"><span class="one" data-handle data-fit-width="${CARD.story.footer.size},${CARD.story.footer.floor},${CARD.story.footer.width}">${esc(footerHandle(event))}</span><span>${SITE}</span></div>
+${storyFooter(event)}
 </div>
 </div>`
 }

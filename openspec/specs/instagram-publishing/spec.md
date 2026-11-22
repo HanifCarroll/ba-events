@@ -143,6 +143,10 @@ With `linkStickers.hoy` enabled and no Graph API publish underway for the draft,
 - **WHEN** a placed link sticker's measured rectangle is not wholly inside its frame's free band, which holds no text and ends at or above y 1670
 - **THEN** the job discards the composer before Share and uses the Graph API route, and never shares a sticker over text or the reply bar
 
+#### Scenario: A mention sticker doesn't fit its reserved area
+- **WHEN** a placed mention sticker's measured rectangle, including its width, is not wholly inside the area reserved over the printed handle, which excludes the printed "Vía", the site address, the barrio row, and the link sticker's band
+- **THEN** the job places it once more, and if it still doesn't fit, discards the composer before Share and uses the Graph API route
+
 #### Scenario: A draft rendered with an earlier layout
 - **WHEN** a draft has no saved layout version
 - **THEN** its sticker preview, its Business Suite stickers and mention, and its Graph tags use the positions its frames were rendered for
