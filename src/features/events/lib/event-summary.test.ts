@@ -106,19 +106,20 @@ describe('buildEventJsonLd', () => {
 				'@type': 'Place', name: 'Sala Nube',
 				address: { '@type': 'PostalAddress', addressLocality: 'Buenos Aires', addressCountry: 'AR', streetAddress: 'Calle Falsa 123' }
 			},
-			offers: {
-				'@type': 'Offer', url: 'https://example.com/jazz', availability: 'https://schema.org/InStock',
-				price: 9000, priceCurrency: 'ARS'
-			}
+			offers: { '@type': 'Offer', url: 'https://example.com/jazz', price: 9000, priceCurrency: 'ARS' }
 		});
 	});
 
 	it('does not invent an end time or price', () => {
 		const jsonLd = jsonLdFor({ is_free: false });
 		expect(jsonLd.endDate).toBeUndefined();
-		expect(jsonLd.offers).toEqual({
-			'@type': 'Offer', url: 'https://example.com/jazz', availability: 'https://schema.org/InStock'
-		});
+		expect(jsonLd.offers).toStrictEqual({ '@type': 'Offer', url: 'https://example.com/jazz' });
+	});
+
+	it('does not infer ticket availability from a scheduled event status', () => {
+		const jsonLd = jsonLdFor({ description_es: 'Entradas agotadas.', is_free: false, price: 9000 });
+		expect(jsonLd.offers).toBeDefined();
+		expect(jsonLd.offers).not.toHaveProperty('availability');
 	});
 
 	it.each([{ time_tba: true }, { is_all_day: true }])('uses Buenos Aires dates and omits an unknown end for %j', (flags) => {
@@ -133,13 +134,11 @@ describe('buildEventJsonLd', () => {
 		{ basis: 'the free flag', price: null, is_free: true, expectedPrice: 0 },
 		{ basis: 'a zero price', price: 0, is_free: false, expectedPrice: 0 },
 		{ basis: 'a paid price', price: 9000, is_free: false, expectedPrice: 9000 }
-	])('uses the event page without a ticket link when admission is known from $basis', ({ price, is_free, expectedPrice }) => {
+	])('keeps the price without a ticket link when admission is known from $basis', ({ price, is_free, expectedPrice }) => {
 		const jsonLd = jsonLdFor({ price, is_free, ticket_url: null });
+		expect(jsonLd.url).toBe('https://baeventos.com/events/evt-1');
 		expect(jsonLd.isAccessibleForFree).toBe(expectedPrice === 0 ? true : undefined);
-		expect(jsonLd.offers).toEqual({
-			'@type': 'Offer', url: jsonLd.url, availability: 'https://schema.org/InStock',
-			price: expectedPrice, priceCurrency: 'ARS'
-		});
+		expect(jsonLd.offers).toStrictEqual({ '@type': 'Offer', price: expectedPrice, priceCurrency: 'ARS' });
 	});
 
 	it('omits an offer when admission is unknown and there is no usable ticket link', () => {
@@ -150,7 +149,7 @@ describe('buildEventJsonLd', () => {
 
 	it('does not use the BA Tourism info page as a ticket link', () => {
 		const jsonLd = jsonLdFor({ source: 'ba-tourism' });
-		expect(jsonLd.offers?.url).toBe(jsonLd.url);
+		expect(jsonLd.offers).toStrictEqual({ '@type': 'Offer', price: 0, priceCurrency: 'ARS' });
 		expect(jsonLdFor({ source: 'ba-tourism', is_free: false }).offers).toBeUndefined();
 	});
 
@@ -164,9 +163,7 @@ describe('buildEventJsonLd', () => {
 		const admission = { description_es: 'Entrada a la go\u0301rra.', is_free: true, price: 0 };
 		const jsonLd = jsonLdFor(admission);
 		expect(jsonLd.isAccessibleForFree).toBeUndefined();
-		expect(jsonLd.offers).toEqual({
-			'@type': 'Offer', url: 'https://example.com/jazz', availability: 'https://schema.org/InStock'
-		});
+		expect(jsonLd.offers).toStrictEqual({ '@type': 'Offer', url: 'https://example.com/jazz' });
 		expect(jsonLdFor({ ...admission, ticket_url: null }).offers).toBeUndefined();
 	});
 
@@ -188,9 +185,8 @@ describe('buildEventJsonLd', () => {
 	});
 
 	it('includes an offer for a postponed event', () => {
-		expect(jsonLdFor({ status: 'postponed' }).offers).toEqual({
-			'@type': 'Offer', url: 'https://example.com/jazz', availability: 'https://schema.org/InStock',
-			price: 0, priceCurrency: 'ARS'
+		expect(jsonLdFor({ status: 'postponed' }).offers).toStrictEqual({
+			'@type': 'Offer', url: 'https://example.com/jazz', price: 0, priceCurrency: 'ARS'
 		});
 	});
 

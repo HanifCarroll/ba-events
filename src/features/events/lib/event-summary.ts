@@ -57,7 +57,6 @@ export function buildEventJsonLd(
 	// BA Tourism copies its info page into ticket_url even when it isn't an admission link.
 	const ticketUrl = event.source !== 'ba-tourism' && event.ticket_url?.trim();
 	const price = contribution ? undefined : (isFree ? 0 : event.price);
-	const offerUrl = ticketUrl || (price != null ? eventUrl : undefined);
 	const isUpcoming = event.status === 'scheduled' || event.status === 'postponed';
 
 	return {
@@ -82,8 +81,9 @@ export function buildEventJsonLd(
 			}
 		},
 		isAccessibleForFree: isFree || undefined,
-		offers: isUpcoming && offerUrl ? {
-			'@type': 'Offer', url: offerUrl, availability: 'https://schema.org/InStock',
+		offers: isUpcoming && (ticketUrl || price != null) ? {
+			'@type': 'Offer',
+			...(ticketUrl ? { url: ticketUrl } : {}),
 			...(price != null ? { price, priceCurrency: 'ARS' } : {})
 		} : undefined
 	};

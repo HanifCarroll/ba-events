@@ -57,8 +57,8 @@ Event detail JSON-LD SHALL use recorded times, status, admission facts, and visi
 
 #### Scenario: A scheduled or postponed event has known admission or a ticket link
 - **WHEN** a scheduled or postponed event has a usable ticket or registration link, or has a recorded price or free flag and is not pay-what-you-can
-- **THEN** JSON-LD includes an `Offer` with `https://schema.org/InStock` as the default for an offer on an upcoming event, not as a claim about verified ticket inventory
-- **AND** the offer uses the ticket or registration link if present, otherwise the canonical event page when a price or free admission is known
+- **THEN** JSON-LD includes an `Offer` without ticket availability
+- **AND** the offer includes a URL only when there is a usable ticket or registration link
 - **AND** the offer includes the recorded price in `ARS`, or `0` in `ARS` for free events, and omits price and currency when unknown
 - **AND** the BA Tourism `ticket_url` is treated as an information link, never as an admission link
 
