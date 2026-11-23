@@ -1,5 +1,5 @@
 // Dots are also date separators: a dotted clock needs an explicit hours or AM/PM suffix.
-const clock = /(?<![\p{L}\d])(?<!\d[.:/])(?<hour>[01]?\d|2[0-3])(?:(?<separator>[:.])(?<minute>[0-5]\d))?(?:[ \t]*(?<suffix>[ap]\.?[ \t]*m\b\.?|(?:horas|hs?)\b))?(?![\p{L}\d]|[.:/]\d)/gu
+const clock = /(?<![\p{L}\d])(?<!\d[.:/])(?<hour>[01]?\d|2[0-3])(?:(?<separator>[:.])(?<minute>[0-5]\d))?(?:[ \t\u00a0\u202f]*(?<suffix>[ap]\.?[ \t\u00a0\u202f]*m\b\.?|(?:horas|hs?)\b))?(?![\p{L}\d]|[.:/]\d)/gu
 
 /** Find complete clock tokens without interpreting what they describe. */
 export function quotedClocks(excerpt: string): string[] {

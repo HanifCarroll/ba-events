@@ -18,9 +18,22 @@ it('checks verbatim citations, whole names, and exact seller identities without 
     { name: 'LUZ Y SOMBRA', excerpt },
     { name: 'Brum', excerpt },
     { name: 'Pássline', excerpt },
-    { name: 'Trío Bruma', excerpt: 'con Luz y Sómbrá y Trío  Bruma.' },
+    { name: 'Trío Bruma', excerpt: 'con Luz y Sómbrá y Trío Bruma!' },
     { name: 'Venti.live', excerpt: 'Invitados: Venti.live' },
   ]
   expect(statedEventCredits({ organizer, performers }, [`${excerpt}\nInvitados: Venti.live`]))
     .toEqual({ organizer: { name: 'Passline Sur' }, performers: [{ name: 'LUZ Y SOMBRA' }] })
+})
+
+it('excludes seller display names even when punctuation or spaces differ', () => {
+  const excerpt = 'Organiza Alternativa Teatral. Actúa Tú–Entrada.'
+  expect(statedEventCredits({ organizer: { name: 'Alternativa Teatral', excerpt },
+    performers: [{ name: 'Tú–Entrada', excerpt }] }, [excerpt])).toEqual({})
+})
+
+it('accepts a verbatim enrichment credit with different source whitespace', () => {
+  const organizer = { name: 'Colectivo Nube', excerpt: 'Presenta Colectivo Nube.' }
+  const performers = [{ name: 'Luz y Sombra', excerpt: 'Actúa Luz y Sombra.' }]
+  expect(statedEventCredits({ organizer, performers }, ['Presenta\nColectivo\u00a0Nube. Actúa Luz y\t Sombra.']))
+    .toEqual({ organizer: { name: 'Colectivo Nube' }, performers: [{ name: 'Luz y Sombra' }] })
 })

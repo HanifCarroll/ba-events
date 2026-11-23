@@ -76,6 +76,14 @@ describe('Instagram candidate publication rules', () => {
     expect(validateEvidence({ ...candidate(), time: null, doors_time: '20:11', evidence }, [{ ...post, caption: excerpt }], [], now))
       .toContain('Door time must appear in the cited excerpt')
   })
+  it.each([['9:30 p. m.', '21:30', '09:30'], ['9:30 p.\u00a0m.', '21:30', '09:30'], ['9:30 a.\u00a0m.', '09:30', '21:30']])(
+    'requires the start in its own quote: %s', (clock, correct, wrong) => {
+      const excerpt = `Show ${clock}`
+      const evidence = [{ ...candidate().evidence[0], excerpt }]
+      const posts = [{ ...post, caption: excerpt }]
+      expect(validateEvidence({ ...candidate(), time: wrong, evidence }, posts, [], now)).toContain('Start time must appear in the cited excerpt')
+      expect(validateEvidence({ ...candidate(), time: correct, evidence }, posts, [], now)).toEqual([])
+    })
   it('requires two separate clock tokens when the reported doors and start times are equal', () => {
     const evidence = (excerpt: string) => [{ ...candidate().evidence[0], fields: ['name', 'date', 'venue', 'time', 'doors_time'] as const, excerpt }]
     const input = { ...candidate(), doors_time: '21:00' }
@@ -107,7 +115,8 @@ describe('Instagram candidate publication rules', () => {
     expect(validateEvidence({ ...input, evidence: [...candidate().evidence, { ...quote, excerpt: '15.11.2026 — 3:00 p. m.' }] }, [postWithSale], [], now))
       .toContain('Credit, doors, and sale-opening caption evidence must quote complete lines')
   })
-  it.each([['organizer', 'Pássline'], ['performers', 'passline.com'], ['performers', 'Synthetic Venue']] as const)(
+  it.each([['organizer', 'Pássline'], ['organizer', 'Alternativa Teatral'], ['performers', 'Tu Entrada'],
+    ['performers', 'passline.com'], ['performers', 'Synthetic Venue']] as const)(
     'rejects an exact ticket-seller or venue name for %s: %s', (role, name) => {
       const excerpt = `Créditos: ${name}`
       const evidence = [...candidate().evidence, { observation_id: observationId, fields: [role], excerpt, media_id: null }]
@@ -158,6 +167,20 @@ describe('Instagram candidate publication rules', () => {
     expect(decideMatch(candidate(), [{ ...existing, name: 'Synthetic Jazz with friends', starts_at: '2026-11-21T01:00:00Z' }], [], []).action).toBe('held')
     expect(decideMatch(candidate(), [existing], [id, eventId], []).action).toBe('held')
     expect(decideMatch(candidate(), [], [], ['Rain date is conditional']).action).toBe('held')
+  })
+  it('keeps balanced parentheses in URLs and strips only extra wrapping parentheses', () => {
+    const url = 'https://tickets.example/show_(BA)', prefix = 'https://tickets.example/show_(BA'
+    const caption = `Reserva: (${url}).`
+    expect(citesTicketDestination(url, url, caption)).toBe(true)
+    expect(citesTicketDestination(prefix, prefix, caption)).toBe(false)
+    expect(citesTicketDestination(prefix, url, caption)).toBe(false)
+  })
+  it('finds complete scheme-less links without reading email addresses or unlisted bare domains as links', () => {
+    expect(citesTicketDestination('www.tickets.example/show', 'https://tickets.example/show')).toBe(true)
+    expect(citesTicketDestination('passline.com/evento/x', 'https://www.passline.com/evento/x')).toBe(true)
+    expect(citesTicketDestination('eventbrite.com.ar/evento/x', 'https://eventbrite.com.ar/evento/x')).toBe(true)
+    expect(citesTicketDestination('passline.com/evento/x', 'https://passline.com/evento/x', 'hi@passline.com/evento/x')).toBe(false)
+    expect(citesTicketDestination('tickets.example/show', 'https://tickets.example/show')).toBe(false)
   })
   it('uses the same destination for a ticket rewrite and a complete quoted URL token', () => {
     const url = 'https://tickets.example/replacement?session=late'

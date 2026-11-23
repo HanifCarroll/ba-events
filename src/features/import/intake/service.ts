@@ -7,7 +7,8 @@ import { importTry, ImportOperationError } from '../core/effect-utils.ts'
 import { candidateError, decodeCandidate, isOfficialPage, type Candidate } from './schema.ts'
 import { officialSites, verifyOfficialPagesEffect, type ReadPage, type RenderPage } from './official-page.ts'
 import { baDate, baTime, candidateStart, candidateDoors, decideMatch, descriptionChanged, searchInputsChanged, validateEvidence, normalizeTitle, ticketDestinationChanged,
-  hasPostTicketEvidence, SAME_CLOCK_REASON, separatelyCitedDoors, suppliedDetailFacts, type CatalogMatch, type Observation } from './planning.ts'
+  hasOfficialTicketEvidence, hasPostTicketEvidence, retainedIntakeDoors, SAME_CLOCK_REASON, SAME_CLOCK_RETAINED_REASON, separatelyCitedDoors,
+  suppliedDetailFacts, type CatalogMatch, type Observation } from './planning.ts'
 import type { IntakePlanRow, IntakeStore } from './store.ts'
 
 export type IntakePlan = IntakePlanRow
@@ -84,7 +85,8 @@ export const previewCandidateEffect = Effect.fn('intake.preview')(function*(stor
   if (decision.action !== 'link' && candidate.intent !== 'link' && !candidate.artwork_media_id && !artworkNote) {
     decision.action = 'held'; decision.reasons.push('Select retained artwork or give a reason in artwork_note')
   }
-  if (decision.action === 'create' && candidate.ticket_url && !hasPostTicketEvidence(candidate.evidence, observations, candidate.ticket_url)) {
+  if (decision.action === 'create' && candidate.ticket_url && !hasOfficialTicketEvidence(candidate.evidence, candidate.ticket_url) &&
+    !hasPostTicketEvidence(candidate.evidence, observations, candidate.ticket_url)) {
     decision.action = 'held'; decision.reasons.push('Ticket evidence must quote the complete destination URL')
   }
   if (decision.action === 'update' && !observations.some(post => post.authority === 'venue' || post.authority === 'organizer')) {
@@ -127,13 +129,16 @@ export const previewCandidateEffect = Effect.fn('intake.preview')(function*(stor
       payload.starts_at = oldStart
       payload.time_tba = Boolean(old.time_tba)
     }
-    if (payload.doors_at && !payload.time_tba) {
-      if (Date.parse(payload.doors_at) > Date.parse(payload.starts_at)) {
+    const startChanged = Boolean(old.time_tba) || Date.parse(oldStart) !== Date.parse(payload.starts_at)
+    const retainedDoors = startChanged ? retainedIntakeDoors(old.doors_at, sameAdvertisedDay, payload.starts_at, payload.time_tba) : null
+    const doors = payload.doors_at ?? retainedDoors
+    if (doors && !payload.time_tba) {
+      if (Date.parse(doors) > Date.parse(payload.starts_at)) {
         decision.action = 'held'; decision.reasons.push('Doors cannot follow the known start time')
       }
-      const doorsTime = baTime(payload.doors_at)
-      if (doorsTime === baTime(payload.starts_at) && !separatelyCitedDoors(candidate.evidence, doorsTime)) {
-        decision.action = 'held'; decision.reasons.push(SAME_CLOCK_REASON)
+      const doorsTime = baTime(doors), doorsRetained = !payload.doors_at
+      if (doorsTime === baTime(payload.starts_at) && !separatelyCitedDoors(candidate.evidence, doorsTime, doorsRetained)) {
+        decision.action = 'held'; decision.reasons.push(doorsRetained ? SAME_CLOCK_RETAINED_REASON : SAME_CLOCK_REASON)
       }
     }
     if (Date.parse(oldStart) === Date.parse(payload.starts_at)) payload.ends_at = old.ends_at as string | null

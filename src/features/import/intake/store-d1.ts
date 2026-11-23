@@ -17,8 +17,8 @@ import type { EventInsert } from '#shared/lib/types.ts'
 import { importTry, ImportOperationError } from '../core/effect-utils.ts'
 import { mostSimilarVenue, similarIntakeVenues } from '../core/venue-similarity-d1.ts'
 import { pickVenue, venueNameKey } from '../core/venue-identity.ts'
-import { baDate, baTime, citesSeparateClocks, citesTicketDestination, isWholeCaptionExcerpt, SAME_CLOCK_REASON,
-  searchInputsChanged, separatelyCitedDoors, ticketDestinationChanged, type Media } from './planning.ts'
+import { baDate, baTime, citesSeparateClocks, citesTicketDestination, hasOfficialTicketEvidence, isWholeCaptionExcerpt, retainedIntakeDoors,
+  SAME_CLOCK_REASON, SAME_CLOCK_RETAINED_REASON, searchInputsChanged, separatelyCitedDoors, ticketDestinationChanged, type Media } from './planning.ts'
 import { isOfficialPage, type Source } from './schema.ts'
 import type { IntakePlanRow, IntakePolicy, IntakeStore, Reservation, VenueRow } from './store.ts'
 
@@ -365,16 +365,10 @@ export function d1Intake({ db, evidence, artwork, vectors }: IntakeBindings, sit
       const quotesTicket = (row: typeof evidenceRows[number], ticket: string | null | undefined) =>
         Boolean(ticket && row.excerpt && (!row.media_id || row.retained_media) &&
           citesTicketDestination(row.excerpt, ticket, row.media_id ? undefined : row.caption))
-      if (plan.action === 'create' && e.ticket_url && !evidenceRows.some(row => fields(row).includes('ticket') && quotesTicket(row, e.ticket_url))) {
+      // Official pages are fetched and verified by commitPlanEffect before the catalog write.
+      if (plan.action === 'create' && e.ticket_url && !hasOfficialTicketEvidence(plan.evidence, e.ticket_url) &&
+        !evidenceRows.some(row => fields(row).includes('ticket') && quotesTicket(row, e.ticket_url))) {
         throw new Error('Ticket evidence must quote the complete destination URL')
-      }
-      if (plan.action !== 'link' && e.doors_at && !e.time_tba) {
-        const time = baTime(e.doors_at)
-        if (time === baTime(startsAt) && !separatelyCitedDoors(plan.evidence.filter(isOfficialPage), time) &&
-          !evidenceRows.some(row => row.excerpt && fields(row).includes('doors_time') &&
-            (row.media_id ? row.retained_media : isWholeCaptionExcerpt(row.caption, row.excerpt)) && citesSeparateClocks(row.excerpt, time))) {
-          throw new Error(SAME_CLOCK_REASON)
-        }
       }
       const level = Math.max(...evidenceRows.map(row => row.authority === 'curator' ? 1 : 2))
       const observed = evidenceRows.map(row => row.observed_at).sort().at(-1)!
@@ -383,6 +377,21 @@ export function d1Intake({ db, evidence, artwork, vectors }: IntakeBindings, sit
       const oldStart = typeof previous?.starts_at === 'string' ? previous.starts_at : undefined
       const moved = oldStart !== undefined && Date.parse(oldStart) !== Date.parse(startsAt)
       const sameDay = oldStart !== undefined && baDate(oldStart) === baDate(startsAt)
+      const retainedDoors = retainedIntakeDoors(previous?.doors_at, sameDay, startsAt, e.time_tba)
+      const startChanged = !e.time_tba && (moved || Boolean(previous?.time_tba))
+      const doors = e.doors_at ?? (startChanged ? retainedDoors : null)
+      if (plan.action !== 'link' && doors && !e.time_tba) {
+        const time = baTime(doors), doorsRetained = !e.doors_at
+        if (time === baTime(startsAt) && !separatelyCitedDoors(plan.evidence.filter(isOfficialPage), time, doorsRetained) &&
+          !evidenceRows.some(row => {
+            const isDoorEvidence = fields(row).includes('doors_time')
+            return row.excerpt && (isDoorEvidence || doorsRetained && fields(row).includes('time')) &&
+              (row.media_id ? row.retained_media : isDoorEvidence ? isWholeCaptionExcerpt(row.caption, row.excerpt) : row.caption.includes(row.excerpt)) &&
+              citesSeparateClocks(row.excerpt, time)
+          })) {
+          throw new Error(doorsRetained ? SAME_CLOCK_RETAINED_REASON : SAME_CLOCK_REASON)
+        }
+      }
       const changedTicket = ticketDestinationChanged(previous?.ticket_url, e.ticket_url)
       if (plan.action === 'update' && previous) {
         const protection = await db.prepare('SELECT authority, observed_at FROM event_intake_protection WHERE event_id = ?').bind(plan.event_id)
@@ -392,7 +401,7 @@ export function d1Intake({ db, evidence, artwork, vectors }: IntakeBindings, sit
         }
         if (sameDay && !previous.time_tba && e.time_tba) throw new Error('Cannot replace a known start with time TBA on the same date')
         if (e.doors_at && !e.time_tba && Date.parse(e.doors_at) > Date.parse(startsAt)) throw new Error('Doors cannot follow the known start time')
-        const changed = { status: previous.status !== (e.status ?? 'scheduled'), date: moved, time: !e.time_tba && (moved || !!previous.time_tba),
+        const changed = { status: previous.status !== (e.status ?? 'scheduled'), date: moved, time: startChanged,
           ticket: changedTicket || (e.offers_valid_from !== undefined && e.offers_valid_from !== previous.offers_valid_from),
           venue: (previous.venue_id ?? null) !== (e.venue_id ?? null),
           price: (previous.price ?? null) !== (e.price ?? null) || !!previous.is_free !== !!e.is_free,
@@ -412,7 +421,6 @@ export function d1Intake({ db, evidence, artwork, vectors }: IntakeBindings, sit
 
       const performers = e.performers ?? previous?.performers
       const replacedTicket = !!previous?.ticket_url && changedTicket
-      const retainedDoors = sameDay && typeof previous?.doors_at === 'string' && (e.time_tba || previous.doors_at <= startsAt) ? previous.doors_at : null
       const details = [e.organizer_name ?? previous?.organizer_name ?? null,
         e.organizer_url ?? (e.organizer_name === undefined || e.organizer_name === previous?.organizer_name ? previous?.organizer_url ?? null : null),
         performers ? JSON.stringify(performers) : null, e.offers_valid_from ?? (replacedTicket ? null : previous?.offers_valid_from ?? null),

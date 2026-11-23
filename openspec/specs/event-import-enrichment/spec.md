@@ -47,13 +47,13 @@ The catalog SHALL keep source-stated organizer names and URLs, performer lineups
 #### Scenario: Intake sees a credit or a ticket-sale opening time
 - **WHEN** an Instagram intake candidate supplies an organizer, a lineup, or a ticket-sale opening time
 - **THEN** the fact needs a corresponding retained source excerpt or image, and accepted explicit intake facts are protected against later importer or enrichment writes
-- **AND** the operator identifies credits for this occurrence, not posting accounts, sellers, sponsors, or after-party artists. Code checks complete caption lines, names as quoted ignoring accents and case, and exact matches against known seller names and the selected venue, not role wording
-- **AND** a sale opening needs its quoted calendar date and clock. A new ticket URL needs a complete URL token from the cited source; changing the destination or opening of an existing event requires current direct ticket evidence. Matching and change detection use the same normalization for scheme, leading `www.`, trailing slash, and tracking parameters. An unsupported correction changes neither field
+- **AND** the operator identifies credits for this occurrence, not posting accounts, sellers, sponsors, or after-party artists. Code checks complete caption lines, names as quoted ignoring accents and case, and excludes the selected venue and known seller names (ignoring spaces and punctuation for sellers), not role wording
+- **AND** a sale opening needs its quoted calendar date and clock. A new event's ticket URL needs a complete cited URL token (including `www.` or known seller links without a scheme) or a verified official page at that destination. If there is no link to quote, the event may publish without a ticket URL. Changing the destination or opening of an existing event requires current direct ticket evidence. Matching and change detection use the same normalization for scheme, leading `www.`, trailing slash, and tracking parameters. An unsupported correction changes neither field
 - **AND** an omitted field leaves the prior fact untouched unless a verified door date or ticket destination has changed
 
 #### Scenario: An Instagram flyer gives only doors
 - **WHEN** the flyer explicitly states a door time but no performance start
-- **THEN** the operator distinguishes doors from the show start; intake checks complete caption lines for the quoted door clock and interprets AM/PM when present. Equal doors and start clocks require two separate clock tokens in one doors excerpt. A doors clock before 06:00 requires an explicit local `doors_date`
+- **THEN** the operator distinguishes doors from the show start; intake checks complete caption lines for the quoted door clock and requires a submitted start to match its own quote. Intake interprets AM/PM when present. Equal doors and start clocks require two separate clock tokens in one excerpt, including when the correction keeps a previously stored clock. A doors clock before 06:00 requires an explicit local `doors_date`
 - **AND** the door clock does not become the start; when an update adds doors to the same date with no new start, it keeps the existing verified start and end and checks doors against that start
 - **AND** a reschedule to another date clears stale doors when the revision has no new door evidence
 
@@ -64,7 +64,7 @@ The catalog SHALL keep source-stated organizer names and URLs, performer lineups
 
 #### Scenario: A scheduled event has descriptions but lacks people fields
 - **WHEN** facet enrichment reads the descriptions or an operator runs the bounded people backfill
-- **THEN** the model identifies people explicitly credited as organizing or performing, never names inferred from the venue or title. Code checks for a verbatim source excerpt, a quoted name, and exact known seller names, and a retry does not overwrite stored facts
+- **THEN** the model identifies people explicitly credited as organizing or performing, never names inferred from the venue or title. Code checks for a verbatim source excerpt (ignoring whitespace differences), a quoted name, and exact known seller names after removing spaces and punctuation, and a retry does not overwrite stored facts
 - **AND** the backfill defaults to a dry run, records successful apply decisions so empty results are not repeatedly billed, and never updates unscheduled rows
 
 ### Requirement: Venue settlement is deterministic and reviewable

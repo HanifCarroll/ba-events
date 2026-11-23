@@ -506,6 +506,33 @@ describe.skipIf(bun)('the operator flow on D1', () => {
     })
   })
 
+  it.each([false, true])('checks a new start against retained doors (two clocks quoted: %s)', async both => {
+    await source()
+    const venueId = await venue(), candidate = id(), event = id(), date = shiftDay(baToday(), 5)
+    const oldStart = new Date(`${date}T00:00:00-03:00`).toISOString()
+    const doors = new Date(`${date}T21:00:00-03:00`).toISOString()
+    await db.prepare(`INSERT INTO events (id, name, starts_at, time_tba, doors_at, venue_id, source, categories)
+      VALUES (?, 'Synthetic Jazz', ?, 1, ?, ?, 'instagram', '["music"]')`).bind(event, oldStart, doors, venueId).run()
+    const excerpt = both ? 'Synthetic Jazz — Puertas 21 hs. Show 21 hs.' : 'Synthetic Jazz — Puertas 21 hs.'
+    const post = await observation((await run(store.reserveCollection)).id, excerpt)
+    await run(submitCandidateEffect(store, candidateInput(candidate, post, venueId, { intent: 'update', target_event_id: event, date,
+      evidence: [{ observation_id: post, fields: ['name', 'date', 'time', 'venue'], excerpt, media_id: null }] })))
+    const preview = await run(previewCandidateEffect(store, candidate))
+    if (both) {
+      expect(preview).toMatchObject({ action: 'update', reasons: [] })
+      await run(commitPlanEffect(store, preview.id, publishers))
+    } else {
+      const reason = 'Equal retained doors and start times need two separate clocks in one excerpt'
+      expect(preview).toMatchObject({ action: 'held', reasons: [reason] })
+      const bypass = await run(store.insertPlan({ candidate_id: candidate, revision: 1, action: 'update', event_id: event,
+        expected_event_updated_at: (await db.prepare('SELECT updated_at FROM events WHERE id = ?').bind(event).first<string>('updated_at'))!,
+        payload: preview.payload, artwork_media_id: null, artwork_note: 'No retained image', evidence: preview.evidence, reasons: [] }))
+      expect(await fails(store.commitPlan(bypass.id))).toContain(reason)
+    }
+    expect(await db.prepare('SELECT starts_at, time_tba, doors_at FROM events WHERE id = ?').bind(event).first())
+      .toEqual({ starts_at: both ? doors : oldStart, time_tba: both ? 0 : 1, doors_at: doors })
+  })
+
   it('refuses a prepared ticket replacement without direct ticket evidence and keeps the protected opening time', async () => {
     await source()
     const runId = (await run(store.reserveCollection)).id
@@ -564,6 +591,46 @@ describe.skipIf(bun)('the operator flow on D1', () => {
     }
     expect(await db.prepare('SELECT ticket_url, offers_valid_from FROM events WHERE id = ?').bind(event).first())
       .toEqual(supported ? { ticket_url: proposedUrl, offers_valid_from: replacementOpening } : { ticket_url, offers_valid_from })
+  })
+
+  it.each([['www.passline.com/evento/sintetico', 'https://passline.com/evento/sintetico'],
+    ['passline.com/evento/sintetico', 'https://passline.com/evento/sintetico'], ['link en bio', null]])(
+    'creates from a caption with %s and stores %s', async (text, ticket_url) => {
+      await source()
+      const venueId = await venue(), candidate = id()
+      const excerpt = `Synthetic Jazz. Entradas: ${text}`
+      const post = await observation((await run(store.reserveCollection)).id, excerpt)
+      await run(submitCandidateEffect(store, candidateInput(candidate, post, venueId, { time: null, ticket_url, evidence: [
+        { observation_id: post, fields: ['name', 'date', 'venue', ...(ticket_url ? ['ticket'] : [])], excerpt, media_id: null },
+      ] })))
+      const preview = await run(previewCandidateEffect(store, candidate))
+      expect(preview).toMatchObject({ action: 'create', reasons: [] })
+      await run(commitPlanEffect(store, preview.id, publishers))
+      expect(await db.prepare('SELECT ticket_url FROM events WHERE id = ?').bind(preview.event_id).first()).toEqual({ ticket_url })
+    })
+
+  it.each([true, false])('requires a verified official ticket page to match the create destination (matches: %s)', async matches => {
+    await source()
+    const venueId = await venue(), candidate = id()
+    const excerpt = 'Synthetic Jazz en Synthetic Venue', pageExcerpt = 'Reservas para Synthetic Jazz'
+    const post = await observation((await run(store.reserveCollection)).id, excerpt)
+    const url = 'https://passline.com/evento/sintetico'
+    const ticket_url = matches ? 'https://www.passline.com/evento/sintetico/' : `${url}-otro`
+    await run(submitCandidateEffect(store, candidateInput(candidate, post, venueId, { time: null, ticket_url, evidence: [
+      { observation_id: post, fields: ['name', 'date', 'venue'], excerpt, media_id: null },
+      { kind: 'official_page', url, fields: ['ticket'], excerpt: pageExcerpt },
+    ] })))
+    const readPage = async () => ({ visible: pageExcerpt, h1: 'Synthetic Jazz', title: null })
+    const preview = await run(previewCandidateEffect(store, candidate, new Date(), readPage))
+    if (matches) {
+      expect(preview).toMatchObject({ action: 'create', reasons: [] })
+      const unverifiedPage = async () => ({ visible: 'Otras reservas', h1: 'Synthetic Jazz', title: null })
+      expect(await fails(commitPlanEffect(store, preview.id, { ...publishers, readPage: unverifiedPage }))).toContain("must be an excerpt of the page's visible text")
+      await run(commitPlanEffect(store, preview.id, { ...publishers, readPage }))
+      expect(await db.prepare('SELECT ticket_url FROM events WHERE id = ?').bind(preview.event_id).first()).toEqual({ ticket_url })
+    } else {
+      expect(preview).toMatchObject({ action: 'held', reasons: ['Ticket evidence must quote the complete destination URL'] })
+    }
   })
 
   it('holds a new ticket link when its caption excerpt cuts the URL short', async () => {
