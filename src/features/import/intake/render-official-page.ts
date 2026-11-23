@@ -93,11 +93,14 @@ export function officialPageRenderer(open: OpenBrowser): RenderPage {
           ${visibleBody}
           return readVisible(visible => {
             const cards = [...document.querySelectorAll(${JSON.stringify(FANZ_SINGLE_DATE)})].filter(shown);
+            const h1s = [...document.querySelectorAll('h1')];
             return {
               url: location.href,
               visible,
               title: document.title.trim(),
-              headings: [...document.querySelectorAll('h1')].filter(shown).map(el => el.innerText.trim()),
+              headings: h1s.filter(shown).map(el => el.innerText.trim()),
+              hasH1: h1s.length > 0,
+              ogTitle: document.querySelector('meta[property="og:title"]')?.content ?? null,
               siteName: document.querySelector('meta[property="og:site_name"]')?.content ?? null,
               fanzLinks: [...document.querySelectorAll('a[href*="fanz.com.ar"]')].map(el => el.getAttribute('href')),
               fanzJson: document.querySelector('script#__NEXT_DATA__[type="application/json"]:not([src])')?.textContent?.slice(0, ${READ_LIMIT}) ?? '',
