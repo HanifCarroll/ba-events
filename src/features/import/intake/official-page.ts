@@ -71,6 +71,7 @@ export function requireOfficialPageUrl(url: string, sites: ReadonlySet<string>, 
 export const normalizePageText = (value: string) => value.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replace(/\s+/gu, ' ').trim()
 /** Ordinary ticket-page titles can use a standalone Spanish `y` as an artist separator. */
 const nameText = (value: string) => normalizeTitle(value).split(' ').filter(word => word !== 'y').join(' ')
+const TICKET_PREFIX = /^(?:compra tus |tus )?entradas para /
 const AGE_RATING = /^(?:atp|apto todo publico|\+(?:13|16|18)|sam (?:13|16|18)|r(?:13|16|18))$/
 type Heading = { text: string; withoutRating?: string[] }
 const pageTitleHint = (title: string | null) => title ? ` (page title: ${JSON.stringify(title.slice(0, 255))})` : ''
@@ -106,8 +107,8 @@ function revealStreamedSegments($: CheerioAPI) {
 }
 
 type Performance = { text: string; date: string; time: string; title: string }
-type SelectedPerformance = Performance & { confirmed: boolean }
-type PageRead = { visible: string; title: string | null; h1: string | null; h1WithoutRating?: string[]; titleName?: string;
+type SelectedPerformance = Omit<Performance, 'text'> & { lines: string[]; confirmed: boolean }
+type PageRead = { visible: string; title: string | null; h1: string | null; h1WithoutRating?: string[]; h1WithoutSite?: string; titleName?: string;
   identityNeedsRender?: boolean; selected?: SelectedPerformance | null; calendar?: { host: string; entries: Performance[] } }
 
 const CALENDAR_CITATION = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2} \| .+$/
@@ -169,20 +170,39 @@ function staticHeadings($: CheerioAPI): Heading[] {
   })
 }
 
+/** Both arguments have already been normalized. A suffix can contain its own dash separators. */
+function withoutSiteSuffix(text: string, site: string): string | undefined {
+  const suffix = ` - ${site}`
+  return site && text.endsWith(suffix) ? text.slice(0, -suffix.length) : undefined
+}
+
 function identity(title: string | null, headings: readonly Heading[], siteName?: string | null, hasStyles = false) {
-  const titleParts = title?.match(/^(.*) (?:-|\|) (.+)$/)
-  const [left, right] = (titleParts?.slice(1) ?? []).map(normalizePageText)
+  const documentTitle = normalizePageText(title ?? '')
+  const [, left, right] = /^(.*) (?:-|\|) (.+)$/.exec(documentTitle) ?? []
   const site = normalizePageText(siteName ?? '')
   const [first, next, ...later] = headings.filter(({ text }) => text.trim())
   const heading = normalizePageText(first?.text ?? '')
   const titleShow = heading === left ? right : heading === right ? left : undefined
-  // Skip the first visible H1 only if it equals og:site_name or one side of the last " - " / " | " title separator and the next visible H1 equals the other side. The next H1 is then the identity; use the title only when no H1 remains.
-  const skip = !!heading && (heading === site || !!titleShow && normalizePageText(next?.text ?? '') === titleShow)
-  const titleName = titleParts && site ? (site === right ? titleParts[1] : site === left ? titleParts[2] : undefined) : undefined
+  const titleWithoutSite = withoutSiteSuffix(documentTitle, site)
+  const titleWithoutHeader = withoutSiteSuffix(titleWithoutSite ?? documentTitle, heading)
+  const agreesWithHeader = (text: string) => !!titleWithoutHeader &&
+    (text === titleWithoutHeader || withoutSiteSuffix(text, heading) === titleWithoutHeader)
+  const confirmsHeading = (text: string) => {
+    const normalized = normalizePageText(text)
+    return normalized === titleShow || agreesWithHeader(normalized)
+  }
+  const splitSiteHeader = !!titleWithoutHeader && (!next || agreesWithHeader(normalizePageText(next.text)))
+  const skip = !!heading && (heading === site || splitSiteHeader || !!next && confirmsHeading(next.text))
+  const titleName = (splitSiteHeader ? titleWithoutHeader : titleWithoutSite) ??
+    (site === right ? left : site === left ? right : undefined)
   // CSS can hide the apparently corroborating H1 or an intervening heading before it.
-  const identityNeedsRender = hasStyles && (skip || !!titleShow && later.some(({ text }) => normalizePageText(text) === titleShow))
+  const identityNeedsRender = hasStyles && (skip || later.some(({ text }) => confirmsHeading(text)))
   const chosen = skip ? next : first
-  return { title, h1: chosen?.text ?? null, h1WithoutRating: chosen?.withoutRating, titleName, identityNeedsRender }
+  const h1 = chosen?.text ?? null
+  const normalizedH1 = normalizePageText(h1 ?? '')
+  const h1WithoutSite = withoutSiteSuffix(normalizedH1, site) ??
+    (splitSiteHeader ? withoutSiteSuffix(normalizedH1, heading) : undefined)
+  return { title, h1, h1WithoutRating: chosen?.withoutRating, h1WithoutSite, titleName, identityNeedsRender }
 }
 
 /** Use the matching Fanz event/date IDs to bind the start time, never JSON descriptions or other performances. */
@@ -223,13 +243,18 @@ function selectedFanzPerformance(url: URL, requested: URL, fanz: boolean, json: 
     // shortcut: only render the observed same-day range; add other formats once verified in the browser.
     if (date !== format(end, 'yyyy-MM-dd')) return null
     const time = format(start, 'HH:mm')
-    const range = `${time} - ${format(end, 'HH:mm')} hs`
-    const picker = `Empieza el ${format(start, "EEE dd 'de' MMM yyyy HH:mm")} - ${format(end, 'HH:mm')} hs`
+    const range = `${time} - ${format(end, 'HH:mm')}`
+    const picker = `Empieza el ${format(start, "EEE dd 'de' MMM yyyy")} ${range} hs`
+    // Some Fanz pages show a weekday period and an explicit start label, without a trailing unit.
+    const labeledPickers = new Set(['d', 'dd'].map(day =>
+      `Empieza el ${format(start, `EEE'.' ${day} 'de' MMM yyyy`)} a las ${range}`))
+    const visibleLines = new Set(shown.visible.split(/\r\n?|\n/).map(normalizePageText))
+    const lines = [...labeledPickers].filter(line => visibleLines.has(normalizePageText(line)))
+    if (normalizePageText(shown.visible).includes(normalizePageText(picker))) lines.push(picker)
     // A single-date card has a different visible line; only its own date-and-start block can verify it.
-    const card = `${format(start, "EEEE, d 'de' MMMM")} ${range}`
-    const text = normalizePageText(shown.singleDate) === normalizePageText(card) ? shown.singleDate
-      : normalizePageText(shown.visible).includes(normalizePageText(picker)) ? picker : ''
-    return { date, title: event.title, time, text, confirmed: shown.rendered }
+    const card = `${format(start, "EEEE, d 'de' MMMM")} ${range} hs`
+    if (normalizePageText(shown.singleDate) === normalizePageText(card)) lines.push(shown.singleDate)
+    return { date, title: event.title, time, lines, confirmed: shown.rendered }
   } catch { return identified ? null : undefined } // Missing Fanz data cannot verify the selection.
 }
 
@@ -479,7 +504,7 @@ function matchedDoorsReason(visible: string, quoted: RegExp, fields: readonly st
   return null
 }
 
-function pageReason({ visible, title, titleName, h1, h1WithoutRating, selected, calendar, identityNeedsRender }: PageRead, quoted: RegExp, excerpt: string,
+function pageReason({ visible, title, titleName, h1, h1WithoutRating, h1WithoutSite, selected, calendar, identityNeedsRender }: PageRead, quoted: RegExp, excerpt: string,
   fields: readonly string[], facts: PageFacts, missing: string | null): string | null {
   if (calendar) {
     if (fields.some(field => field !== 'date' && field !== 'time')) return 'A calendar performance excerpt can only support date and time'
@@ -495,7 +520,7 @@ function pageReason({ visible, title, titleName, h1, h1WithoutRating, selected, 
   const timingEvidence = fields.some(field => field === 'date' || field === 'time')
   const normalizedVisible = normalizePageText(visible)
   if (selected === null && timingEvidence) return INVALID_FANZ_SELECTION
-  if (selected && quoted.test(normalizePageText(selected.text))) {
+  if (selected?.lines.some(line => quoted.test(normalizePageText(line)))) {
     if (fields.some(field => field !== 'date' && field !== 'time')) return 'The selected performance excerpt can only support date and time'
     // Only the browser can tell whether a Fanz picker or card is visible under the site's stylesheet.
     if (!selected.confirmed) return MISSING_PERFORMANCE
@@ -516,8 +541,8 @@ function pageReason({ visible, title, titleName, h1, h1WithoutRating, selected, 
   }
   if (identityNeedsRender) return UNCONFIRMED_HEADING
   const name = nameText(facts.name)
-  if (name && nameText(h1 ?? titleName ?? title ?? '') === name) return null
-  if (name && h1 && h1WithoutRating?.some(heading => nameText(heading) === name)) return null
+  const names = h1 ? [h1, h1WithoutSite, ...(h1WithoutRating ?? []), normalizeTitle(h1).replace(TICKET_PREFIX, '')] : [title, titleName]
+  if (name && names.some(value => value && nameText(value) === name)) return null
   const headings = [title && `page title: ${JSON.stringify(title.slice(0, 255))}`, h1 && `H1: ${JSON.stringify(h1.slice(0, 255))}`].filter(Boolean).join('; ')
   return `Official page does not name "${facts.name}"${headings ? ` (${headings})` : ''}`
 }
