@@ -321,7 +321,7 @@ describe('official-page evidence', () => {
 
   it('checks the matched line after browser rendering, not just the static shell', async () => {
     const excerpt = 'Jueves 17 de diciembre - 20:00 hs'
-    const render = async () => renderedPageRead(officialUrl, { url: officialUrl, title: facts.name, headings: [facts.name], siteName: null,
+    const render = async () => renderedPageRead(officialUrl, { url: officialUrl, title: facts.name, headings: [facts.name], hasH1: true, ogTitle: null, siteName: null,
       visible: `${facts.name}\n\n${excerpt} (apertura de puertas) | Show 20:30 hs`, challenge: false, fanzJson: '', fanzLinks: [], singleDate: '' })
     expect(await Effect.runPromise(verifyOfficialPagesEffect([evidence(officialUrl, excerpt)],
       { ...facts, date: '2026-12-17', time: '20:00' }, readHtml(`<h1>${facts.name}</h1>`), render)))
@@ -438,7 +438,7 @@ describe('official-page evidence', () => {
     expect(await verifyShow(name, `<h1>${heading}</h1><p>${officialQuote}</p>`)).toEqual([reason])
     expect(await verifyShow(heading, `<h1>${heading}</h1><p>${officialQuote}</p>`)).toEqual([])
     const render = async () => renderedPageRead(officialUrl, { url: officialUrl, visible: `${heading}\n${officialQuote}`,
-      title: '', headings: [heading], siteName: null, fanzLinks: [], fanzJson: '', singleDate: '', challenge: false })
+      title: '', headings: [heading], hasH1: true, ogTitle: null, siteName: null, fanzLinks: [], fanzJson: '', singleDate: '', challenge: false })
     expect(await Effect.runPromise(verifyOfficialPagesEffect([evidence(officialUrl, officialQuote)], { ...facts, name },
       readHtml(`<h1>${heading}</h1>`), render))).toEqual([reason])
   })
@@ -450,6 +450,51 @@ describe('official-page evidence', () => {
     expect(await verifyShow(show, `<title>${officialQuote}</title><h1>${show}</h1>`)).toEqual([
       `Official page evidence must be an excerpt of the page's visible text: ${officialUrl}`,
     ])
+  })
+
+  it.each([
+    ['La lluvia, el patio y el mar', 'La lluvia, el patio y el mar'],
+    ['Fábulas + Sombras', 'Fabulas y sombras'],
+  ])('uses an exact og:title on a branded page with only H2s: %s', async (name, ogTitle) => {
+    const html = `<html><head><title>${name} - Centro de Escena - Universidad de Ejemplo</title>
+      <meta property="og:title" content="${ogTitle}"></head>
+      <body><h2>Centro de Escena</h2><h2>${name}</h2><p>${officialQuote}</p></body></html>`
+    expect(await verifyShow(name, html)).toEqual([])
+  })
+
+  it('does not use a missing, unrelated, or partial og:title as a match', async () => {
+    const name = 'Sol y Luna'
+    const schedule = `<p>${officialQuote}</p>`
+    for (const metadata of ['', '<meta property="og:title" content="Otra obra">',
+      `<meta property="og:title" content="${name} - Segunda función">`]) {
+      const html = `<title>${name} - Centro de Escena - Universidad de Ejemplo</title>${metadata}${schedule}`
+      expect((await verifyShow(name, html))[0]).toContain('Official page does not name')
+    }
+    expect(await verifyShow(name, `<title>${name}</title><meta property="og:title" content="Otra obra">${schedule}`)).toEqual([])
+    expect(await verifyShow(name, `<title>${name}</title><meta property="og:title" content="${officialQuote}"><h2>Programación</h2>`)).toEqual([
+      `Official page evidence must be an excerpt of the page's visible text: ${officialUrl}`,
+    ])
+  })
+
+  it('does not use og:title when any H1 exists, even if it is ignored for visible identity', async () => {
+    const name = 'Sol y Luna'
+    const metadata = `<meta property="og:title" content="${name}"><meta property="og:site_name" content="Centro de Escena">`
+    for (const heading of ['<h1>Otra obra</h1>', '<h1 hidden>Otra obra</h1>', '<h1></h1>', '<h1>Centro de Escena</h1>']) {
+      const html = `<title>Cartelera - Centro de Escena</title>${metadata}${heading}<p>${officialQuote}</p>`
+      expect((await verifyShow(name, html))[0], heading).toContain('Official page does not name')
+    }
+  })
+
+  it('uses rendered og:title only when the rendered document has no H1', async () => {
+    const title = `${facts.name} - Centro de Escena - Universidad de Ejemplo`
+    const verify = (hasH1: boolean, headings: string[]) => Effect.runPromise(verifyOfficialPagesEffect(
+      [evidence(officialUrl, officialQuote)], facts, readHtml('<body></body>'), async () => renderedPageRead(officialUrl, {
+        url: officialUrl, visible: officialQuote, title, headings, hasH1, ogTitle: facts.name, siteName: null,
+        fanzLinks: [], fanzJson: '', singleDate: '', challenge: false,
+      })))
+    expect(await verify(false, [])).toEqual([])
+    expect((await verify(true, ['Otra obra']))[0]).toContain('H1: "Otra obra"')
+    expect((await verify(true, []))[0]).toContain('Official page does not name')
   })
 
   it('uses the next visible H1 after a corroborated site header, or the title when none remains', async () => {
@@ -825,7 +870,7 @@ describe('official-page evidence', () => {
   const fanzJson = (html: string) => /<script[^>]*>(.*)<\/script>/.exec(html)?.[1] ?? ''
   const camarinRender = (html: string) => async (url: string, sites: ReadonlySet<string>) => {
     const { title, visible, h1 } = await camarinRead(html)(url, sites)
-    return renderedPageRead(url, { url, title: title ?? '', visible, headings: h1 ? [h1] : [], siteName: null,
+    return renderedPageRead(url, { url, title: title ?? '', visible, headings: h1 ? [h1] : [], hasH1: h1 !== null, ogTitle: null, siteName: null,
       fanzLinks: ['https://fanz.com.ar'], fanzJson: fanzJson(html), singleDate: '', challenge: false })
   }
 
@@ -888,7 +933,7 @@ describe('official-page evidence', () => {
       .replace('2026-11-29T02:15:00.000Z', `${date}T23:00:00.000Z`)
     const visible = (quote: string) => `<h1>${name}</h1><p>${quote}</p>`
     const render = (quote: string, json = fanzJson(html)) => async () => renderedPageRead(url, {
-      url, title: name, headings: [name], visible: visibleText(visible(quote)), siteName: null,
+      url, title: name, headings: [name], hasH1: true, ogTitle: null, visible: visibleText(visible(quote)), siteName: null,
       fanzLinks: ['https://fanz.com.ar'], fanzJson: json, singleDate: '', challenge: false,
     })
     const verify = (quote: string, renderer?: Parameters<typeof verifyOfficialPagesEffect>[3]) => Effect.runPromise(verifyOfficialPagesEffect(
@@ -924,7 +969,7 @@ describe('official-page evidence', () => {
       .replace('{"id":16,"start":"2026-11-22T01:00:00.000Z","end":"2026-11-22T02:15:00.000Z"},', '')
     const verify = (shown: string, quote = line, at = '22:00', h1 = facts.name, date = '2026-11-28') => Effect.runPromise(verifyOfficialPagesEffect(
       [evidence(url, quote)], { ...facts, date, time: at }, readHtml(raw), async () => renderedPageRead(url, {
-        url, visible: `${facts.name}\n${line}`, title: facts.name, headings: [h1], siteName: null, fanzLinks: ['https://fanz.com.ar'],
+        url, visible: `${facts.name}\n${line}`, title: facts.name, headings: [h1], hasH1: true, ogTitle: null, siteName: null, fanzLinks: ['https://fanz.com.ar'],
         fanzJson: fanzJson(raw), singleDate: shown, challenge: false,
       })))
     const missing = [`Official page date or time evidence must quote the selected future performance: ${url}`]
@@ -949,7 +994,7 @@ describe('official-page evidence', () => {
     ]) {
       const read = readHtml(fixture)
       const render = async () => renderedPageRead(url, {
-        url, visible: CAMARIN_EXCERPT, title: facts.name, headings: [facts.name], siteName: null, fanzLinks: [],
+        url, visible: CAMARIN_EXCERPT, title: facts.name, headings: [facts.name], hasH1: true, ogTitle: null, siteName: null, fanzLinks: [],
         fanzJson: fanzJson(fixture), singleDate: '', challenge: false,
       })
       expect(await Effect.runPromise(verifyOfficialPagesEffect([evidence(url, CAMARIN_EXCERPT)],

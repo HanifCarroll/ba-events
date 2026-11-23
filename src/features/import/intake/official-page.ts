@@ -108,7 +108,7 @@ function revealStreamedSegments($: CheerioAPI) {
 
 type Performance = { text: string; date: string; time: string; title: string }
 type SelectedPerformance = Omit<Performance, 'text'> & { lines: string[]; confirmed: boolean }
-type PageRead = { visible: string; title: string | null; h1: string | null; h1WithoutRating?: string[]; h1WithoutSite?: string; titleName?: string;
+type PageRead = { visible: string; title: string | null; h1: string | null; h1WithoutRating?: string[]; h1WithoutSite?: string; titleName?: string; ogTitle?: string;
   identityNeedsRender?: boolean; selected?: SelectedPerformance | null; calendar?: { host: string; entries: Performance[] } }
 
 const CALENDAR_CITATION = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2} \| .+$/
@@ -323,6 +323,8 @@ export async function readOfficialPage(url: string, sites: ReadonlySet<string>, 
     // Cheerio's slim parser leaves the document title in place when optional head tags are omitted.
     const title = ($ && $('head > title, html > title').add($.root().children('title')).first().text().replace(/\s+/g, ' ').trim()) || null
     const site = $?.('meta[property="og:site_name"]').first().attr('content')
+    // Count every H1 before removing hidden elements or skipping a site heading.
+    const ogTitle = $ && !$('h1').length ? $('meta[property="og:title"]').first().attr('content') : undefined
     const hasStyles = !!$?.('style, link[rel~="stylesheet"], link[as="style"]').length
     if ($) prepareVisibleDom($)
     const headings = $ ? staticHeadings($) : []
@@ -339,7 +341,7 @@ export async function readOfficialPage(url: string, sites: ReadonlySet<string>, 
       { visible, singleDate: cards?.length === 1 ? cards.text() : '', rendered: false })
     const entries = $ && selected === undefined ? calendarPerformances($, final) : undefined
     const calendar = entries === undefined ? undefined : { host: calendarHost(final.hostname), entries }
-    return { visible, ...identity(title, headings, site, hasStyles), ...(selected !== undefined ? { selected } : {}), ...(calendar ? { calendar } : {}) }
+    return { visible, ogTitle, ...identity(title, headings, site, hasStyles), ...(selected !== undefined ? { selected } : {}), ...(calendar ? { calendar } : {}) }
   }
 }
 export type ReadPage = (url: string, sites: ReadonlySet<string>) => Promise<PageRead>
@@ -348,12 +350,13 @@ export const FANZ_SINGLE_DATE = '[class*="styles_singleDateContainer__"]'
 const fanzLink = (links: readonly (string | undefined)[]) => links.some(link => /^https:\/\/(?:www\.)?fanz\.com\.ar\/?$/i.test(link ?? ''))
 
 export function renderedPageRead(requested: string, snapshot: { url: string; visible: string; title: string; headings: string[];
-  siteName: string | null; fanzLinks: string[]; fanzJson: string; singleDate: string; challenge: boolean }): PageRead & { url: string } {
-  const { url, visible, title, headings, siteName, fanzLinks, fanzJson, singleDate, challenge } = snapshot
+  hasH1: boolean; ogTitle: string | null; siteName: string | null; fanzLinks: string[]; fanzJson: string; singleDate: string; challenge: boolean }): PageRead & { url: string } {
+  const { url, visible, title, headings, hasH1, ogTitle, siteName, fanzLinks, fanzJson, singleDate, challenge } = snapshot
   if (challenge || challengeTitle(title) || !visible.trim()) throw new Error(UNREADABLE)
   if (visible.length > MAX_BYTES) throw new Error('page exceeds 2 MB')
   const selected = selectedFanzPerformance(new URL(url), new URL(requested), fanzLink(fanzLinks), fanzJson, { visible, singleDate, rendered: true })
-  return { url, visible, ...identity(title || null, headings.map(text => ({ text })), siteName), ...(selected !== undefined ? { selected } : {}) }
+  return { url, visible, ogTitle: hasH1 ? undefined : ogTitle ?? undefined, ...identity(title || null, headings.map(text => ({ text })), siteName),
+    ...(selected !== undefined ? { selected } : {}) }
 }
 
 /** The candidate facts a page excerpt must back: its name, its BA date, and its BA time when it has one. */
@@ -504,7 +507,7 @@ function matchedDoorsReason(visible: string, quoted: RegExp, fields: readonly st
   return null
 }
 
-function pageReason({ visible, title, titleName, h1, h1WithoutRating, h1WithoutSite, selected, calendar, identityNeedsRender }: PageRead, quoted: RegExp, excerpt: string,
+function pageReason({ visible, title, titleName, ogTitle, h1, h1WithoutRating, h1WithoutSite, selected, calendar, identityNeedsRender }: PageRead, quoted: RegExp, excerpt: string,
   fields: readonly string[], facts: PageFacts, missing: string | null): string | null {
   if (calendar) {
     if (fields.some(field => field !== 'date' && field !== 'time')) return 'A calendar performance excerpt can only support date and time'
@@ -541,7 +544,7 @@ function pageReason({ visible, title, titleName, h1, h1WithoutRating, h1WithoutS
   }
   if (identityNeedsRender) return UNCONFIRMED_HEADING
   const name = nameText(facts.name)
-  const names = h1 ? [h1, h1WithoutSite, ...(h1WithoutRating ?? []), normalizeTitle(h1).replace(TICKET_PREFIX, '')] : [title, titleName]
+  const names = h1 ? [h1, h1WithoutSite, ...(h1WithoutRating ?? []), normalizeTitle(h1).replace(TICKET_PREFIX, '')] : [title, titleName, ogTitle]
   if (name && names.some(value => value && nameText(value) === name)) return null
   const headings = [title && `page title: ${JSON.stringify(title.slice(0, 255))}`, h1 && `H1: ${JSON.stringify(h1.slice(0, 255))}`].filter(Boolean).join('; ')
   return `Official page does not name "${facts.name}"${headings ? ` (${headings})` : ''}`
