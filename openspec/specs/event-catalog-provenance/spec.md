@@ -51,14 +51,25 @@ Time-TBA, location-TBA, missing price, missing description, and missing source d
 ### Requirement: Event structured data reflects known catalog facts
 Event detail JSON-LD SHALL use recorded times, status, admission facts, and visible venue facts. It SHALL NOT supply an unknown performer, ticket sales start, ticket availability, or end date.
 
-#### Scenario: Event detail includes a confirmed venue and admission information
+#### Scenario: Event detail includes a confirmed venue
 - **WHEN** the event has a visible, confirmed venue
 - **THEN** the Place uses the stored name and address without placeholder text; a hidden or unconfirmed location does not expose its venue details
-- **AND** an offer uses an actual ticket or registration link and omits the price when it is unknown
+
+#### Scenario: A scheduled or postponed event has known admission or a ticket link
+- **WHEN** a scheduled or postponed event has a usable ticket or registration link, or has a recorded price or free flag and is not pay-what-you-can
+- **THEN** JSON-LD includes an `Offer` without ticket availability
+- **AND** the offer includes a URL only when there is a usable ticket or registration link
+- **AND** the offer includes the recorded price in `ARS`, or `0` in `ARS` for free events, and omits price and currency when unknown
+- **AND** the BA Tourism `ticket_url` is treated as an information link, never as an admission link
 
 #### Scenario: Admission is a variable contribution
 - **WHEN** the agenda's contribution rules recognize pay-what-you-can admission from the listing or the retained price note
-- **THEN** JSON-LD omits a price and does not claim free admission, even with a zero price or free flag, and keeps any ticket URL
+- **THEN** JSON-LD omits price and currency and does not claim free admission, even with a recorded price or free flag
+- **AND** a scheduled or postponed event gets an offer only if it has a usable ticket or registration link
+
+#### Scenario: No current offer is supported by the catalog
+- **WHEN** an event is past, canceled, or pending review, or it has no usable admission link, recorded price, or free flag
+- **THEN** JSON-LD omits `offers`
 
 #### Scenario: The event has no precise start time or a changed status
 - **WHEN** the event is date-only or time TBA
