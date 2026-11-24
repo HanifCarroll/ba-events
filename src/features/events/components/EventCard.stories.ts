@@ -37,6 +37,7 @@ export const Default: Story = {
 	play: async (context) => {
 		await meta.play(context);
 		expect(context.canvas.getAllByText('Club del Sur').some((node) => node.checkVisibility())).toBe(true);
+		expect(context.canvas.getAllByText('$12.000 ARS').some((node) => node.checkVisibility())).toBe(true);
 		const source = context.canvas.getByRole('link', { name: /Eventbrite/ });
 		expect(source).toHaveAttribute('href', context.args.event.ticket_url!);
 	}
@@ -51,6 +52,7 @@ export const Hero: Story = {
 		const locale = fixtureLocale(context.globals.locale);
 		expect(context.canvas.getByText(localizeText(context.args.commentary!, locale))).toBeVisible();
 		expect(context.canvas.getByText(localizeText(context.args.tips![0], locale))).toBeVisible();
+		expect(context.canvas.getByText('$12.000 ARS')).toBeVisible();
 	}
 };
 export const LongTitle: Story = {
@@ -74,10 +76,22 @@ export const UnknownDetails: Story = {
 	args: { event: makeEvent({ price: null, time_tba: true, venue_name: null, venue_neighborhood: null, venue_address: null, location_tba: true }) },
 	play: async (context) => {
 		await meta.play(context);
-		for (const label of [m.event_price_tba(), m.concierge_time_tba(), m.concierge_location_tba()]) {
+		for (const label of [m.concierge_time_tba(), m.concierge_location_tba()]) {
 			expect(context.canvas.getAllByText(label).some((node) => node.checkVisibility())).toBe(true);
 		}
+		if (context.args.variant === 'hero') {
+			// The metadata grid contains only the date, location, and time rows.
+			expect(context.canvasElement.querySelector('dl')?.childElementCount).toBe(3);
+		} else {
+			// Both responsive headers contain only the title, with no price badge.
+			const headings = context.canvasElement.querySelectorAll('h3');
+			expect(Array.from(headings, (heading) => heading.parentElement?.childElementCount)).toEqual([1, 1]);
+		}
 	}
+};
+export const HeroUnknownDetails: Story = {
+	...UnknownDetails,
+	args: { ...UnknownDetails.args, variant: 'hero' }
 };
 export const Guest: Story = {
 	play: async (context) => {

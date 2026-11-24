@@ -16,6 +16,14 @@ Event detail time ranges SHALL show the end date when it differs from the start 
 - **WHEN** start and end timestamps fall on different UTC dates but the same Buenos Aires date
 - **THEN** the end remains time-only in the active locale
 
+### Requirement: Web event views omit unknown prices
+The homepage agenda, chat event cards, and event details SHALL omit the price field when the listing has no amount and does not confirm free admission. The homepage SHALL still show its pay-what-you-can label when supported by evidence.
+
+#### Scenario: A listing does not state a price
+- **WHEN** an event with an unknown price appears on the homepage, a web chat card, or an event detail page
+- **THEN** the web view renders no placeholder, price separator, or empty price slot
+- **AND** the chat model facts and event structured data remain unchanged by this display rule
+
 ### Requirement: The homepage introduces independent culture
 The homepage SHALL use the active locale for the independent-culture title, description, headline, and a single short subtitle. It SHALL keep Instagram and Telegram links in the follow section and SHALL NOT present an invented example conversation.
 
@@ -112,7 +120,7 @@ The homepage SHALL lead with the current agenda and render exactly one centered 
 
 #### Scenario: A visitor uses an agenda card
 - **WHEN** an event appears in the agenda
-- **THEN** its title, local date and time state, venue and neighborhood when known, and price state appear as real text
+- **THEN** its title, local date and time state, venue and neighborhood when known, and any displayed price appear as real text
 - **AND** below 768 CSS pixels, events form a one-column list with a flyer thumbnail on the left and details on the right. Non-sticky headings mark changes of Buenos Aires start date, including when paging extends a date already on screen. Rows under a heading show the time state without repeating the date
 - **AND** from 768 CSS pixels, the grid has three columns, four from 1024, and five from 1440; each card shows its own date
 - **AND** the card links to event details and can prefill the composer with the existing event prompt

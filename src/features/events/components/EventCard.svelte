@@ -197,10 +197,12 @@
 						<Clock class="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
 						<dd>{timeStr}</dd>
 					</div>
-					<div class="flex items-center gap-2.5">
-						<Ticket class="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-						<dd>{priceDisplay}</dd>
-					</div>
+					{#if priceDisplay !== null}
+						<div class="flex items-center gap-2.5">
+							<Ticket class="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+							<dd>{priceDisplay}</dd>
+						</div>
+					{/if}
 					{#if event.venue_name}
 						<div class="flex items-center gap-2.5">
 							<MapPin class="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
@@ -240,15 +242,17 @@
 	<div class="sm:hidden">
 		<!-- Mobile -->
 		<article class="rounded-xl bg-card/60 px-3 py-3">
-			<div class="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
+			<div class={priceDisplay !== null ? 'grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3' : undefined}>
 				<h3 class="line-clamp-2 text-base font-medium leading-snug text-foreground">
 					{event.name}
 				</h3>
-				<span
-					class={`rounded-lg border px-2.5 py-1 text-xs font-medium tracking-wide ${isFree ? 'border-primary/20 bg-primary/15 text-primary' : 'border-border/50 bg-muted text-muted-foreground'}`}
-				>
-					{priceDisplay}
-				</span>
+				{#if priceDisplay !== null}
+					<span
+						class={`rounded-lg border px-2.5 py-1 text-xs font-medium tracking-wide ${isFree ? 'border-primary/20 bg-primary/15 text-primary' : 'border-border/50 bg-muted text-muted-foreground'}`}
+					>
+						{priceDisplay}
+					</span>
+				{/if}
 			</div>
 
 			<div class="mt-2 grid gap-1 text-xs text-muted-foreground">
@@ -306,7 +310,9 @@
 				>
 					{event.name}
 				</h3>
-				<span class="shrink-0 text-sm font-medium text-foreground/85">{priceDisplay}</span>
+				{#if priceDisplay !== null}
+					<span class="shrink-0 text-sm font-medium text-foreground/85">{priceDisplay}</span>
+				{/if}
 			</div>
 
 			<p class="mt-1 flex flex-nowrap items-center gap-x-1.5 text-[13px] text-muted-foreground">

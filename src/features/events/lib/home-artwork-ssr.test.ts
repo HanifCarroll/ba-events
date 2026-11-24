@@ -49,6 +49,11 @@ describe('homepage server-rendered agenda', () => {
     expect(firstImage).toContain('fetchpriority="high"')
   })
 
+  it('renders no price line or desktop separator when the price is unknown', () => {
+    const body = renderAgenda('/', [{ ...events[0], price: null }])
+    expect(body).toMatch(/<p\b[^>]*>\s*Sala sintética · Almagro\s*<\/p>/)
+  })
+
   it.each([
     ['es', 'Ver post', 'Ver post de Jam sintética', 'Ver evento', 'Ver evento: Evento sintético 1', 'Preguntar', 'Preguntar sobre Jam sintética'],
     ['en', 'View post', 'View post for Jam sintética', 'View event', 'View event: Evento sintético 1', 'Ask', 'Ask about Jam sintética'],

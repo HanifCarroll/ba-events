@@ -99,7 +99,9 @@
 				<h2 class="line-clamp-2 text-base leading-tight font-semibold has-[:focus-visible]:line-clamp-none has-[[aria-expanded=true]]:line-clamp-none group-has-[a:hover]:underline group-has-[a:focus-visible]:underline">{@render glossaryText(event.name, 'title')}</h2>
 			</div>
 			<p class="relative text-xs leading-snug text-[#ccccd4]">
-				{@render glossaryText(venue, 'meta')}<span class="hidden md:inline">{' · '}</span><span class="block text-[#f6f6f7] md:inline md:text-inherit">{@render glossaryText(price, 'price')}</span>
+				{@render glossaryText(venue, 'meta')}{#if price !== null}
+					<span class="hidden md:inline">{' · '}</span><span class="block text-[#f6f6f7] md:inline md:text-inherit">{@render glossaryText(price, 'price')}</span>
+				{/if}
 			</p>
 		</div>
 	</div>
