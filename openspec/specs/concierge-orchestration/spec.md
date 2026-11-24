@@ -123,6 +123,7 @@ Cards, links, directions, venue facts, provenance, and clarification data MUST b
 - **AND** `now`, `today`, `tonight`, `week`, and `future` are evaluated at the new turn, not at the earlier search time
 - **AND** follow-ups with a new constraint or task retain the ordinary planner tools and search inputs
 - **AND** the bare follow-up wording does not become semantic search text
+- **AND** model configuration allows the required search tool call without changing ordinary turns' thinking mode
 - **AND** an exhausted search returns a localized no-other-options answer without cards or a broader search
 - **AND** the alternatives chip appears only when there are eligible matches the user has not seen
 

@@ -398,12 +398,13 @@ function buildTools(ctx: ToolExecutionContext, refs: Map<string, RefRecord>, led
 /** Production model runner; eval adapters may observe its inputs and results. */
 export async function runToolLoop(input: AgentInput, options: { thinking?: ChatThinkingMode; reasoningEffort?: 'low'; completeDirections?: boolean } = {}): Promise<AgentRun> {
   input.timing?.mark('provider_init_start')
-  const { CHAT_THINKING, textModelForRequest } = await import('#shared/lib/ai/providers.ts')
+  const { CHAT_THINKING, NO_THINKING, textModelForRequest } = await import('#shared/lib/ai/providers.ts')
   input.timing?.mark('provider_ready')
-  // Explicit server/evaluation injection only. No request field or environment
-  // switch changes the production default while configurations are compared.
-  const thinking = options.thinking === 'disabled'
-    ? { providerOptions: { deepseek: { thinking: { type: 'disabled' as const } } } }
+  // DeepSeek rejects forced tool choice with thinking enabled. Keep the whole
+  // replay non-thinking so its continuation doesn't need reasoning from the forced step.
+  const configuredThinking = input.repeatSearch ? 'disabled' : options.thinking ?? 'adaptive'
+  const thinking = configuredThinking === 'disabled'
+    ? NO_THINKING
     : options.reasoningEffort === 'low'
       ? { providerOptions: { deepseek: { ...CHAT_THINKING.providerOptions.deepseek, reasoningEffort: 'low' as const } } }
       : CHAT_THINKING
@@ -421,10 +422,10 @@ export async function runToolLoop(input: AgentInput, options: { thinking?: ChatT
   const run = await traceConcierge({ ...input, promptVersion: CONCIERGE_PROMPT_VERSION, configurationId },
     (telemetry) => generateToolLoop(input, model, thinking, telemetry, options.completeDirections))
   return { ...run, configuration: { id: configurationId, promptVersion: CONCIERGE_PROMPT_VERSION,
-    ...(options.reasoningEffort === 'low' && options.thinking !== 'disabled' ? { reasoningEffort: 'low' as const } : {}),
+    ...(options.reasoningEffort === 'low' && configuredThinking !== 'disabled' ? { reasoningEffort: 'low' as const } : {}),
     ...(options.completeDirections ? { completeDirections: true as const } : {}),
-    provider: model.provider, model: model.modelId, configuredThinking: options.thinking ?? 'adaptive',
-    wireThinking: options.thinking === 'disabled' ? 'disabled' : 'enabled' } }
+    provider: model.provider, model: model.modelId, configuredThinking,
+    wireThinking: configuredThinking === 'disabled' ? 'disabled' : 'enabled' } }
 }
 
 async function generateToolLoop(input: AgentInput,
