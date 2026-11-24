@@ -26,7 +26,7 @@ import { getVenueDetailsTool, type GetVenueDetailsInput } from '../tools/get-ven
 import { listSavedEventsTool, type ListSavedEventsInput } from '../tools/list-saved-events.ts'
 import { handleFor, type PriorDisplayGroup, type VenueFact } from './follow-up.ts'
 import { asksForAlternatives, hasUnsupportedTime, neutralizeUnsupportedTimes } from './answer-constraints.ts'
-import { resolveToday } from '../tools/search-query-rules.ts'
+import { requestedDaypart, resolveToday } from '../tools/search-query-rules.ts'
 import { buildSanitizedTrace, type RawStep } from './trace.ts'
 import { generateSuggestions } from '../suggestions.ts'
 import { attachSearchContext, type LastSearchContext } from './search-context.ts'
@@ -695,6 +695,12 @@ function searchInputFor(read: LedgerRecord): SearchEventsInput | undefined {
   return parsed.success ? parsed.data : undefined
 }
 
+function resolvePlannerTimeFilter(request: string, query: string | undefined, timeFilter: SearchEventsInput['timeFilter']) {
+  // Do not let a guessed "now" override the guest's explicit daypart.
+  const requested = timeFilter === 'now' ? requestedDaypart(request) : undefined
+  return requested ?? resolveToday(request, resolveToday(query ?? '', timeFilter))
+}
+
 /** Effect-native planner and response assembly program. */
 export function orchestrateEffect(input: OrchestrateInput): Effect.Effect<OrchestrateResult, never> {
   return Effect.gen(function* () {
@@ -702,16 +708,15 @@ export function orchestrateEffect(input: OrchestrateInput): Effect.Effect<Orches
   if (pin.requested && pin.status !== 'resolved') return { canonical: errorResponse(input.requestId, input.locale, 'unknown_event_id'), executionTrace: [], reads: [], providerRequestId: null }
   const previousSearch = asksForAlternatives(input.originalQuery) ? input.lastSearch : null
   const repeatSearch = !!previousSearch
-  const priorPreset = previousSearch && resolveToday(previousSearch.originalQuery,
-    resolveToday(previousSearch.input.query ?? '', previousSearch.input.timeFilter))
-  const searchAnchor = priorPreset === 'now' || priorPreset === 'today' || priorPreset === 'tonight' ? undefined : previousSearch?.searchAnchor
+  const priorPreset = previousSearch && resolvePlannerTimeFilter(previousSearch.originalQuery, previousSearch.input.query, previousSearch.input.timeFilter)
+  const searchAnchor = priorPreset && ['now', 'today', 'tonight', 'week', 'future'].includes(priorPreset) ? undefined : previousSearch?.searchAnchor
   const shownEventIds = input.shownEventIds ?? new Set(input.priorDisplayedEvents
     .filter(group => group.assistantMessageId !== 'home').flatMap(group => group.events.map(event => event.eventId)))
   const normalizeSearch = (proposed: SearchEventsInput): SearchEventsInput => {
     const search = previousSearch?.input ?? proposed
     const query = previousSearch && search.query && asksForAlternatives(search.query) ? undefined : search.query
     const request = previousSearch?.originalQuery ?? input.originalQuery
-    const timeFilter = resolveToday(request, resolveToday(query ?? '', search.timeFilter))
+    const timeFilter = resolvePlannerTimeFilter(request, query, search.timeFilter)
     return { ...search, ...(query !== search.query ? { query } : {}),
       ...(timeFilter !== search.timeFilter ? { timeFilter } : {}), ...(repeatSearch ? { objective: 'search', limit: proposed.limit ?? 3 } : {}) }
   }
@@ -763,7 +768,7 @@ export function orchestrateEffect(input: OrchestrateInput): Effect.Effect<Orches
         if (partialReads.some((read) => read.raw.success)) {
           const partialRun: AgentRun = { text: '', steps: [], responseId: null }
           const canonical = assemble(input, partialRun, partialReads, saved, repeatSearch)
-          if (!isExhaustedSearch(input, canonical) && (canonical.kind !== 'recommendations' || canonical.events.length === 0)) canonical.text = fallbackText(input.locale)
+          if (!isExhaustedSearch(repeatSearch, canonical) && (canonical.kind !== 'recommendations' || canonical.events.length === 0)) canonical.text = fallbackText(input.locale)
           canonical.provenance.origin = 'fallback'
           canonical.provenance.fallbackUsed = true
           canonical.provenance.fallbackReason = 'planner_error'
@@ -782,7 +787,7 @@ export function orchestrateEffect(input: OrchestrateInput): Effect.Effect<Orches
     reads.some(read => read.toolName === 'get_directions' && read.raw.success && read.raw.directions)
   if (completedDirections) canonical.text = input.locale === 'es' ? 'Abrí el mapa para ver cómo llegar.' : 'Open the map for directions.'
   if (reads.length === 0 && isShareRequest(input.originalQuery)) canonical.messageKey = 'share_guidance'
-  const needsPlannerFallback = !completedDirections && !isExhaustedSearch(input, canonical) && (!run.text.trim() || (!canonical.text && canonical.kind !== 'recommendations'))
+  const needsPlannerFallback = !completedDirections && !isExhaustedSearch(repeatSearch, canonical) && (!run.text.trim() || (!canonical.text && canonical.kind !== 'recommendations'))
   if (needsPlannerFallback) {
     if (canonical.kind !== 'recommendations') canonical.text = fallbackText(input.locale)
     canonical.provenance.origin = 'fallback'

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { orchestrate, type AgentRun } from './orchestrate.ts'
 import { orchestrateEffect } from './orchestrate.ts'
+import { asksForAlternatives } from './answer-constraints.ts'
 import type { SearchEventsInput } from '../tools/search-events.ts'
 import { Effect } from 'effect'
 import type { CanonicalChatResponse, ChatEventPayload } from '#shared/lib/types.ts'
@@ -26,6 +27,49 @@ const priorEvent = (id: string, name: string) => ({
   enrichment_error: null, enriched_at: null, facets: {}, created_at: '', updated_at: '', saved: null,
 }) as unknown as ChatEventPayload
 
+describe('search follow-up boundaries', () => {
+  it.each(['empty final text', 'planner failure'])('keeps the ordinary no-results fallback after %s', async scenario => {
+    const result = await orchestrate({ ...base, originalQuery: 'Find a free show in Recoleta.',
+      readExecutors: { search: async () => ({ success: true, events: [], formatted: '' }) },
+      runAgentFn: async input => {
+        const toolCallId = 'empty-search'
+        const output = await input.tools.search_events.execute!({ objective: 'search' }, { toolCallId, messages: input.messages, context: undefined })
+        if (scenario === 'planner failure') throw new Error('Synthetic planner failure')
+        return { text: '', responseId: null, steps: [{ toolResults: [{ toolCallId, output }] }] }
+      },
+    })
+    expect(result.canonical).toMatchObject({ kind: 'no_results', text: 'Something went wrong. Please try again.',
+      provenance: { fallbackUsed: true, fallbackReason: 'planner_error' } })
+  })
+
+  it.each([
+    ["What's on tonight?", 'tonight'],
+    ['¿Qué hay esta noche?', 'tonight'],
+    ["What's on today?", 'today'],
+    ['¿Qué hay hoy?', 'today'],
+    ['What is happening right now?', 'now'],
+  ] as const)('uses the guest’s explicit daypart for %s when the planner sends now', async (originalQuery, timeFilter) => {
+    const result = await orchestrate({ ...base, originalQuery,
+      readExecutors: { search: async () => ({ success: true, events: [], formatted: '' }) },
+      runAgentFn: async input => {
+        const toolCallId = 'daypart-search'
+        const output = await input.tools.search_events.execute!({ objective: 'search', timeFilter: 'now' }, { toolCallId, messages: input.messages, context: undefined })
+        return { text: 'No matching events.', responseId: null, steps: [{ toolResults: [{ toolCallId, output }] }] }
+      },
+    })
+    expect(result.reads[0]).toMatchObject({ input: { timeFilter }, success: true })
+  })
+
+  it.each(['Any alternatives?', 'Other options?', '¿Hay otras opciones?', '¿Alguna alternativa?'])('repeats an existing search for the bare request %s', text => {
+    expect(asksForAlternatives(text)).toBe(true)
+  })
+
+  it.each(['música alternativa', 'alternative rock', 'Any alternatives in Palermo?', 'Other options tomorrow?',
+    '¿Hay otras opciones de jazz?', 'Is there another option to get there?'])('leaves qualified or unrelated wording with the planner: %s', text => {
+    expect(asksForAlternatives(text)).toBe(false)
+  })
+})
+
 describe('recommendation follow-ups', () => {
   it.each([
     ['Any other options in Palermo?', { timeFilter: 'today', neighborhoods: ['Palermo'] }],
@@ -45,7 +89,7 @@ describe('recommendation follow-ups', () => {
         expect(input.repeatSearch).toBe(false)
         expect(input.tools.get_directions).toBeDefined()
         const toolCallId = 'search'
-        const output = await input.tools.search_events.execute!(proposed, { toolCallId, messages: input.messages })
+        const output = await input.tools.search_events.execute!(proposed, { toolCallId, messages: input.messages, context: undefined })
         return { text: 'Here’s an option.', responseId: null, steps: [{ toolResults: [{ toolCallId, output }] }] }
       },
     })
@@ -64,7 +108,7 @@ describe('recommendation follow-ups', () => {
       runAgentFn: async input => {
         expect(input.repeatSearch).toBe(false)
         const toolCallId = 'directions'
-        const output = await input.tools.get_directions.execute!({ eventRef: 'prior:event_0' }, { toolCallId, messages: input.messages })
+        const output = await input.tools.get_directions.execute!({ eventRef: 'prior:event_0' }, { toolCallId, messages: input.messages, context: undefined })
         return { text: 'Here is another route to the venue.', responseId: null, steps: [{ toolResults: [{ toolCallId, output }] }] }
       },
     })
@@ -85,7 +129,7 @@ describe('recommendation follow-ups', () => {
       readExecutors: { search: async () => ({ success: true, events: [event], formatted: '' }) },
       runAgentFn: async input => {
         const toolCallId = 'search'
-        const output = await input.tools.search_events.execute!({ objective: 'search' }, { toolCallId, messages: input.messages })
+        const output = await input.tools.search_events.execute!({ objective: 'search' }, { toolCallId, messages: input.messages, context: undefined })
         return { text: `ACK: Here’s an option for you.\nREASON_1: ${reason}\nNEXT: Would you like directions?`, responseId: null,
           steps: [{ toolCalls: [{ toolCallId, toolName: 'search_events' }], toolResults: [{ toolCallId, toolName: 'search_events', output }] }] }
       },
@@ -102,7 +146,7 @@ describe('recommendation follow-ups', () => {
       readExecutors: { eventDetails: async () => ({ success: true, events: [event], formatted: '' }) },
       runAgentFn: async input => {
         const toolCallId = 'detail'
-        const output = await input.tools.get_event_details.execute!({ eventRef: 'prior:event_0' }, { toolCallId, messages: input.messages })
+        const output = await input.tools.get_event_details.execute!({ eventRef: 'prior:event_0' }, { toolCallId, messages: input.messages, context: undefined })
         return { text: 'It starts at 9 pm.', responseId: null, steps: [{ toolResults: [{ toolCallId, toolName: 'get_event_details', output }] }] }
       },
     })
@@ -116,7 +160,7 @@ describe('recommendation follow-ups', () => {
       readExecutors: { listSaved: async () => ({ success: true, events: [known, unknown], formatted: '' }) },
       runAgentFn: async input => {
         const toolCallId = 'saved'
-        const output = await input.tools.list_saved_events.execute!({}, { toolCallId, messages: input.messages })
+        const output = await input.tools.list_saved_events.execute!({}, { toolCallId, messages: input.messages, context: undefined })
         return { text: originalText, responseId: null, steps: [{ toolResults: [{ toolCallId, output }] }] }
       },
     })

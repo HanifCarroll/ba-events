@@ -7,7 +7,7 @@ export const ALTERNATIVES_PROMPT = {
 } as const
 
 // Full utterances only: an extra neighborhood, date, genre, or task goes to the planner.
-const BARE_ALTERNATIVES = /^(?:(?:can you |could you )?(?:show(?: me)?|give me) |is there |(?:mostrame|muestrame|dame|ver) )?(?:(?:any |some )?(?:other|more) options|another option|alternatives|something else|what else(?: is on| is there)?|mas opciones|otras opciones|otra opcion|alternativas|algo (?:distinto|diferente|mas)|que mas hay)(?: please| por favor)?$/
+const BARE_ALTERNATIVES = /^(?:(?:can you |could you )?(?:show(?: me)?|give me) |is there |(?:hay|mostrame|muestrame|dame|ver) )?(?:(?:any |some )?(?:other|more) options|another option|(?:any )?alternatives|something else|what else(?: is on| is there)?|mas opciones|otras opciones|otra opcion|alternativas|alguna alternativa|algo (?:distinto|diferente|mas)|que mas hay)(?: please| por favor)?$/
 
 export function asksForAlternatives(text: string): boolean {
   const normalized = normalizeText(text)

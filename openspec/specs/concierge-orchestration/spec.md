@@ -120,7 +120,7 @@ Cards, links, directions, venue facts, provenance, and clarification data MUST b
 #### Scenario: The user asks for other options
 - **WHEN** the user taps either localized alternatives chip, or asks only for more options, after a search
 - **THEN** the server repeats the previous search constraints and window and excludes cards already shown in the available conversation history before selecting results
-- **AND** `now`, `today`, and `tonight` are evaluated at the new turn, not at the earlier search time
+- **AND** `now`, `today`, `tonight`, `week`, and `future` are evaluated at the new turn, not at the earlier search time
 - **AND** follow-ups with a new constraint or task retain the ordinary planner tools and search inputs
 - **AND** the bare follow-up wording does not become semantic search text
 - **AND** an exhausted search returns a localized no-other-options answer without cards or a broader search

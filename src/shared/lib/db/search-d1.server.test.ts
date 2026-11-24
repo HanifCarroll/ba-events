@@ -92,7 +92,7 @@ it('replays today and alternatives against a fixture catalog without repeating c
     const turn = (requestId: string, text: string, toolInput: SearchEventsInput, previous: Awaited<ReturnType<typeof runSharedChatTurn>>[] = []) => {
       const runAgentFn: AgentRunner = async ({ tools, messages }) => {
         const toolCallId = `${requestId}-search`
-        const output = await tools.search_events.execute!(toolInput, { toolCallId, messages })
+        const output = await tools.search_events.execute!(toolInput, { toolCallId, messages, context: undefined })
         return { text: 'I found another option.', responseId: null, steps: [{
           toolCalls: [{ toolCallId, toolName: 'search_events', input: toolInput }],
           toolResults: [{ toolCallId, toolName: 'search_events', output }],
@@ -130,6 +130,8 @@ it('replays today and alternatives against a fixture catalog without repeating c
 it.each([
   ['now', 'What is happening right now?', 'Still running'],
   ['tonight', "What's on tonight?", 'Later this night'],
+  ['week', "What's on this week?", 'Later this night'],
+  ['future', 'What events are coming up?', 'Later this night'],
 ] as const)('re-resolves the %s window when the chip is tapped', async (timeFilter, originalQuery, expected) => {
   useCloudflareBindings({ DB: db })
   vi.useFakeTimers({ toFake: ['Date'] })
@@ -145,7 +147,7 @@ it.each([
       runAgentFn: async ({ tools, messages }) => {
         expect(tools.get_directions).toBeDefined()
         const toolCallId = 'search'
-        const output = await tools.search_events.execute!({ objective: 'search', limit: 5 }, { toolCallId, messages })
+        const output = await tools.search_events.execute!({ objective: 'search', limit: 5 }, { toolCallId, messages, context: undefined })
         return { text: 'Here’s another option.', responseId: null, steps: [{ toolResults: [{ toolCallId, output }] }] }
       },
     })
