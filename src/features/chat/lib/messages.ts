@@ -188,9 +188,9 @@ export function generateResponse(intent: ParsedIntent, events: EventWithVenue[])
 }
 
 // Format price for display
-export function formatPrice(price: number | null, isFree: boolean): string {
+export function formatPrice(price: number | null, isFree: boolean): string | null {
   if (isFree || price === 0) return m.event_free()
-  if (price === null) return m.event_price_tba()
+  if (price === null) return null
   return `$${price.toLocaleString('es-AR')} ARS`
 }
 

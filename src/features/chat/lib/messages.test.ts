@@ -11,7 +11,11 @@ describe('formatPrice', () => {
     expect(formatPrice(10000, false)).toBe('$10.000 ARS')
   })
 
-  it('localizes an unknown price', () => {
-    expect(formatPrice(null, false)).toBe(m.event_price_tba())
+  it('presents confirmed free admission even without a numeric price', () => {
+    expect(formatPrice(null, true)).toBe(m.event_free())
+  })
+
+  it('returns no label for an unknown price', () => {
+    expect(formatPrice(null, false)).toBeNull()
   })
 })

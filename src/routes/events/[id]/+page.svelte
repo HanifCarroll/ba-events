@@ -81,7 +81,6 @@
 				? null
 				: `$${event.price.toLocaleString('es-AR')} ARS`
 	);
-	const hasKnownPrice = $derived(event.is_free || event.price !== null);
 
 	let copied = $state(false);
 
@@ -258,7 +257,7 @@
 							</div>
 						{/if}
 
-						{#if hasKnownPrice}
+						{#if priceDisplay !== null}
 							<div class="flex items-start gap-3">
 								<Ticket class="mt-0.5 h-4 w-4 shrink-0 text-primary/70" aria-hidden="true" />
 								<dd>{priceDisplay}</dd>
