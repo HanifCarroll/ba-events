@@ -59,24 +59,23 @@ Do no image work and change nothing in the catalog. Read today's notes from the 
 1. Append one entry to the end of `$INTAKE_MEMORY`: a `## Intake on <ISO time>` heading and at most eight bullets covering the run's charge, what was published, corrected, and held, the remaining backlog, and anything the next run must know (including fixes queued for Hermes). Don't rewrite or delete earlier entries.
 2. Write the fix list to `$INTAKE_FIXES` (replace the file): every `FIX:` line in today's notes, plus any other fix for Hermes the notes describe, with duplicates merged. Plain text, one short item per line with no bullet characters, written for Hermes: it may include commands, IDs, error strings, and source URLs, and says how many events each blocks. When there is nothing to fix, leave the file empty. `run.sh` sends this list to Hermes, which fixes it.
 3. Write the report to `$INTAKE_REPORT` (replace the file). It is posted to Slack exactly as written. Hanif reads it on his phone and wants counts, not lists. The details belong in the notes and memory.
-   - The file contains exactly `NOTHING TO REPORT` only when all of these hold: nothing was published, corrected, or cancelled; no posts are left pending or deferred; no phase failed; no account is dead, uncovered, or errored; no venue was created with `distinct_from`; nothing needs a decision from Hanif; and `$INTAKE_FIXES` is empty. Anything else gets a short report.
+   - Hanif wants a report only when something needs him (Nov 2026). The file contains exactly `NOTHING TO REPORT` unless at least one of these holds: something needs a decision from Hanif; a phase failed; an account is dead, uncovered, or errored; a venue was created with `distinct_from`; or the intake month's cost or Apify's cycle usage is at or above 80% of its cap. Published events, corrections, cancellations, pending or deferred posts, and fixes queued for Hermes alone never need a report: they go in the notes, memory, and `$INTAKE_FIXES`, and `run.sh` sends the fixes to Hermes.
    - Otherwise aim for 5 lines, combining related facts on one line. Several decisions, account problems, or `distinct_from` venues can share a bullet. Never drop a required fact (a decision, a failure, the fixes queued, account problems, the backlog, a `distinct_from` venue, or the cost) to fit the length. Line 1 is `✅ *Instagram intake, <Mon D>:* <N> new events, <N> corrections<, N cancellations>. No action needed.` When Hanif must make a decision, use ⚠️ instead of ✅ and `Needs you: <the decision>.` instead of `No action needed.`. When a phase failed and nothing needs a decision, use ⚠️ and end line 1 with `<phase> failed; Hermes is checking it.` instead (`run.sh` already raised a failure alert, which Hermes handles). When both apply, line 1 ends with `Needs you: <the decision>.` and the failure goes on its own bullet. `Needs you` names only real decisions: a failed phase or a fix for Hermes never does, and a fix for Hermes alone never makes it ⚠️.
    - Count successful creates and updates without a final image from the notes, once per event ID using its last outcome. Add `<N> without artwork` to line 1 only if it fits without adding a line or omitting required facts. Keep the `no image: <reason>` details out of Slack.
    - Then add only the bullets that apply, short lines, in this order:
      - Each product call only Hanif can make, naming the events and the question (for example, whether a kind of show is in scope).
      - When `$INTAKE_FIXES` isn't empty: `Fix queued for Hermes: <count and a short plain-words summary>.`, for example `Fix queued for Hermes: 2 tool problems (venue command rejects 9 city venues; a wrong barrio).`
      - Failed phases (when line 1 doesn't already name them), and dead, uncovered, or errored accounts (`coverage.dead_sources`, `uncovered_sources`, and `errored_sources`), as counts, with names only when there are 3 or fewer.
-     - Posts still pending or deferred, and that the next run picks them up.
      - Each venue created with `distinct_from`: its name and the reason in a few words, so he can spot a wrong venue.
-     - Today's cost, the intake month's total and cap, and Apify's account cycle usage and limit, for example `US$0.65 today; intake US$2.00 of US$18 this month; Apify US$3.00 of US$24 this cycle.`
+     - Only when the report is posted anyway: today's cost, the intake month's total and cap, and Apify's account cycle usage and limit, for example `US$0.65 today; intake US$2.00 of US$18 this month; Apify US$3.00 of US$24 this cycle.`
    - Never list event names or dates, venues added or completed normally, linked evidence, held cases that wait on no one, skipped out-of-scope shows or parties, or statements that you verified your work.
    - Use Slack markdown only: bold and bullets. No headings, tables, or links.
 
    For example:
 
    ```
-   ✅ *Instagram intake, Nov 15:* 51 new events, 1 correction. No action needed.
-   • 77 posts still unread; tomorrow's run picks them up.
+   ⚠️ *Instagram intake, Nov 15:* 51 new events, 1 correction. Needs you: is a paid tango class in scope?
+   • 3 events held until you answer.
    • US$0.65 today; intake US$2.00 of US$18 this month; Apify US$3.00 of US$24 this cycle.
    ```
 
