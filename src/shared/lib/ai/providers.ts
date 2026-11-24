@@ -38,17 +38,17 @@ export const embeddingModel = openai.textEmbeddingModel(EMBEDDING_MODEL)
 
 /**
  * Spread into generateText/generateObject to disable DeepSeek's thinking
- * mode. Required for small-budget structured calls (categorization,
- * extraction, titles, topic guard). Do not use this on the concierge chat.
+ * mode for small-budget structured calls and concierge alternatives replays
+ * that force a search. Ordinary concierge turns use CHAT_THINKING.
  */
 export const NO_THINKING = {
   providerOptions: { deepseek: { thinking: { type: 'disabled' } } },
 } as const
 
 /**
- * Concierge chat only. The installed SDK maps the legacy adaptive alias to
- * enabled thinking. This does not select a thinking mode per user turn;
- * reasoning effort stays at the provider default unless explicitly evaluated.
+ * Default for ordinary concierge turns. The installed SDK maps the legacy
+ * adaptive alias to enabled thinking. Reasoning effort stays at the provider
+ * default unless explicitly evaluated.
  */
 export const CHAT_THINKING = {
   providerOptions: { deepseek: { thinking: { type: 'adaptive' } } },
