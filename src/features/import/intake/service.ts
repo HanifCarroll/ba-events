@@ -8,7 +8,7 @@ import { candidateError, decodeCandidate, isOfficialPage, type Candidate } from 
 import { officialSites, verifyOfficialPagesEffect, type ReadPage, type RenderPage } from './official-page.ts'
 import { baDate, baTime, candidateStart, candidateDoors, decideMatch, descriptionChanged, searchInputsChanged, validateEvidence, normalizeTitle, ticketDestinationChanged,
   hasOfficialTicketEvidence, hasPostTicketEvidence, retainedIntakeDoors, SAME_CLOCK_REASON, SAME_CLOCK_RETAINED_REASON, separatelyCitedDoors,
-  suppliedDetailFacts, type CatalogMatch, type Observation } from './planning.ts'
+  suppliedDetailFacts, type CatalogMatch, type Media, type Observation } from './planning.ts'
 import type { IntakePlanRow, IntakeStore } from './store.ts'
 
 export type IntakePlan = IntakePlanRow
@@ -47,7 +47,7 @@ export const previewCandidateEffect = Effect.fn('intake.preview')(function*(stor
   const { observations, media } = yield* readEvidenceEffect(store, candidate)
   const reasons: string[] = []
   if (candidate.evidence.some(isOfficialPage)) {
-    const pageSites = yield* officialPageSitesEffect(store, candidate.venue_id, candidate.ticket_url, candidate.evidence, observations)
+    const pageSites = yield* officialPageSitesEffect(store, candidate.venue_id, candidate.ticket_url, candidate.evidence, observations, media)
     reasons.push(...yield* verifyOfficialPagesEffect(candidate.evidence, { name: candidate.name, date: candidate.date, time: candidate.time,
       doorsTime: candidate.doors_time, doorsDate: candidate.doors_date, ...pageSites }, readPage, renderPage))
   }
@@ -86,7 +86,7 @@ export const previewCandidateEffect = Effect.fn('intake.preview')(function*(stor
     decision.action = 'held'; decision.reasons.push('Select retained artwork or give a reason in artwork_note')
   }
   if (decision.action === 'create' && candidate.ticket_url && !hasOfficialTicketEvidence(candidate.evidence, candidate.ticket_url) &&
-    !hasPostTicketEvidence(candidate.evidence, observations, candidate.ticket_url)) {
+    !hasPostTicketEvidence(candidate.evidence, observations, media, candidate.ticket_url)) {
     decision.action = 'held'; decision.reasons.push('Ticket evidence must quote the complete destination URL')
   }
   if (decision.action === 'update' && !observations.some(post => post.authority === 'venue' || post.authority === 'organizer')) {
@@ -137,7 +137,7 @@ export const previewCandidateEffect = Effect.fn('intake.preview')(function*(stor
         decision.action = 'held'; decision.reasons.push('Doors cannot follow the known start time')
       }
       const doorsTime = baTime(doors), doorsRetained = !payload.doors_at
-      if (doorsTime === baTime(payload.starts_at) && !separatelyCitedDoors(candidate.evidence, doorsTime, doorsRetained)) {
+      if (doorsTime === baTime(payload.starts_at) && !separatelyCitedDoors(candidate.evidence, doorsTime, observations, doorsRetained)) {
         decision.action = 'held'; decision.reasons.push(doorsRetained ? SAME_CLOCK_RETAINED_REASON : SAME_CLOCK_REASON)
       }
     }
@@ -155,7 +155,7 @@ export const previewCandidateEffect = Effect.fn('intake.preview')(function*(stor
     if (old.venue_id !== payload.venue_id) changes.push('venue')
     if (old.price !== payload.price || old.is_free !== payload.is_free) changes.push('price')
     // An official page can support a new event, but a correction still needs the organizer's or venue's own post.
-    for (const field of changes) if (!(field === 'ticket' ? hasPostTicketEvidence(candidate.evidence, observations, payload.ticket_url, true) :
+    for (const field of changes) if (!(field === 'ticket' ? hasPostTicketEvidence(candidate.evidence, observations, media, payload.ticket_url, true) :
       candidate.evidence.some(evidence => !isOfficialPage(evidence) && evidence.fields.some(item => item === field) &&
         observations.some(post => post.id === evidence.observation_id && (post.authority === 'organizer' || post.authority === 'venue'))))) {
       decision.action = 'held'; decision.reasons.push(`Correction of ${field} needs direct organizer or venue evidence`)
@@ -172,10 +172,10 @@ export const previewCandidateEffect = Effect.fn('intake.preview')(function*(stor
 
 /** The allowed sites for ordinary evidence and the stored venue website required by calendar evidence. */
 const officialPageSitesEffect = (store: IntakeStore, venueId: string | null, ticketUrl: string | null, evidence: Candidate['evidence'],
-  observations: ReadonlyArray<Record<string, unknown>>) => Effect.gen(function*() {
+  observations: ReadonlyArray<Record<string, unknown>>, media: readonly Media[]) => Effect.gen(function*() {
   const venue = venueId ? yield* store.venue(venueId) : null
   const venueWebsite = venue?.website ?? null
-  const ticketBacked = evidence.some(item => !isOfficialPage(item) && item.fields.includes('ticket'))
+  const ticketBacked = hasPostTicketEvidence(evidence, observations, media, ticketUrl)
   const sites = officialSites({ website: venueWebsite, ticketUrl: ticketBacked ? ticketUrl : null,
     captions: observations.map(post => String(post.caption ?? '')) })
   return { sites, venueWebsite }
@@ -214,8 +214,11 @@ export const commitPlanEffect = Effect.fn('intake.commit')(function*(store: Inta
   yield* store.checkPlan(id)
   // A page can change after preview, so commit fetches it again.
   if (plan.evidence.some(isOfficialPage)) {
-    const observations = yield* store.observationsByIds([...new Set(plan.evidence.flatMap(item => isOfficialPage(item) ? [] : [item.observation_id]))])
-    const pageSites = yield* officialPageSitesEffect(store, plan.payload.venue_id ?? null, plan.payload.ticket_url ?? null, plan.evidence, observations)
+    const postIds = [...new Set(plan.evidence.flatMap(item => isOfficialPage(item) ? [] : [item.observation_id]))]
+    const observations = yield* store.observationsByIds(postIds)
+    const media = plan.evidence.some(item => !isOfficialPage(item) && item.media_id && item.fields.includes('ticket'))
+      ? yield* store.mediaForObservations(postIds) : []
+    const pageSites = yield* officialPageSitesEffect(store, plan.payload.venue_id ?? null, plan.payload.ticket_url ?? null, plan.evidence, observations, media)
     const pages = yield* verifyOfficialPagesEffect(plan.evidence, { ...planFacts(plan), ...pageSites }, publishers.readPage, renderPage)
     if (pages.length) return yield* failure(pages.join('; '))
   }

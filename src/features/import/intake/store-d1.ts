@@ -17,8 +17,8 @@ import type { EventInsert } from '#shared/lib/types.ts'
 import { importTry, ImportOperationError } from '../core/effect-utils.ts'
 import { mostSimilarVenue, similarIntakeVenues } from '../core/venue-similarity-d1.ts'
 import { pickVenue, venueNameKey } from '../core/venue-identity.ts'
-import { baDate, baTime, citesSeparateClocks, citesTicketDestination, hasOfficialTicketEvidence, isWholeCaptionExcerpt, retainedIntakeDoors,
-  SAME_CLOCK_REASON, SAME_CLOCK_RETAINED_REASON, searchInputsChanged, separatelyCitedDoors, ticketDestinationChanged, type Media } from './planning.ts'
+import { baDate, baTime, citesIntakeClock, citesTicketDestination, hasOfficialTicketEvidence, isWholeCaptionExcerpt, requiresWholeCaptionExcerpt,
+  retainedIntakeDoors, SAME_CLOCK_REASON, SAME_CLOCK_RETAINED_REASON, searchInputsChanged, separatelyCitedDoors, ticketDestinationChanged, type Media } from './planning.ts'
 import { isOfficialPage, type Source } from './schema.ts'
 import type { IntakePlanRow, IntakePolicy, IntakeStore, Reservation, VenueRow } from './store.ts'
 
@@ -382,12 +382,12 @@ export function d1Intake({ db, evidence, artwork, vectors }: IntakeBindings, sit
       const doors = e.doors_at ?? (startChanged ? retainedDoors : null)
       if (plan.action !== 'link' && doors && !e.time_tba) {
         const time = baTime(doors), doorsRetained = !e.doors_at
-        if (time === baTime(startsAt) && !separatelyCitedDoors(plan.evidence.filter(isOfficialPage), time, doorsRetained) &&
+        if (time === baTime(startsAt) && !separatelyCitedDoors(plan.evidence.filter(isOfficialPage), time, [], doorsRetained) &&
           !evidenceRows.some(row => {
-            const isDoorEvidence = fields(row).includes('doors_time')
-            return row.excerpt && (isDoorEvidence || doorsRetained && fields(row).includes('time')) &&
-              (row.media_id ? row.retained_media : isDoorEvidence ? isWholeCaptionExcerpt(row.caption, row.excerpt) : row.caption.includes(row.excerpt)) &&
-              citesSeparateClocks(row.excerpt, time)
+            const citedFields = fields(row), wholeLines = requiresWholeCaptionExcerpt(citedFields)
+            return row.excerpt && (citedFields.includes('doors_time') || doorsRetained && citedFields.includes('time')) &&
+              (row.media_id ? row.retained_media : wholeLines ? isWholeCaptionExcerpt(row.caption, row.excerpt) : row.caption.includes(row.excerpt)) &&
+              citesIntakeClock(row.excerpt, time, row.media_id ? undefined : row.caption, wholeLines, 2)
           })) {
           throw new Error(doorsRetained ? SAME_CLOCK_RETAINED_REASON : SAME_CLOCK_REASON)
         }

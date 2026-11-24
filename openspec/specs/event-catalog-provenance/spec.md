@@ -45,7 +45,7 @@ Time-TBA, location-TBA, missing price, missing description, and missing source d
 #### Scenario: Concierge receives an event with an unverified time
 - **WHEN** a successful concierge read returns an event marked time TBA
 - **THEN** model-facing event facts contain its Buenos Aires calendar date and the time-TBA flag
-- **AND** model-facing facts omit a start time and end time
+- **AND** model-facing facts omit a start time and end time, and, when present, identify the recorded Buenos Aires door time separately
 - **AND** canonical cards retain the source timestamps and time-TBA flag for their existing presentation rules
 
 ### Requirement: Event structured data reflects known catalog facts

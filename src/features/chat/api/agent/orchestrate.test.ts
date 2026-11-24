@@ -321,11 +321,12 @@ describe('recommendation follow-ups', () => {
   }
 
   for (const timeTba of [true, false]) {
-    it(`passes ${timeTba ? 'only the known date' : 'verified local times'} to the model`, async () => {
+    it(`passes ${timeTba ? 'the known date and separate door time' : 'verified local times'} to the model`, async () => {
       const event = {
         ...priorEvent('dated-event', 'Source event'),
         starts_at: '2026-10-14T01:00:00.000Z',
         ends_at: '2026-10-14T04:00:00.000Z',
+        doors_at: '2026-10-14T00:00:00.000Z',
         time_tba: timeTba,
       }
       let modelEvent: Record<string, unknown> | undefined
@@ -346,11 +347,12 @@ describe('recommendation follow-ups', () => {
       expect(modelEvent).toMatchObject({
         starts_at: timeTba ? '2026-10-13' : '2026-10-13 22:00 (America/Argentina/Buenos_Aires)',
         ends_at: timeTba ? null : '2026-10-14 01:00 (America/Argentina/Buenos_Aires)',
+        doors_at: '2026-10-13 21:00 (America/Argentina/Buenos_Aires)',
         time_tba: timeTba,
       })
       // Cards retain source timestamps and the explicit unknown-time flag.
       expect(result.canonical.events[0]).toMatchObject({
-        starts_at: event.starts_at, ends_at: event.ends_at, time_tba: timeTba,
+        starts_at: event.starts_at, ends_at: event.ends_at, doors_at: event.doors_at, time_tba: timeTba,
       })
     })
   }

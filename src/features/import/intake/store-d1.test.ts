@@ -633,6 +633,36 @@ describe.skipIf(bun)('the operator flow on D1', () => {
     }
   })
 
+  it.each([false, true])('does not authorize a ticket host from a tag alone (quotes a seller link: %s)', async quotesLink => {
+    await source()
+    const venueId = await venue(), candidate = id()
+    const ticket_url = quotesLink ? 'https://passline.com/evento/sintetico' : 'https://unrelated.example/sintetico'
+    const excerpt = quotesLink ? 'Synthetic Jazz — Entradas: www.passline.com/evento/sintetico' : 'Synthetic Jazz — link en bio'
+    const pageExcerpt = 'Reservas para Synthetic Jazz'
+    const post = await observation((await run(store.reserveCollection)).id, excerpt)
+    await run(submitCandidateEffect(store, candidateInput(candidate, post, venueId, { time: null, ticket_url, evidence: [
+      { observation_id: post, fields: ['name', 'date', 'venue', 'ticket'], excerpt, media_id: null },
+      { kind: 'official_page', url: ticket_url, fields: ['ticket'], excerpt: pageExcerpt },
+    ] })))
+    const readPage = vi.fn(async () => ({ visible: pageExcerpt, h1: 'Synthetic Jazz', title: null }))
+    const preview = await run(previewCandidateEffect(store, candidate, new Date(), readPage))
+    if (quotesLink) {
+      expect(preview).toMatchObject({ action: 'create', reasons: [] })
+      await run(commitPlanEffect(store, preview.id, { ...publishers, readPage }))
+      expect(readPage).toHaveBeenCalledTimes(2)
+      expect(await db.prepare('SELECT ticket_url FROM events WHERE id = ?').bind(preview.event_id).first()).toEqual({ ticket_url })
+    } else {
+      const reason = "Official page must be on the venue's website"
+      expect(preview).toMatchObject({ action: 'held', reasons: [expect.stringContaining(reason)] })
+      // Commit must reject a previously prepared plan, not just decline to commit a held preview.
+      const bypass = await run(store.insertPlan({ candidate_id: candidate, revision: 1, action: 'create', event_id: preview.event_id,
+        expected_event_updated_at: null, payload: preview.payload, artwork_media_id: null, evidence: preview.evidence, reasons: [] }))
+      expect(await fails(commitPlanEffect(store, bypass.id, { ...publishers, readPage }))).toContain(reason)
+      expect(readPage).not.toHaveBeenCalled()
+      expect(await db.prepare('SELECT id FROM events WHERE id = ?').bind(preview.event_id).first()).toBeNull()
+    }
+  })
+
   it('holds a new ticket link when its caption excerpt cuts the URL short', async () => {
     await source()
     const venueId = await venue(), candidate = id()

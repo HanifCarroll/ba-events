@@ -84,6 +84,17 @@ describe('Instagram candidate publication rules', () => {
       expect(validateEvidence({ ...candidate(), time: wrong, evidence }, posts, [], now)).toContain('Start time must appear in the cited excerpt')
       expect(validateEvidence({ ...candidate(), time: correct, evidence }, posts, [], now)).toEqual([])
     })
+  it.each([' ', '\u00a0', '\u202f'])('does not let an excerpt drop the caption clock meridiem (%j)', space => {
+    for (const field of ['time', 'doors_time'] as const) {
+      const label = field === 'time' ? 'Show' : 'Puertas'
+      const partial = `${label} 9:30`, full = `${partial} p.${space}m.`
+      const posts = [{ ...post, caption: `${post.caption}\r\n  ${full}  ` }]
+      const evidence = (excerpt: string) => [{ ...candidate().evidence[0], fields: ['name', 'date', 'venue', field] as const, excerpt }]
+      const input = { ...candidate(), time: null, [field]: '09:30', evidence: evidence(partial) }
+      expect(validateEvidence(input, posts, [], now)).toContain(`${field === 'time' ? 'Start' : 'Door'} time must appear in the cited excerpt`)
+      expect(validateEvidence({ ...input, [field]: '21:30', evidence: evidence(full) }, posts, [], now)).toEqual([])
+    }
+  })
   it('requires two separate clock tokens when the reported doors and start times are equal', () => {
     const evidence = (excerpt: string) => [{ ...candidate().evidence[0], fields: ['name', 'date', 'venue', 'time', 'doors_time'] as const, excerpt }]
     const input = { ...candidate(), doors_time: '21:00' }

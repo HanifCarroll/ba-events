@@ -3,7 +3,7 @@ import type { Candidate } from './schema.ts'
 import { isOfficialPage, validPublicUrl } from './schema.ts'
 import { citesCreditName, isExcludedCreditName } from '#shared/lib/event-credit-evidence.ts'
 import { TICKET_SELLERS } from '#shared/lib/ticket-sellers.ts'
-import { citesDateAndClock, quotedClocks } from './clock-evidence.ts'
+import { citesClock, citesDateAndClock } from './clock-evidence.ts'
 
 export type Observation = {
   id: string; post_id: string; source_username: string; caption: string;
@@ -60,12 +60,14 @@ export function citesTicketDestination(excerpt: string, ticket: string, caption 
   return false
 }
 
-export function hasPostTicketEvidence(evidence: Candidate['evidence'], observations: Observation[], ticket: string | null | undefined, direct = false): boolean {
+export function hasPostTicketEvidence(evidence: Candidate['evidence'], observations: ReadonlyArray<Record<string, unknown>>,
+  media: readonly Media[], ticket: string | null | undefined, direct = false): boolean {
   return Boolean(ticket && evidence.some(item => {
     if (isOfficialPage(item) || !item.fields.includes('ticket')) return false
     const post = observations.find(post => post.id === item.observation_id)
-    return post && (!direct || post.authority === 'venue' || post.authority === 'organizer') &&
-      citesTicketDestination(item.excerpt, ticket, item.media_id ? undefined : post.caption)
+    if (!post || direct && post.authority !== 'venue' && post.authority !== 'organizer') return false
+    if (item.media_id) return media.some(image => image.id === item.media_id && image.observation_id === post.id) && citesTicketDestination(item.excerpt, ticket)
+    return typeof post.caption === 'string' && citesTicketDestination(item.excerpt, ticket, post.caption)
   }))
 }
 
@@ -120,21 +122,31 @@ export function suppliedDetailFacts(candidate: Candidate): string[] {
 }
 
 const wholeLineFields: readonly string[] = ['organizer', 'performers', 'doors_time', 'offers_valid_from']
+export const requiresWholeCaptionExcerpt = (fields: readonly string[]) => fields.some(field => wholeLineFields.includes(field))
+
+const captionLines = (text: string) => text.trim().split(/\r?\n/u).map(line => line.trim())
 
 export function isWholeCaptionExcerpt(caption: string, excerpt: string): boolean {
-  const lines = (text: string) => text.trim().split(/\r?\n/u).map(line => line.trim())
-  const source = lines(caption), quote = lines(excerpt)
+  const source = captionLines(caption), quote = captionLines(excerpt)
   return Boolean(excerpt.trim()) && source.some((_, start) => quote.every((line, offset) => source[start + offset] === line))
 }
 
 export const SAME_CLOCK_REASON = 'Equal doors and start times need two separate clocks in the doors excerpt'
 
-export const citesSeparateClocks = (excerpt: string, time: string) => quotedClocks(excerpt).filter(clock => clock === time).length >= 2
+export function citesIntakeClock(excerpt: string, time: string, caption: string | undefined, wholeLines: boolean, count = 1): boolean {
+  if (caption !== undefined && wholeLines) return citesClock(captionLines(excerpt).join('\n'), time, captionLines(caption).join('\n'), count)
+  return citesClock(excerpt, time, caption, count)
+}
 
 export const SAME_CLOCK_RETAINED_REASON = 'Equal retained doors and start times need two separate clocks in one excerpt'
 
-export function separatelyCitedDoors(evidence: Candidate['evidence'], time: string, doorsRetained = false): boolean {
-  return evidence.some(item => (item.fields.includes('doors_time') || doorsRetained && item.fields.includes('time')) && citesSeparateClocks(item.excerpt, time))
+export function separatelyCitedDoors(evidence: Candidate['evidence'], time: string, observations: readonly Observation[], doorsRetained = false): boolean {
+  return evidence.some(item => {
+    if (!item.fields.includes('doors_time') && !(doorsRetained && item.fields.includes('time'))) return false
+    if (isOfficialPage(item) || item.media_id) return citesClock(item.excerpt, time, undefined, 2)
+    const post = observations.find(post => post.id === item.observation_id)
+    return post && citesIntakeClock(item.excerpt, time, post.caption, requiresWholeCaptionExcerpt(item.fields), 2)
+  })
 }
 
 export function validateEvidence(candidate: Candidate, observations: Observation[], media: Media[], now: Date, venueName = candidate.venue_name): string[] {
@@ -155,7 +167,7 @@ export function validateEvidence(candidate: Candidate, observations: Observation
     }
   } catch { reasons.push('Invalid doors date') }
   const doorTime = candidate.doors_time
-  if (doorTime && doorTime === candidate.time && !separatelyCitedDoors(candidate.evidence, doorTime)) reasons.push(SAME_CLOCK_REASON)
+  if (doorTime && doorTime === candidate.time && !separatelyCitedDoors(candidate.evidence, doorTime, observations)) reasons.push(SAME_CLOCK_REASON)
   if (!candidate.venue_id) reasons.push('Venue must be resolved before publishing')
   if (candidate.price_kind === 'fixed' && (!candidate.price_ars || candidate.price_ars < 0)) reasons.push('Fixed price must be positive')
   if (candidate.price_kind !== 'fixed' && candidate.price_ars !== null) reasons.push('Only a fixed price may set price_ars')
@@ -169,14 +181,19 @@ export function validateEvidence(candidate: Candidate, observations: Observation
     const post = observations.find(item => item.id === evidence.observation_id)
     if (!post) { reasons.push('Evidence observation is missing'); continue }
     if (post.media_urls && media.filter(item => item.observation_id === post.id).length !== post.media_urls.length) reasons.push('Some source images have not been retained; resolve incomplete evidence')
+    const wholeLines = requiresWholeCaptionExcerpt(evidence.fields)
     if (evidence.media_id) {
       if (!media.some(item => item.id === evidence.media_id && item.observation_id === post.id)) reasons.push('Flyer evidence is not attached to this observation')
-    } else if (evidence.fields.some(field => wholeLineFields.includes(field))) {
+    } else if (wholeLines) {
       if (!isWholeCaptionExcerpt(post.caption, evidence.excerpt)) reasons.push('Credit, doors, and sale-opening caption evidence must quote complete lines')
     } else if (!post.caption.includes(evidence.excerpt)) reasons.push('Caption evidence must be an exact excerpt')
-    const clocks = quotedClocks(evidence.excerpt)
-    if (candidate.time && evidence.fields.includes('time') && !clocks.includes(candidate.time)) reasons.push('Start time must appear in the cited excerpt')
-    if (doorTime && evidence.fields.includes('doors_time') && !clocks.includes(doorTime)) reasons.push('Door time must appear in the cited excerpt')
+    const caption = evidence.media_id ? undefined : post.caption
+    if (candidate.time && evidence.fields.includes('time') && !citesIntakeClock(evidence.excerpt, candidate.time, caption, wholeLines)) {
+      reasons.push('Start time must appear in the cited excerpt')
+    }
+    if (doorTime && evidence.fields.includes('doors_time') && !citesIntakeClock(evidence.excerpt, doorTime, caption, wholeLines)) {
+      reasons.push('Door time must appear in the cited excerpt')
+    }
     for (const field of evidence.fields) supported.add(field)
   }
   const postEvidence = candidate.evidence.filter(item => 'observation_id' in item)

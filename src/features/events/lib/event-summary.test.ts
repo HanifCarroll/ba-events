@@ -135,7 +135,7 @@ describe('buildEventJsonLd', () => {
 		{ basis: 'a zero price', price: 0, is_free: false, expectedPrice: 0 },
 		{ basis: 'a paid price', price: 9000, is_free: false, expectedPrice: 9000 }
 	])('keeps the price without a ticket link when admission is known from $basis', ({ price, is_free, expectedPrice }) => {
-		const jsonLd = jsonLdFor({ price, is_free, ticket_url: null });
+		const jsonLd = jsonLdFor({ price, is_free, ticket_url: null, offers_valid_from: '2026-08-12T19:00:00.000Z' });
 		expect(jsonLd.url).toBe('https://baeventos.com/events/evt-1');
 		expect(jsonLd.isAccessibleForFree).toBe(expectedPrice === 0 ? true : undefined);
 		expect(jsonLd.offers).toStrictEqual({ '@type': 'Offer', price: expectedPrice, priceCurrency: 'ARS' });
@@ -168,7 +168,7 @@ describe('buildEventJsonLd', () => {
 			performer: [{ '@type': 'Person', name: 'Ana Nube' }, { '@type': 'PerformingGroup', ...facts.performers[1] }],
 			offers: { validFrom: facts.offers_valid_from },
 		});
-		expect(jsonLdFor({ ...facts, ticket_url: null }).offers).toBeUndefined();
+		expect(jsonLdFor({ ...facts, ticket_url: null }).offers).toStrictEqual({ '@type': 'Offer', price: 0, priceCurrency: 'ARS' });
 		expect(jsonLdFor().offers).not.toHaveProperty('validFrom');
 		expect(jsonLdFor()).not.toHaveProperty('doorTime');
 	});
