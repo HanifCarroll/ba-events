@@ -47,7 +47,7 @@ function filterNamedGenre<T extends { facets?: { genres?: string[] } }>(
     : { candidates, mismatch: true }
 }
 
-const TIME_FILTER_DESCRIPTION = 'Today means the rest of the Buenos Aires day and night (until 06:00), including all-day and ongoing events today. Use today for “what’s on today?” or “¿qué hay hoy?”; use now only for events already happening (“right now”, “ahora”, “en este momento”). Tonight means this evening. Tomorrow means the next day, weekend means Saturday/Sunday, week means the next 7 days (not weekdays only), and future is unbounded.'
+const TIME_FILTER_DESCRIPTION = 'Today includes ongoing timed events, all-day and time-TBA events on the current Buenos Aires date, and timed events starting before the night ends at 06:00. Use today for “what’s on today?” or “¿qué hay hoy?”; use now only for events already happening (“right now”, “ahora”, “en este momento”). Tonight means this evening. Tomorrow means the next day, weekend means Saturday/Sunday, week means the next 7 days (not weekdays only), and future is unbounded.'
 
 // ============================================================================
 // INPUT SCHEMA
@@ -223,12 +223,13 @@ The result includes coverage metadata: the window you searched, total matches, a
       )
 
       logger.debug('[search_events] Search parameters', {
-        input,
-        intent,
-        filters,
+        timeFilter: input.timeFilter,
+        startsAfter: filters.startsAfter,
+        startsBefore: filters.startsBefore,
+        excludedEventCount: filters.excludeEventIds?.length ?? 0,
+        hasQuery: !!query,
         displayLimit,
-        currentTime: new Date().toISOString(),
-        baTime: getNowInBA().toISOString(),
+        currentTime: searchAnchor,
       })
 
       // Unknown venue: user named a venue that resolved to zero venues. Do not
@@ -378,12 +379,11 @@ The result includes coverage metadata: the window you searched, total matches, a
             results = ranked.slice(0, 1)
             logger.debug('[search_events] Using surprise ranking', {
               candidates: candidates.length,
-              topId: ranked[0]?.id,
               rankMs: Math.round(performance.now() - rankStartedAt),
             })
           } else if (query) {
             searchMode = 'semantic'
-            logger.debug('[search_events] Using hybrid search', { query })
+            logger.debug('[search_events] Using hybrid search')
             // Retrieve CANDIDATE_LIMIT nearest vector neighbors, then rerank
             // them with the hosted reranker (input order = fused retrieval order
             // = baseRank) before the diversity pass. Ranking only — never drops
@@ -461,12 +461,11 @@ The result includes coverage metadata: the window you searched, total matches, a
                   const r = rerankMeta.ranks?.get(e.id)
                   return r
                     ? {
-                        id: e.id,
                         baseRank: r.baseRank,
                         rerankerRank: r.rerankerRank,
                         finalRank: r.finalRank,
                       }
-                    : { id: e.id }
+                    : null
                 })
               : undefined,
         })

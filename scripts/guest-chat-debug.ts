@@ -9,6 +9,7 @@
  */
 
 import { readD1, type ReadD1 } from './read-d1.ts'
+import { isServerGuestTranscript } from '../src/features/chat/api/guest-debug-format.ts'
 
 interface GuestChatDebugRow {
   conversation_id: string
@@ -62,8 +63,12 @@ export async function readGuestChat(read: ReadD1, conversationId: string) {
     [conversationId],
   )
   if (!row) return null
-  const messages: unknown = JSON.parse(row.messages)
-  return { ...row, messages: Array.isArray(messages) ? messages as DebugMessage[] : [] }
+  const stored: unknown = JSON.parse(row.messages)
+  if (isServerGuestTranscript(stored)) return { ...row, messages: stored.messages as DebugMessage[] }
+  // Old rows still show display history, but their traces have no trustworthy source.
+  const messages = Array.isArray(stored) ? (stored as DebugMessage[]).flatMap(message =>
+    message && typeof message === 'object' ? [{ role: message.role, parts: message.parts, content: message.content }] : []) : []
+  return { ...row, messages }
 }
 
 export function formatGuestDebugMessages(messages: DebugMessage[]): string[] {

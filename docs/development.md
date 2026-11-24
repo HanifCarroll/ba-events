@@ -37,7 +37,7 @@ assistant turn's displayed cards, suggestions, search context, and available
 sanitized tool traces. Traces are transient in the browser; the guest debug
 row retains them across transcript updates by response ID. It keeps the newest
 complete messages and traces within a 256 KiB UTF-8 transcript limit. Traces
-missing from old rows cannot be reconstructed.
+from unversioned rows are not displayed: older writes could accept client-supplied traces, so their origin cannot be verified. The visible transcript remains available.
 
 ## Search configuration
 

@@ -65,7 +65,6 @@ import {
 } from '#features/chat/api/agent/search-context.ts'
 import { getConversationEffect } from '#features/chat/api/conversations.server.ts'
 import {
-  buildGuestDebugTranscript,
   persistGuestChatDebugEffect,
   recordGuestRequestStartedEffect,
   recordGuestRequestTerminalEffect,
@@ -470,7 +469,8 @@ export const POST = async (event: RequestEvent, dependencies: { rateLimit?: type
               conversationId,
               locale,
               ip,
-              messages: buildGuestDebugTranscript(uiMessages, {
+              messages: uiMessages,
+              assistant: {
                 id: messageId,
                 role: 'assistant',
                 parts: [
@@ -478,7 +478,7 @@ export const POST = async (event: RequestEvent, dependencies: { rateLimit?: type
                   { type: 'data-response', data: canonical },
                 ],
                 executionTrace: result.executionTrace,
-              }),
+              },
               lastUserText: originalQuery || null,
             })),
             Effect.runPromise(recordGuestRequestTerminalEffect({
@@ -517,12 +517,13 @@ export const POST = async (event: RequestEvent, dependencies: { rateLimit?: type
               conversationId,
               locale,
               ip,
-              messages: buildGuestDebugTranscript(uiMessages, {
+              messages: uiMessages,
+              assistant: {
                 id: assistantMessageId ?? generateId(),
                 role: 'assistant',
                 parts: [{ type: 'text', text: '' }],
-					error: publicChatError(error),
-              }),
+                error: publicChatError(error),
+              },
               lastUserText: originalQuery || null,
             })),
             Effect.runPromise(recordGuestRequestTerminalEffect({

@@ -43,8 +43,7 @@ import {
 export interface EventSearchMust {
   startsAfter?: string
   startsBefore?: string
-  /** Earliest local-day start eligible for the today overlap rule. */
-  todayStartsAt?: string
+  today?: EventFilters['today']
   /** Exact per-day windows for a multi-weekday ask ("Monday or Friday").
    *  Disjoint days are queried separately — never a spanning hull, which would
    *  admit unrequested weekdays in between. */
@@ -380,7 +379,10 @@ function applyTimeFilter(
     const w = tonightWindow(now)
     after = timeFilter === 'today' ? now : w.after
     before = w.before
-    if (timeFilter === 'today') must.todayStartsAt = baToUTC(startOfDay(now))
+    if (timeFilter === 'today') {
+      const day = startOfDay(now)
+      must.today = { dayStart: baToUTC(day), dayEnd: baToUTC(addDays(day, 1)), now: baToUTC(now) }
+    }
   } else if (timeFilter === 'tomorrow') {
     const tomorrow = startOfDay(addDays(now, 1))
     after = tomorrow
@@ -467,7 +469,7 @@ export function mustToFilters(must: EventSearchMust): EventFilters {
   const filters: EventFilters = {}
   if (must.startsAfter) filters.startsAfter = must.startsAfter
   if (must.startsBefore) filters.startsBefore = must.startsBefore
-  if (must.todayStartsAt) filters.todayStartsAt = must.todayStartsAt
+  if (must.today) filters.today = must.today
   if (must.neighborhoodIds?.length) filters.neighborhoods = must.neighborhoodIds
   if (must.venueIds?.length) filters.venueIds = must.venueIds
   if (must.categories?.length) filters.categories = must.categories
@@ -598,7 +600,7 @@ export async function canonicalizeSearchIntent(
     } else {
       must.startsAfter = latest(must.startsAfter, explicit.after)
       must.startsBefore = earliest(must.startsBefore, explicit.before)
-      if (must.todayStartsAt) must.todayStartsAt = latest(must.todayStartsAt, explicit.after)
+      if (must.today && explicit.after) must.today.explicitStart = explicit.after
     }
   }
 

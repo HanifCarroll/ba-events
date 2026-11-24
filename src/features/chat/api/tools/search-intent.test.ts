@@ -94,7 +94,9 @@ describe('canonicalizeSearchIntent — date intent', () => {
     [1, 0, 'events today', '2026-08-12T04:00:00.000Z', '2026-08-12T09:00:00.000Z'],
   ] as const)('uses the correct local-night cutoff at %i:%i', async (hour, minute, query, startsAfter, startsBefore) => {
     const intent = await canonicalizeSearchIntent({ query, timeFilter: 'now' }, new Date(2026, 7, 12, hour, minute))
-    expect(intent.must).toMatchObject({ startsAfter, startsBefore, todayStartsAt: '2026-08-12T03:00:00.000Z' })
+    expect(intent.must).toMatchObject({ startsAfter, startsBefore, today: {
+      dayStart: '2026-08-12T03:00:00.000Z', dayEnd: '2026-08-13T03:00:00.000Z', now: startsAfter,
+    } })
     expect(intent.semanticQuery).toBe('')
   })
 

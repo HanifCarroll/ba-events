@@ -68,14 +68,16 @@ function matches(event: ChatEventPayload, intent: EventSearchIntent, happeningNo
   const must = intent.must
   const timestamp = Date.parse(event.starts_at)
   const now = Date.parse(FROZEN_NOW)
-  const within = (after?: string, before?: string, todayStartsAt?: string) =>
-    (!after || timestamp >= Date.parse(after) || Boolean(todayStartsAt && timestamp >= Date.parse(todayStartsAt) &&
-      (event.is_all_day || (!event.time_tba && event.ends_at && Date.parse(event.ends_at) > Date.parse(after))))) &&
-    (!before || timestamp < Date.parse(before))
+  const within = (after?: string, before?: string) =>
+    (!after || timestamp >= Date.parse(after)) && (!before || timestamp < Date.parse(before))
+  const today = must.today
+  const withinToday = today && within(today.explicitStart, must.startsBefore) && (event.time_tba || event.is_all_day
+    ? within(today.dayStart, today.dayEnd)
+    : timestamp >= Date.parse(today.now) || (event.ends_at !== null && Date.parse(event.ends_at) > Date.parse(today.now)))
   return event.status === 'scheduled'
     && (happeningNow ? !event.time_tba && timestamp <= now &&
       (event.ends_at ? Date.parse(event.ends_at) > now : event.is_all_day ? timestamp >= Date.parse(`${FROZEN_DATE}T00:00:00-03:00`) : now - timestamp < 3 * 60 * 60 * 1000) : true)
-    && within(must.startsAfter, must.startsBefore, must.todayStartsAt)
+    && (today ? withinToday : within(must.startsAfter, must.startsBefore))
     && (!must.weekdayWindows || must.weekdayWindows.some(window => within(window.startsAfter, window.startsBefore)))
     && (!must.neighborhoodIds || must.neighborhoodIds.includes(event.venue_neighborhood!))
     && (!must.venueIds || must.venueIds.includes(event.venue_id!))

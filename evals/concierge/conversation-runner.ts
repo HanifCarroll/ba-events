@@ -99,7 +99,7 @@ export async function scoreConversationTurn(
   for (const call of run.toolCalls.filter(call => call.toolName === 'search_events')) {
     const searchInput = call.input as SearchEventsInput
     const intent = await frozenSearchIntent(searchInput)
-    if (expectation.today && (searchInput.timeFilter !== 'today' || !intent.must.todayStartsAt || intent.must.startsBefore !== '2026-10-14T09:00:00.000Z')) failures.push('constraints: today window not preserved')
+    if (expectation.today && (searchInput.timeFilter !== 'today' || !intent.must.today || intent.must.startsBefore !== '2026-10-14T09:00:00.000Z')) failures.push('constraints: today window not preserved')
     if (expectation.neighborhood && !intent.must.neighborhoodIds?.includes(expectation.neighborhood)) failures.push('constraints: neighborhood not preserved')
     if (expectation.isFree && intent.must.isFree !== true) failures.push('constraints: free status not preserved')
     if (expectation.maxPrice !== undefined && (intent.must.maxPrice === undefined || intent.must.maxPrice > expectation.maxPrice)) failures.push('constraints: maximum price not preserved')

@@ -38,7 +38,8 @@ Define the current `search_events` intent boundary: canonicalize user/tool input
 #### Scenario: Today and happening now are different windows
 - **WHEN** the user asks for events today in English or Spanish
 - **THEN** the search includes events starting from now until the Buenos Aires night ends at 06:00, using the current morning’s cutoff before 06:00
-- **AND** it includes all-day events on the current local day and events that started on that day with a confirmed future end
+- **AND** date-only events (all-day or time TBA) belong only to the current Buenos Aires calendar date
+- **AND** timed events with a confirmed future end can be included even if they started on a previous date
 - **AND** it does not use the happening-now search
 
 #### Scenario: Happening-now results have evidence they started

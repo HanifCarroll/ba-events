@@ -6,6 +6,7 @@
  */
 
 import type { ChatEventPayload, RefinementSuggestion } from '#shared/lib/types.ts'
+import { ALTERNATIVES_PROMPT } from './agent/answer-constraints.ts'
 import type { SearchEventsInput } from './tools/search-events.ts'
 
 /**
@@ -45,7 +46,7 @@ export function generateSuggestions(context: SuggestionContext): RefinementSugge
       suggestions.push({
         id: 'show-alternatives',
         label: locale === 'es' ? 'Ver alternativas' : 'Show alternatives',
-        prompt: locale === 'es' ? 'muéstrame algunas opciones alternativas' : 'show me a few alternative options',
+        prompt: ALTERNATIVES_PROMPT[locale],
         icon: 'list',
         type: 'broader',
       })

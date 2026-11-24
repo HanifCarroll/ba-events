@@ -84,6 +84,7 @@ Each attempt SHALL capture its conversation, authenticated identity, turn, claim
 - **WHEN** a new guest debug snapshot contains prior assistant responses without their transient tool traces
 - **THEN** the server retains the earlier sanitized traces for matching responses from the existing private debug row
 - **AND** the debug transcript keeps the newest complete messages within 256 KiB of UTF-8 JSON, without changing guest browser persistence
+- **AND** submitted client history is limited to display fields and cannot introduce server traces or errors
 
 #### Scenario: Guest history cannot be read
 - **WHEN** the current conversation's IndexedDB read fails

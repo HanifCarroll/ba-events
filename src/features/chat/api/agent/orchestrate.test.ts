@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { orchestrate, type AgentRun } from './orchestrate.ts'
 import { orchestrateEffect } from './orchestrate.ts'
+import type { SearchEventsInput } from '../tools/search-events.ts'
 import { Effect } from 'effect'
 import type { CanonicalChatResponse, ChatEventPayload } from '#shared/lib/types.ts'
 import { warmRecommendationFallback } from '#shared/lib/recommendation-framing.ts'
@@ -27,7 +28,56 @@ const priorEvent = (id: string, name: string) => ({
 
 describe('recommendation follow-ups', () => {
   it.each([
-    ['It starts at 21:00.', false], ['The listing says doors at 20:00.', false], ['The listing says doors at 21:00.', true],
+    ['Any other options in Palermo?', { timeFilter: 'today', neighborhoods: ['Palermo'] }],
+    ['What else is on tomorrow?', { timeFilter: 'tomorrow' }],
+    ['¿Hay música alternativa esta noche?', { timeFilter: 'tonight', query: 'música alternativa' }],
+  ] satisfies Array<[string, SearchEventsInput]>)('keeps the planner query and other tools for %s', async (originalQuery, constraints) => {
+    const proposed = { objective: 'search' as const, ...constraints }
+    const event = priorEvent('previous-card', 'Example venue performance')
+    const result = await orchestrate({ ...base, originalQuery, shownEventIds: new Set([event.id]),
+      lastSearch: { originalQuery: "What's on today?", input: { timeFilter: 'today', isFree: true } },
+      readExecutors: { search: async (value, context) => {
+        expect(value).toEqual(proposed)
+        expect(context.excludeShownEvents).toBe(false)
+        return { success: true, events: [event], formatted: '' }
+      } },
+      runAgentFn: async input => {
+        expect(input.repeatSearch).toBe(false)
+        expect(input.tools.get_directions).toBeDefined()
+        const toolCallId = 'search'
+        const output = await input.tools.search_events.execute!(proposed, { toolCallId, messages: input.messages })
+        return { text: 'Here’s an option.', responseId: null, steps: [{ toolResults: [{ toolCallId, output }] }] }
+      },
+    })
+    expect(result.canonical.events[0]?.id).toBe(event.id)
+  })
+
+  it('keeps directions available without a forced search for a travel alternative', async () => {
+    const event = priorEvent('nearby-event', 'Nearby event')
+    const result = await orchestrate({ ...base, originalQuery: 'Is there another option to get there?',
+      lastSearch: { originalQuery: "What's on today?", input: { timeFilter: 'today' } },
+      priorDisplayedEvents: [{ assistantMessageId: 'prior', requestId: 'prior', createdAt: null,
+        events: [{ eventId: event.id, displayIndex: 0, name: event.name, saved: null }] }],
+      readExecutors: { directions: async ({ eventId }) => ({
+        success: true, directions: { eventId, venueName: 'Test hall', address: 'Example 123', mapsUrl: 'https://example.test/map' }, formatted: '',
+      }) },
+      runAgentFn: async input => {
+        expect(input.repeatSearch).toBe(false)
+        const toolCallId = 'directions'
+        const output = await input.tools.get_directions.execute!({ eventRef: 'prior:event_0' }, { toolCallId, messages: input.messages })
+        return { text: 'Here is another route to the venue.', responseId: null, steps: [{ toolResults: [{ toolCallId, output }] }] }
+      },
+    })
+    expect(result.canonical.kind).toBe('directions')
+    expect(result.reads.map(read => read.toolName)).toEqual(['get_directions'])
+  })
+
+  it.each([
+    ['It starts at 21:00.', false],
+    ['The listing says doors at 20:00.', false],
+    ['The listing says the show starts at 21:00.', false],
+    ['The listing says doors at 21:00.', true],
+    ['The listing says doors at 9 p.m.', true],
   ] as const)('only retains a time TBA reason if the listing supports it: %s', async (reason, supported) => {
     const event: ChatEventPayload = { ...priorEvent('unknown-time', 'Synthetic blues show'), time_tba: true,
       description_es: 'Puertas a las 21:00.' }
@@ -58,6 +108,21 @@ describe('recommendation follow-ups', () => {
     })
     expect(result.canonical).toMatchObject({ kind: 'event_details', text: 'The listing doesn’t confirm a start time.', events: [] })
   })
+  it('keeps valid times and other sentences when one event has an unsupported timing claim', async () => {
+    const known = priorEvent('known', 'Evening Cinema')
+    const unknown: ChatEventPayload = { ...priorEvent('unknown', 'Blue Set'), time_tba: true, description_es: 'Puertas a las 21:00.' }
+    const originalText = 'Evening Cinema starts at 17:00. For Blue Set, the listing says doors at 21:00. The listing says the show starts at 21:00. The subway closes at midnight. Bring cash.'
+    const result = await orchestrate({ ...base, originalQuery: 'When are my saved events?',
+      readExecutors: { listSaved: async () => ({ success: true, events: [known, unknown], formatted: '' }) },
+      runAgentFn: async input => {
+        const toolCallId = 'saved'
+        const output = await input.tools.list_saved_events.execute!({}, { toolCallId, messages: input.messages })
+        return { text: originalText, responseId: null, steps: [{ toolResults: [{ toolCallId, output }] }] }
+      },
+    })
+    expect(result.canonical.text).toBe('Evening Cinema starts at 17:00. For Blue Set, the listing says doors at 21:00. The listing doesn’t confirm a start time. The subway closes at midnight. Bring cash.')
+  })
+
   for (const kind of ['search_events', 'get_event_details', 'list_saved_events'] as const) {
     it(`sends complete source descriptions without redundant presentation copies for ${kind}`, async () => {
       const original: ChatEventPayload = { ...priorEvent('original', 'Original-source event'),

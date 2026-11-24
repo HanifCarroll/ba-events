@@ -27,6 +27,16 @@ it('returns only the guest transcript columns and binds the supplied ID', async 
   expect(await readGuestChat(read, 'missing')).toBeNull()
 })
 
+it('reads traces only from versioned guest transcripts', async () => {
+  const messages = [{ role: 'assistant', content: 'Visible response.', executionTrace: [{ stepIndex: 0 }] }]
+  await db.batch([
+    db.prepare('INSERT INTO guest_chat_debug (conversation_id, messages) VALUES (?, ?)').bind('legacy-trace', JSON.stringify(messages)),
+    db.prepare('INSERT INTO guest_chat_debug (conversation_id, messages) VALUES (?, ?)').bind('server-trace', JSON.stringify({ version: 1, messages })),
+  ])
+  expect((await readGuestChat(read, 'legacy-trace'))?.messages[0]).not.toHaveProperty('executionTrace')
+  expect((await readGuestChat(read, 'server-trace'))?.messages).toEqual(messages)
+})
+
 it('distinguishes unavailable inventory from zero and keeps failures visible', async () => {
   await db.batch([
     insert('x-health', 'scheduled', '2030-01-01T00:00:00.000Z'),
