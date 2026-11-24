@@ -3,7 +3,7 @@ import { useD1Binding } from '#shared/lib/db/d1-binding.server.ts'
 import { buildGuestDebugTranscript, persistGuestChatDebug, recordGuestRequestStarted, recordGuestRequestTerminal } from './guest-debug.server.ts'
 
 function bindRun(run: () => Promise<unknown>) {
-  useD1Binding({ DB: { prepare: () => ({ bind: () => ({ run }) }), batch: vi.fn() } })
+  useD1Binding({ DB: { prepare: () => ({ bind: () => ({ first: async () => null, run }) }), batch: vi.fn() } })
 }
 afterEach(() => { vi.useRealTimers(); useD1Binding(undefined) })
 
@@ -13,15 +13,15 @@ const terminal = () => recordGuestRequestTerminal({ requestId: 'req-1', conversa
 
 for (const [name, persist] of Object.entries({ transcript, start, terminal })) {
   it(`awaits the ${name} write`, async () => {
-    const gate = Promise.withResolvers<void>()
+    const gate = Promise.withResolvers<{ meta: { changes: number } }>()
     const run = vi.fn(() => gate.promise)
     bindRun(run)
     let settled = false
     const pending = persist().then(() => { settled = true })
-    await Promise.resolve()
+    await vi.waitFor(() => expect(run).toHaveBeenCalledTimes(1))
     expect(run).toHaveBeenCalledTimes(1)
     expect(settled).toBe(false)
-    gate.resolve()
+    gate.resolve({ meta: { changes: 1 } })
     await pending
     expect(settled).toBe(true)
   })

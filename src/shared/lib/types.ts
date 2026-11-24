@@ -238,6 +238,10 @@ export interface EventInsert {
 // Filters for querying events
 export interface EventFilters {
   startsAfter?: string // ISO datetime
+  /** Include today's all-day and known ongoing events from this local-day lower bound. */
+  todayStartsAt?: string
+  /** Server-only exclusion for cards already shown on an alternatives turn. */
+  excludeEventIds?: readonly string[]
   startsBefore?: string // ISO datetime
   neighborhoods?: Neighborhood[]
   venueIds?: string[]

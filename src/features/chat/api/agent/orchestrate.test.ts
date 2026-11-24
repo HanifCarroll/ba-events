@@ -26,6 +26,38 @@ const priorEvent = (id: string, name: string) => ({
 }) as unknown as ChatEventPayload
 
 describe('recommendation follow-ups', () => {
+  it.each([
+    ['It starts at 21:00.', false], ['The listing says doors at 20:00.', false], ['The listing says doors at 21:00.', true],
+  ] as const)('only retains a time TBA reason if the listing supports it: %s', async (reason, supported) => {
+    const event: ChatEventPayload = { ...priorEvent('unknown-time', 'Synthetic blues show'), time_tba: true,
+      description_es: 'Puertas a las 21:00.' }
+    const result = await orchestrate({ ...base, originalQuery: 'Show me some blues.',
+      readExecutors: { search: async () => ({ success: true, events: [event], formatted: '' }) },
+      runAgentFn: async input => {
+        const toolCallId = 'search'
+        const output = await input.tools.search_events.execute!({ objective: 'search' }, { toolCallId, messages: input.messages })
+        return { text: `ACK: Here’s an option for you.\nREASON_1: ${reason}\nNEXT: Would you like directions?`, responseId: null,
+          steps: [{ toolCalls: [{ toolCallId, toolName: 'search_events' }], toolResults: [{ toolCallId, toolName: 'search_events', output }] }] }
+      },
+    })
+    expect(result.canonical.events[0].recommendation_reason).toBe(supported ? reason : undefined)
+    expect(result.executionTrace[0].toolResults[0].output).toMatchObject({ events: [{ starts_at: event.starts_at, time_tba: true }] })
+  })
+
+  it('does not present a time as confirmed in event detail prose', async () => {
+    const event: ChatEventPayload = { ...priorEvent('unknown-time', 'Synthetic blues show'), time_tba: true }
+    const result = await orchestrate({ ...base, originalQuery: 'What time does it start?',
+      priorDisplayedEvents: [{ assistantMessageId: 'prior', requestId: 'prior', createdAt: null,
+        events: [{ eventId: event.id, displayIndex: 0, name: event.name, saved: null }] }],
+      readExecutors: { eventDetails: async () => ({ success: true, events: [event], formatted: '' }) },
+      runAgentFn: async input => {
+        const toolCallId = 'detail'
+        const output = await input.tools.get_event_details.execute!({ eventRef: 'prior:event_0' }, { toolCallId, messages: input.messages })
+        return { text: 'It starts at 9 pm.', responseId: null, steps: [{ toolResults: [{ toolCallId, toolName: 'get_event_details', output }] }] }
+      },
+    })
+    expect(result.canonical).toMatchObject({ kind: 'event_details', text: 'The listing doesn’t confirm a start time.', events: [] })
+  })
   for (const kind of ['search_events', 'get_event_details', 'list_saved_events'] as const) {
     it(`sends complete source descriptions without redundant presentation copies for ${kind}`, async () => {
       const original: ChatEventPayload = { ...priorEvent('original', 'Original-source event'),

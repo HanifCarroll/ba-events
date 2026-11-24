@@ -13,6 +13,8 @@ export interface TurnExpectation {
   isFree?: boolean
   maxPrice?: number
   tonight?: boolean
+  today?: boolean
+  newOptions?: boolean
 }
 
 export interface ConversationTurn { message: string; expect: TurnExpectation }
@@ -77,6 +79,10 @@ export const CONVERSATIONS: ConversationCase[] = [
     { message: 'Mostrame tres eventos gratis en Palermo para esta noche.', expect: search('Palermo') },
     { message: '¿El segundo parece divertido? ¿Qué se hace ahí?', expect: { ...details(1), alternativeKinds: ['recommendations'] } },
     { message: '¿Cómo llego a ese evento?', expect: directions(1) },
+  ] },
+  { id: 'today-alternatives-en', locale: 'en', turns: [
+    { message: "What's on today?", expect: { kind: 'recommendations', tools: ['search_events'], minEvents: 2, today: true } },
+    { message: 'Show me a few alternative options.', expect: { kind: 'recommendations', tools: ['search_events'], minEvents: 1, today: true, newOptions: true } },
   ] },
   { id: 'missing-description-es', locale: 'es', turns: [
     { message: '¿Qué hay en Casa SinTexto esta noche?', expect: { kind: 'recommendations', tools: ['search_events'], minEvents: 1, maxEvents: 1, tonight: true } },

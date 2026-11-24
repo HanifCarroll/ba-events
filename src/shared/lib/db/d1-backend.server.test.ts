@@ -4,7 +4,7 @@ import { freshD1 } from '../../../../tests/support/d1.ts'
 import { useD1Binding } from './d1-binding.server.ts'
 import { checkRateLimitD1 } from './rate-limit-d1.server.ts'
 import { checkApiRateLimit, checkRateLimit, RateLimitUnavailableError } from '#features/auth/api/rate-limit.server.ts'
-import { persistGuestChatDebug, recordGuestRequestStarted, recordGuestRequestTerminal } from '#features/chat/api/guest-debug.server.ts'
+import { buildGuestDebugTranscript, GUEST_DEBUG_TRANSCRIPT_MAX_BYTES, persistGuestChatDebug, recordGuestRequestStarted, recordGuestRequestTerminal } from '#features/chat/api/guest-debug.server.ts'
 import { purgeGuestLifecycleRetention } from '../../../jobs-worker/guest-lifecycle-retention.ts'
 import {
 	attachTelegramUpdateConversation, claimTelegramUpdate, getTelegramUpdateEnvelopeKey, markTelegramUpdateCompleted,
@@ -90,6 +90,39 @@ describe('guest lifecycle and debug rows on D1', () => {
 		const debug = await db.prepare('SELECT messages, last_user_text FROM guest_chat_debug WHERE conversation_id = ?').bind('guest-1').first<{ messages: string; last_user_text: string }>()
 		expect(JSON.parse(debug!.messages)).toHaveLength(2)
 		expect(debug!.last_user_text).toBe('chau')
+	})
+
+	it('retains per-turn server traces across transient-free snapshots, including a late write', async () => {
+		const persist = (input: { messages: unknown; lastUserText: string }) => persistGuestChatDebug({
+			conversationId: 'trace-retention', locale: 'en', ip: '203.0.113.1', ...input,
+		})
+		const assistant = (id: string) => ({ id, role: 'assistant' as const,
+			parts: [{ type: 'data-response' as const, data: { requestId: id } }],
+		})
+		const first = assistant('first-request')
+		const second = assistant('second-request')
+		const history = [{ ...first, id: 'browser-id', executionTrace: ['client supplied'] }]
+		const transcript = buildGuestDebugTranscript(history, { ...second, executionTrace: [
+			{ stepIndex: 1, stepType: 'tool-result', text: '', finishReason: 'stop', toolCalls: [], toolResults: [] },
+		] })
+		// Simulate finishing the next request before the first one's debug write completes.
+		await persist({ messages: transcript, lastUserText: 'second question' })
+		await persist({ messages: [{ ...first, executionTrace: [
+			{ stepIndex: 0, stepType: 'initial', text: '', finishReason: 'tool-calls', toolCalls: [], toolResults: [] },
+		] }], lastUserText: 'first question' })
+		const row = await db.prepare('SELECT messages, last_user_text FROM guest_chat_debug WHERE conversation_id = ?')
+			.bind('trace-retention').first<{ messages: string; last_user_text: string }>()
+		expect(JSON.parse(row!.messages)).toMatchObject([
+			{ id: 'browser-id', executionTrace: [{ stepIndex: 0 }] },
+			{ id: 'second-request', executionTrace: [{ stepIndex: 1 }] },
+		])
+		expect(row!.last_user_text).toBe('second question')
+
+		await persist({ messages: [{ id: 'oversized', role: 'user', content: '😀'.repeat(70_000) }, ...transcript], lastUserText: 'second question' })
+		const bounded = await db.prepare('SELECT messages FROM guest_chat_debug WHERE conversation_id = ?')
+			.bind('trace-retention').first<string>('messages')
+		expect(new TextEncoder().encode(bounded!).length).toBeLessThanOrEqual(GUEST_DEBUG_TRANSCRIPT_MAX_BYTES)
+		expect(JSON.parse(bounded!)).toMatchObject([{ id: 'browser-id', executionTrace: [{ stepIndex: 0 }] }, { id: 'second-request', executionTrace: [{ stepIndex: 1 }] }])
 	})
 
 	it('never throws to the chat when the write fails', async () => {

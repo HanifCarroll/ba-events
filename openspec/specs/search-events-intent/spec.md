@@ -35,6 +35,17 @@ Define the current `search_events` intent boundary: canonicalize user/tool input
 - **THEN** it remains eligible within the existing tool and time limits
 - **AND** concurrent search calls cannot bypass the boundary by starting before the first search returns
 
+#### Scenario: Today and happening now are different windows
+- **WHEN** the user asks for events today in English or Spanish
+- **THEN** the search includes events starting from now until the Buenos Aires night ends at 06:00, using the current morning’s cutoff before 06:00
+- **AND** it includes all-day events on the current local day and events that started on that day with a confirmed future end
+- **AND** it does not use the happening-now search
+
+#### Scenario: Happening-now results have evidence they started
+- **WHEN** the user asks for events happening right now
+- **THEN** the search excludes time-TBA events and includes current Buenos Aires all-day events
+- **AND** a timed event must have started and either have a future end or have started less than three hours ago with no known end
+
 ### Requirement: Separate subjective retrieval signals from hard constraints
 
 `search_events` MUST keep subjective query residue and `prefer` facets as retrieval/reranking signals, not hard filters. Query facet extraction MUST be token/phrase bounded, and semantic retrieval MUST use the remaining `semanticQuery`; preference signals MAY be appended as retrieval text when no semantic residue remains.

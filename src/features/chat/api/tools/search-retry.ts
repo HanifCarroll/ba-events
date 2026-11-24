@@ -28,6 +28,8 @@ function windows(must: EventSearchMust) {
 
 function temporalScopeIsNarrower(previous: EventSearchMust, next: EventSearchMust): boolean {
   const bound = (value: string | undefined, defaultValue: number) => value ? Date.parse(value) : defaultValue
+  if (next.todayStartsAt && !windows(previous).some(original =>
+    bound(next.todayStartsAt, -Infinity) >= bound(previous.todayStartsAt ?? original.startsAfter, -Infinity))) return false
   return windows(next).every(candidate => windows(previous).some(original => {
     const after = bound(candidate.startsAfter, -Infinity)
     const before = bound(candidate.startsBefore, Infinity)

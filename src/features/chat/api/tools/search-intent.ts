@@ -32,6 +32,7 @@ import {
 import {
   buildQueryAnnotationRules,
   NORMALIZED_NEIGHBORHOODS,
+  resolveToday,
   type SearchTimeFilter,
 } from './search-query-rules.ts'
 
@@ -42,6 +43,8 @@ import {
 export interface EventSearchMust {
   startsAfter?: string
   startsBefore?: string
+  /** Earliest local-day start eligible for the today overlap rule. */
+  todayStartsAt?: string
   /** Exact per-day windows for a multi-weekday ask ("Monday or Friday").
    *  Disjoint days are queried separately — never a spanning hull, which would
    *  admit unrequested weekdays in between. */
@@ -373,10 +376,11 @@ function applyTimeFilter(
   let after: Date
   let before: Date | null = null
 
-  if (timeFilter === 'tonight') {
+  if (timeFilter === 'today' || timeFilter === 'tonight') {
     const w = tonightWindow(now)
-    after = w.after
+    after = timeFilter === 'today' ? now : w.after
     before = w.before
+    if (timeFilter === 'today') must.todayStartsAt = baToUTC(startOfDay(now))
   } else if (timeFilter === 'tomorrow') {
     const tomorrow = startOfDay(addDays(now, 1))
     after = tomorrow
@@ -463,6 +467,7 @@ export function mustToFilters(must: EventSearchMust): EventFilters {
   const filters: EventFilters = {}
   if (must.startsAfter) filters.startsAfter = must.startsAfter
   if (must.startsBefore) filters.startsBefore = must.startsBefore
+  if (must.todayStartsAt) filters.todayStartsAt = must.todayStartsAt
   if (must.neighborhoodIds?.length) filters.neighborhoods = must.neighborhoodIds
   if (must.venueIds?.length) filters.venueIds = must.venueIds
   if (must.categories?.length) filters.categories = must.categories
@@ -504,6 +509,7 @@ export async function canonicalizeSearchIntent(
 ): Promise<EventSearchIntent> {
   abortSignal?.throwIfAborted()
   const query = input.query?.trim() ?? ''
+  input = { ...input, timeFilter: resolveToday(query, input.timeFilter) }
 
   // --- annotate once: normalize → tokenize → match → resolve → residue ---
   const rules = buildQueryAnnotationRules(input.timeFilter)
@@ -592,6 +598,7 @@ export async function canonicalizeSearchIntent(
     } else {
       must.startsAfter = latest(must.startsAfter, explicit.after)
       must.startsBefore = earliest(must.startsBefore, explicit.before)
+      if (must.todayStartsAt) must.todayStartsAt = latest(must.todayStartsAt, explicit.after)
     }
   }
 
@@ -696,6 +703,7 @@ function isDefaultWindowOnly(input: CanonicalizeInput, must: EventSearchMust): b
   // 'now' is happening-now, not the default upcoming window — not surprise.
   if (input.timeFilter === 'now') return false
   if (
+    input.timeFilter === 'today' ||
     input.timeFilter === 'tonight' ||
     input.timeFilter === 'tomorrow' ||
     input.timeFilter === 'weekend' ||

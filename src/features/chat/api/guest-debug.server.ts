@@ -8,6 +8,7 @@
  *
  * This is a debug aid, not a feature: it must never fail the chat response.
  * Every error is swallowed and logged with `logger.warn`. This table is never exposed by a public API.
+ * Up to 256 KiB of transcript JSON is retained, favoring the newest turns.
  */
 
 import { Data, Effect } from 'effect'
@@ -87,7 +88,63 @@ export function buildGuestDebugTranscript(
   uiMessages: UIMessage[],
   assistant: GuestDebugAssistantMessage
 ): unknown[] {
-  return [...uiMessages, assistant]
+  // The browser received a transient trace, not a persistent assistant part.
+  // Only this turn's server-produced trace may arrive on a new write.
+  return [...uiMessages.map(({ id, role, parts }) => ({ id, role, parts })), assistant]
+}
+
+export const GUEST_DEBUG_TRANSCRIPT_MAX_BYTES = 256 * 1024
+const MAX_TRANSCRIPT_WRITE_ATTEMPTS = 3
+const utf8 = new TextEncoder()
+
+function records(messages: unknown): Record<string, unknown>[] {
+  return Array.isArray(messages)
+    ? messages.filter((message): message is Record<string, unknown> => !!message && typeof message === 'object' && !Array.isArray(message))
+    : []
+}
+
+function debugMessageKey(message: Record<string, unknown>): string | undefined {
+  if (message.role === 'assistant') {
+    const response = records(message.parts).find(part => part.type === 'data-response')?.data
+    if (response && typeof response === 'object' && 'requestId' in response && typeof response.requestId === 'string') {
+      return `request:${response.requestId}`
+    }
+  }
+  return typeof message.id === 'string' ? `message:${message.id}` : undefined
+}
+
+/** Keep server-owned traces when later snapshots resend only display parts. */
+function mergeGuestDebugTranscript(previous: string | null, messages: unknown) {
+  const stored = previous ? records(JSON.parse(previous)) : []
+  const incoming = records(messages)
+  const keyed = (rows: typeof stored) => new Map(rows.flatMap(message => {
+    const key = debugMessageKey(message)
+    return key ? [[key, message] as const] : []
+  }))
+  const storedByKey = keyed(stored)
+  const incomingByKey = keyed(incoming)
+  const newest = incoming.at(-1)
+  const newestKey = newest && debugMessageKey(newest)
+  const late = newestKey !== undefined && stored.slice(0, -1).some(message => debugMessageKey(message) === newestKey)
+  const firstKey = incoming[0] && debugMessageKey(incoming[0])
+  const prefix = firstKey ? stored.findIndex(message => debugMessageKey(message) === firstKey) : -1
+  const base = late ? stored : [...stored.slice(0, Math.max(0, prefix)), ...incoming]
+  const serialized: string[] = []
+  let bytes = 2 // array brackets
+  for (const message of base.toReversed()) {
+    const key = debugMessageKey(message)
+    const fromIncoming = key ? incomingByKey.get(key) : undefined
+    const fromStorage = key ? storedByKey.get(key) : undefined
+    const incomingTrace = fromIncoming?.executionTrace
+    const trace = message.role !== 'assistant' ? undefined
+      : Array.isArray(incomingTrace) && incomingTrace.length ? incomingTrace : fromStorage?.executionTrace
+    const entry = JSON.stringify({ ...message, executionTrace: Array.isArray(trace) ? trace : undefined })
+    const entryBytes = utf8.encode(entry).byteLength + (serialized.length ? 1 : 0)
+    if (bytes + entryBytes > GUEST_DEBUG_TRANSCRIPT_MAX_BYTES) break
+    serialized.push(entry)
+    bytes += entryBytes
+  }
+  return { messages: `[${serialized.reverse().join(',')}]`, late }
 }
 
 export function upsertGuestChatDebugEffect(input: {
@@ -101,10 +158,22 @@ export function upsertGuestChatDebugEffect(input: {
 
   const now = new Date().toISOString()
   return Effect.match(Effect.tryPromise({
-    try: () => requireD1().prepare(`INSERT INTO guest_chat_debug (conversation_id, locale, ip, messages, last_user_text, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (conversation_id) DO UPDATE SET locale = excluded.locale, ip = excluded.ip,
-        messages = excluded.messages, last_user_text = excluded.last_user_text, updated_at = excluded.updated_at`)
-      .bind(input.conversationId, input.locale, input.ip, JSON.stringify(input.messages ?? []), input.lastUserText, now, now).run(),
+    try: async () => {
+      const db = requireD1()
+      for (let attempt = 0; attempt < MAX_TRANSCRIPT_WRITE_ATTEMPTS; attempt++) {
+        const previous = await db.prepare('SELECT messages, last_user_text FROM guest_chat_debug WHERE conversation_id = ?')
+          .bind(input.conversationId).first<{ messages: string; last_user_text: string | null }>()
+        const { messages, late } = mergeGuestDebugTranscript(previous?.messages ?? null, input.messages)
+        const lastUserText = late && previous ? previous.last_user_text : input.lastUserText
+        const result = await db.prepare(`INSERT INTO guest_chat_debug (conversation_id, locale, ip, messages, last_user_text, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (conversation_id) DO UPDATE SET locale = excluded.locale, ip = excluded.ip,
+          messages = excluded.messages, last_user_text = excluded.last_user_text, updated_at = excluded.updated_at
+          WHERE guest_chat_debug.messages = ?`)
+          .bind(input.conversationId, input.locale, input.ip, messages, lastUserText, now, now, previous?.messages ?? null).run()
+        if (result.meta.changes > 0) return
+      }
+      throw new Error('Guest transcript changed during all write attempts')
+    },
     catch: (cause) => guestDebugFailure('Failed to persist guest chat debug row', cause),
   }), {
     onFailure: (error) => logger.warn('[guest-debug] Failed to persist guest chat debug row', {

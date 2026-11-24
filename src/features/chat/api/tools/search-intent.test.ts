@@ -88,6 +88,23 @@ describe('canonicalizeSearchIntent — free language', () => {
 })
 
 describe('canonicalizeSearchIntent — date intent', () => {
+  it.each([
+    [8, 30, "What's on today?", '2026-08-12T11:30:00.000Z', '2026-08-13T09:00:00.000Z'],
+    [22, 15, '¿Qué hay hoy?', '2026-08-13T01:15:00.000Z', '2026-08-13T09:00:00.000Z'],
+    [1, 0, 'events today', '2026-08-12T04:00:00.000Z', '2026-08-12T09:00:00.000Z'],
+  ] as const)('uses the correct local-night cutoff at %i:%i', async (hour, minute, query, startsAfter, startsBefore) => {
+    const intent = await canonicalizeSearchIntent({ query, timeFilter: 'now' }, new Date(2026, 7, 12, hour, minute))
+    expect(intent.must).toMatchObject({ startsAfter, startsBefore, todayStartsAt: '2026-08-12T03:00:00.000Z' })
+    expect(intent.semanticQuery).toBe('')
+  })
+
+  it('keeps explicit right-now and tonight language distinct from today', async () => {
+    const now = await canonicalizeSearchIntent({ query: 'events right now', timeFilter: 'now' }, WEDNESDAY_NOON)
+    expect(now.must).toEqual({})
+    const tonight = await canonicalizeSearchIntent({ query: 'qué hay hoy a la noche', timeFilter: 'tonight' }, WEDNESDAY_NOON)
+    expect(tonight.must).toEqual({ startsAfter: '2026-08-12T21:00:00.000Z', startsBefore: '2026-08-13T09:00:00.000Z' })
+    expect(tonight.semanticQuery).toBe('')
+  })
   it('does NOT set a date window from the substring "cita" in "recital de rock"', async () => {
     const intent = await canonicalizeSearchIntent({ query: 'recital de rock' }, WEDNESDAY_NOON)
     expect(intent.must.startsAfter).toBeDefined() // just the upcoming default

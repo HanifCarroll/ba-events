@@ -117,6 +117,18 @@ Cards, links, directions, venue facts, provenance, and clarification data MUST b
 - **AND** a recommendation assessment retains its readable reason without exposing framing markers
 - **AND** first-time cards, home-suggestion details, fresh searches, saved-list requests and save/unsave control guidance retain their cards
 
+#### Scenario: The user asks for other options
+- **WHEN** the user asks for alternatives, including either localized alternatives chip
+- **THEN** the server repeats the previous search constraints and window and excludes cards already shown in the available conversation history before selecting results
+- **AND** the follow-up wording does not become semantic search text
+- **AND** an exhausted search returns a localized no-other-options answer without cards or a broader search
+- **AND** the alternatives chip appears only when there are eligible matches the user has not seen
+
+#### Scenario: A listing has no confirmed start time
+- **WHEN** an event is marked time TBA
+- **THEN** the concierge does not present a start time as confirmed in either prose or a recommendation reason
+- **AND** it attributes any time mentioned in the source to the listing
+
 ### Requirement: Progressive web previews preserve the canonical trust boundary
 The web channel SHALL publish transient previews using the final response's server assembler after successful reads and during model prose generation. Previews SHALL retain existing artifact, framing and reason validation and SHALL NOT be stored as completed responses. Exactly one final canonical response SHALL be published after the persistence gate and any required authoritative commit.
 

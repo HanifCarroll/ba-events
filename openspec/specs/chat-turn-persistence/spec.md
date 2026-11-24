@@ -80,6 +80,11 @@ Each attempt SHALL capture its conversation, authenticated identity, turn, claim
 - **AND** an uncertain receipt retains the existing stable client identifiers for idempotent recovery
 - **AND** concurrent flushes share work within a browser and use an origin-wide lock when the browser supports Web Locks
 
+#### Scenario: Guest diagnosis retains per-turn reads within a bounded transcript
+- **WHEN** a new guest debug snapshot contains prior assistant responses without their transient tool traces
+- **THEN** the server retains the earlier sanitized traces for matching responses from the existing private debug row
+- **AND** the debug transcript keeps the newest complete messages within 256 KiB of UTF-8 JSON, without changing guest browser persistence
+
 #### Scenario: Guest history cannot be read
 - **WHEN** the current conversation's IndexedDB read fails
 - **THEN** the browser exposes a read failure and Retry, distinct from a successful read with no history

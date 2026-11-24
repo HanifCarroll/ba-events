@@ -2,6 +2,7 @@
 import { Schema } from 'effect'
 import type { D1Database, VectorizeIndex } from '@cloudflare/workers-types'
 import type { ChatEventPayload, EventFilters, Venue } from '../types.ts'
+import { BA_TIMEZONE } from '../constants.ts'
 import { tsRankCd, websearchToFts5 } from '../search/websearch-fts5.ts'
 
 /** Vectorize returns at most 100 matches when it doesn't return values or metadata. */
@@ -53,8 +54,14 @@ type Where = { sql: string[]; values: unknown[] }
 function filterSql(filters: EventFilters, options: { priceCap: 'or-null' | 'strict'; avoidGenres: boolean }): Where {
   const where: Where = { sql: ["e.scope = 'in'"], values: [] }
   const add = (sql: string, ...values: unknown[]) => { where.sql.push(sql); where.values.push(...values) }
-  if (filters.startsAfter) add('e.starts_at >= ?', iso(filters.startsAfter))
-  if (filters.startsBefore) add('e.starts_at <= ?', iso(filters.startsBefore))
+  if (filters.startsAfter && filters.todayStartsAt) {
+    const after = iso(filters.startsAfter)
+    add(`(e.starts_at >= ? OR (e.starts_at >= ? AND
+      (e.is_all_day = 1 OR (e.time_tba = 0 AND e.ends_at > ?))))`, after, iso(filters.todayStartsAt), after)
+  } else if (filters.startsAfter) add('e.starts_at >= ?', iso(filters.startsAfter))
+  if (filters.startsBefore) add(filters.todayStartsAt ? 'e.starts_at < ?' : 'e.starts_at <= ?', iso(filters.startsBefore))
+  const excludedIds = list(filters.excludeEventIds)
+  if (excludedIds) add('e.id NOT IN (SELECT value FROM json_each(?))', excludedIds)
   const neighborhoods = list(filters.neighborhoods)
   if (neighborhoods) add('v.neighborhood IN (SELECT value FROM json_each(?))', neighborhoods)
   const venueIds = list(filters.venueIds)
@@ -132,7 +139,8 @@ const cosine = (a: ArrayLike<number>, b: ArrayLike<number>) => {
 export async function semanticEventSearchD1(db: D1Database, vectorize: VectorizeIndex, embedding: number[],
   filters: EventFilters, matchCount: number, signal?: AbortSignal): Promise<ChatEventPayload[]> {
   const startsAt: Record<string, number> = {}
-  if (filters.startsAfter) startsAt.$gte = Date.parse(filters.startsAfter)
+  const earliestStart = filters.todayStartsAt ?? filters.startsAfter
+  if (earliestStart) startsAt.$gte = Date.parse(earliestStart)
   if (filters.startsBefore) startsAt.$lte = Date.parse(filters.startsBefore)
   const { matches } = await vectorize.query(embedding, {
     topK: VECTORIZE_TOP_K,
@@ -186,12 +194,20 @@ export async function getFurthestEventDateD1(db: D1Database): Promise<string | n
   return row?.starts_at ?? null
 }
 
+const UNKNOWN_END_DURATION_MS = 3 * 60 * 60 * 1000
+
 /** `getEventsHappeningNow`: scheduled events that have started and not ended. */
 export async function getEventsHappeningNowD1(db: D1Database, now = new Date()): Promise<ChatEventPayload[]> {
   const at = now.toISOString()
+  const day = new Intl.DateTimeFormat('sv-SE', { timeZone: BA_TIMEZONE }).format(now)
+  const midnight = iso(`${day}T00:00:00-03:00`)
+  const recent = new Date(now.getTime() - UNKNOWN_END_DURATION_MS).toISOString()
   const { results } = await db.prepare(`SELECT ${EVENT_COLUMNS} FROM ${FROM_EVENTS}
-    WHERE e.status = 'scheduled' AND e.scope = 'in' AND e.starts_at <= ? AND (e.ends_at IS NULL OR e.ends_at >= ?) ORDER BY e.starts_at`)
-    .bind(at, at).all()
+    WHERE e.status = 'scheduled' AND e.scope = 'in' AND e.time_tba = 0 AND e.starts_at <= ? AND (
+      e.ends_at > ? OR (e.is_all_day = 1 AND e.starts_at >= ?) OR
+      (e.is_all_day = 0 AND e.ends_at IS NULL AND e.starts_at > ?)
+    ) ORDER BY e.starts_at`)
+    .bind(at, at, midnight, recent).all()
   return results.map(toPayload)
 }
 
