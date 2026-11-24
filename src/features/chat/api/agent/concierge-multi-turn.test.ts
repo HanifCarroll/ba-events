@@ -49,6 +49,21 @@ describe('frozen concierge conversation evaluations', () => {
     expect(inputs[1].instructions).toContain('"isFree":true')
   })
 
+  it('scores today followed by new options against the actual displayed IDs', async () => {
+    const scenario = CONVERSATIONS.find(item => item.id === 'today-alternatives-en')!
+    const result = await runConversation(scenario, 1, { dependencies: frozenDependencies(async input => {
+      const toolCallId = `${input.requestId}-read`
+      const toolInput = { objective: 'search', timeFilter: 'now', limit: 3 }
+      const output = await (input.tools.search_events as unknown as Executable).execute(toolInput, { toolCallId, messages: input.messages })
+      return { text: 'Here are some options.', responseId: null, steps: [{ toolResults: [{ toolCallId, toolName: 'search_events', output }] }] }
+    }) })
+    expect(result.turns.map(turn => turn.failures)).toEqual([[], []])
+    const [first, second] = result.turns.map(turn => turn.run!)
+    const repeated = { ...second, events: first.events }
+    expect(await scoreConversationTurn('repeat', scenario.turns[1].message, 'en', scenario.turns[1].expect, repeated, [first]))
+      .toContain('events: repeats a previously displayed option')
+  })
+
   it('measures grounded progress without counting placeholder prose as useful output', async () => {
     const scripted = scriptedAgent()
     const run = await runConcierge('Find events tonight.', 'en', { capturePerformance: true }, frozenDependencies(async input => {

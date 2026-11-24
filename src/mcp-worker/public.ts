@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { SEARCH_TIME_FILTERS } from '#features/chat/api/tools/search-query-rules.ts'
 import { CATEGORIES, NEIGHBORHOODS, type PublicEventRecord } from '#shared/lib/types.ts'
 
 const boundedText = (max: number) => z.string().trim().min(1).max(max)
@@ -19,7 +20,7 @@ export const publicSearchInputSchema = z.object({
   isFree: z.boolean().optional(),
   maxPrice: z.number().finite().nonnegative().max(10_000_000).optional(),
   minAge: z.number().int().min(0).max(99).optional(),
-  timeFilter: z.enum(['now', 'tonight', 'tomorrow', 'weekend', 'week', 'future']).optional(),
+  timeFilter: z.enum(SEARCH_TIME_FILTERS).optional(),
   avoid: boundedList.optional(),
   objective: z.enum(['search', 'surprise']).optional(),
   limit: z.number().int().min(1).max(5).optional(),

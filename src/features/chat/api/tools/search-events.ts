@@ -24,6 +24,7 @@ import {
 } from './search-ranking.ts'
 import { rerankEvents, type RerankMeta } from '#shared/lib/search/rerank.ts'
 import { logger } from '#shared/lib/logger.ts'
+import { SEARCH_TIME_FILTERS, resolveToday } from './search-query-rules.ts'
 import { searchRetryBoundary, widenedSearchConstraints, rejectedSearchRetry, type SearchRetryBoundary } from './search-retry.ts'
 
 // Display vs. candidate limits. The display limit is how many events the user
@@ -45,6 +46,8 @@ function filterNamedGenre<T extends { facets?: { genres?: string[] } }>(
     ? { candidates: filtered, mismatch: false }
     : { candidates, mismatch: true }
 }
+
+const TIME_FILTER_DESCRIPTION = 'Today includes ongoing timed events, all-day and time-TBA events on the current Buenos Aires date, and timed events starting before the night ends at 06:00. Use today for “what’s on today?” or “¿qué hay hoy?”; use now only for events already happening (“right now”, “ahora”, “en este momento”). Tonight means this evening. Tomorrow means the next day, weekend means Saturday/Sunday, week means the next 7 days (not weekdays only), and future is unbounded.'
 
 // ============================================================================
 // INPUT SCHEMA
@@ -77,12 +80,7 @@ export const searchEventsInputSchema = z.object({
   minAge: z.number().optional().describe(
     `The attendee's age (0-99). Filters out events with a higher minimum-age restriction — e.g. set to 18 to exclude events requiring guests over 18. Set this when the user gives an age or asks for events they can attend given their age.`
   ),
-  timeFilter: z
-    .enum(['now', 'tonight', 'tomorrow', 'weekend', 'week', 'future'])
-    .optional()
-    .describe(
-      'Time period filter. now = started and not yet ended, tonight = today evening, tomorrow = next day, weekend = Saturday/Sunday, week = next 7 days, future = any upcoming event with no upper date limit. Prefer "future" when the user asks about events ahead (e.g. "furthest", "next month", "any time in the future"). Never use "week" for weekday-only asks ("during the week", "on weekdays") — put those in query instead.'
-    ),
+  timeFilter: z.enum(SEARCH_TIME_FILTERS).optional().describe(TIME_FILTER_DESCRIPTION),
   avoid: z.array(z.string()).optional().describe(
     `Free-text exclusions — things the user explicitly does NOT want (e.g. ["techno"]). Do not search for excluded genres.`
   ),
@@ -107,7 +105,7 @@ export const searchEventsTool = defineTool({
 Use the 'query' parameter for natural language descriptive or vibe text (e.g., "romantic jazz night", "underground techno party", "chill outdoor activities"), plus named days and weekday-only asks ("Saturday", "Monday or Tuesday", "during the week", "on weekdays") which the tool resolves to Buenos Aires date windows.
 Put resolvable specifics in dedicated fields instead of query text: free shows in isFree, named neighborhoods in neighborhoods, a named venue in venueName, explicit calendar dates/ranges in dateFrom/dateTo, and exclusions ("except techno") in avoid.
 Use other parameters for specific requirements. Combine both for best results.
-For "what's on tonight?" asks use timeFilter "tonight"; for "what's happening right now?" use timeFilter "now".
+For "what's on today?" / "¿qué hay hoy?" use timeFilter "today", never "now". Use "tonight" for this evening and "now" only for "right now" / "ahora" / "en este momento".
 For asks about events further ahead — "furthest", "next month", "anything in the future" — use timeFilter "future" (unbounded). timeFilter "week" means the next 7 days ("this week", "the coming week") — never weekday-only asks ("during the week", "on weekdays").
 The result includes coverage metadata: the window you searched, total matches, and the furthest event date on record. Never claim there are no events past the window you actually searched.`,
 
@@ -161,9 +159,8 @@ The result includes coverage metadata: the window you searched, total matches, a
       },
       timeFilter: {
         type: 'string',
-        enum: ['now', 'tonight', 'tomorrow', 'weekend', 'week', 'future'],
-        description:
-          'Time period filter. now = started and not yet ended, tonight = today evening, tomorrow = next day, weekend = Saturday/Sunday, week = next 7 days, future = any upcoming event with no upper date limit. Prefer "future" when the user asks about events ahead (e.g. "furthest", "next month", "any time in the future"). Never use "week" for weekday-only asks ("during the week", "on weekdays") — put those in query instead.',
+        enum: [...SEARCH_TIME_FILTERS],
+        description: TIME_FILTER_DESCRIPTION,
       },
       avoid: {
         type: 'array',
@@ -191,12 +188,16 @@ The result includes coverage metadata: the window you searched, total matches, a
       // Canonicalize raw input into a structured intent. The must constraints
       // become hard SQL filters; the leftover semanticQuery drives retrieval.
       // Venue resolution is async (DB lookup).
-      const intent = await canonicalizeSearchIntent(input, getNowInBA(), context.abortSignal)
+      const timeFilter = resolveToday(input.query ?? '', input.timeFilter)
+      if (timeFilter !== input.timeFilter) input = { ...input, timeFilter }
+      const searchAnchor = context.searchAnchor ?? new Date().toISOString()
+      const intent = await canonicalizeSearchIntent(input, getNowInBA(new Date(searchAnchor)), context.abortSignal)
       retryBoundary = searchRetryBoundary(intent, input)
       const widened = widenedSearchConstraints(context.searchRetryBoundary, retryBoundary)
       if (widened.length) return rejectedSearchRetry(widened)
       // must -> hard filters, plus avoid genres as hard facet excludes.
       const filters = applyPreferAvoid(intent)
+      if (context.excludeShownEvents && context.shownEventIds?.size) filters.excludeEventIds = [...context.shownEventIds]
       // Multi-weekday asks carry disjoint per-day windows (never a spanning
       // hull — a continuous range would admit unrequested weekdays). Each is
       // retrieved separately and unioned before the single rerank pass.
@@ -222,12 +223,13 @@ The result includes coverage metadata: the window you searched, total matches, a
       )
 
       logger.debug('[search_events] Search parameters', {
-        input,
-        intent,
-        filters,
+        timeFilter: input.timeFilter,
+        startsAfter: filters.startsAfter,
+        startsBefore: filters.startsBefore,
+        excludedEventCount: filters.excludeEventIds?.length ?? 0,
+        hasQuery: !!query,
         displayLimit,
-        currentTime: new Date().toISOString(),
-        baTime: getNowInBA().toISOString(),
+        currentTime: searchAnchor,
       })
 
       // Unknown venue: user named a venue that resolved to zero venues. Do not
@@ -243,6 +245,7 @@ The result includes coverage metadata: the window you searched, total matches, a
         return {
           success: true,
           searchRetryBoundary: retryBoundary,
+          searchAnchor,
           events: [],
           formatted,
           metadata: {
@@ -287,6 +290,7 @@ The result includes coverage metadata: the window you searched, total matches, a
         // Coverage bookkeeping: how many events actually match the window (vs.
         // how many were returned), and how far the calendar truly reaches.
         let totalMatches = 0
+        let eligible = candidates
 
         if (input.timeFilter === 'now') {
           // "Now" can't be expressed as a starts_at range - it means events that
@@ -339,9 +343,10 @@ The result includes coverage metadata: the window you searched, total matches, a
               return !e.facets.genres.some((g) => filters.avoidGenres!.includes(g))
             })
           }
+          if (context.excludeShownEvents) nowEvents = nowEvents.filter(e => !context.shownEventIds?.has(e.id))
           totalMatches = nowEvents.length
           const genreResult = filterNamedGenre(nowEvents, namedGenre)
-          nowEvents = genreResult.candidates
+          nowEvents = eligible = genreResult.candidates
           if (genreResult.mismatch) genreMismatch = namedGenre
           if (objective === 'surprise') {
             searchMode = 'surprise'
@@ -374,17 +379,17 @@ The result includes coverage metadata: the window you searched, total matches, a
             results = ranked.slice(0, 1)
             logger.debug('[search_events] Using surprise ranking', {
               candidates: candidates.length,
-              topId: ranked[0]?.id,
               rankMs: Math.round(performance.now() - rankStartedAt),
             })
           } else if (query) {
             searchMode = 'semantic'
-            logger.debug('[search_events] Using hybrid search', { query })
+            logger.debug('[search_events] Using hybrid search')
             // Retrieve CANDIDATE_LIMIT nearest vector neighbors, then rerank
             // them with the hosted reranker (input order = fused retrieval order
             // = baseRank) before the diversity pass. Ranking only — never drops
             // events, and never applies to the surprise path.
             const genreResult = filterNamedGenre(candidates, namedGenre)
+            eligible = genreResult.candidates
             if (genreResult.mismatch) genreMismatch = namedGenre
             const { ordered: reranked, meta } = await rerankEvents(genreResult.candidates, {
               semanticQuery: query,
@@ -404,8 +409,9 @@ The result includes coverage metadata: the window you searched, total matches, a
             // chronological.
             logger.debug('[search_events] Using filter-only search')
             const genreResult = filterNamedGenre(candidates, namedGenre)
+            eligible = genreResult.candidates
             if (genreResult.mismatch) genreMismatch = namedGenre
-            const { ordered: reranked, meta } = await rerankEvents(genreResult.candidates, {
+            const { ordered: reranked, meta } = await rerankEvents(eligible, {
               semanticQuery: query,
               prefer: intent.prefer,
               avoid: rerankAvoid,
@@ -415,7 +421,7 @@ The result includes coverage metadata: the window you searched, total matches, a
               displayLimit > 1 ? applyDiversity(reranked, displayLimit) : reranked.slice(0, displayLimit)
           }
         }
-        return { results, totalMatches, searchMode, rerankMeta }
+        return { results, totalMatches, searchMode, rerankMeta, eligible }
       }
       const [ranked, coverageCount, maxEventDate] = await Promise.all([
         rankCandidates(),
@@ -455,12 +461,11 @@ The result includes coverage metadata: the window you searched, total matches, a
                   const r = rerankMeta.ranks?.get(e.id)
                   return r
                     ? {
-                        id: e.id,
                         baseRank: r.baseRank,
                         rerankerRank: r.rerankerRank,
                         finalRank: r.finalRank,
                       }
-                    : { id: e.id }
+                    : null
                 })
               : undefined,
         })
@@ -471,10 +476,15 @@ The result includes coverage metadata: the window you searched, total matches, a
       return {
         success: true,
         searchRetryBoundary: retryBoundary,
+        searchAnchor,
         events: ensureChatEventPayloads(results),
         formatted,
         metadata: {
           resultCount: results.length,
+          // Coverage counts hard-filter catalog rows, not necessarily relevant matches.
+          // Chips use the eligible candidate set instead.
+          totalMatches: ranked.eligible.length,
+          previouslyShownMatches: ranked.eligible.filter(event => context.shownEventIds?.has(event.id)).length,
           hasQuery: !!query,
           hasFilters: hasMustConstraints(intent.must),
           searchMode,
@@ -497,7 +507,7 @@ The result includes coverage metadata: the window you searched, total matches, a
             maxEventDate,
           },
           // Include input for refinement suggestion generation
-          toolInput: input,
+          toolInput: intent.must.venueIds?.length ? { ...input, venueIds: intent.must.venueIds } : input,
           ...(genreMismatch ? { genreMismatch } : {}),
         },
       }

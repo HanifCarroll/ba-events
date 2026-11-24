@@ -25,6 +25,11 @@ export interface ToolExecutionContext {
   locale: 'en' | 'es'
   /** Server-only constraint authority for a repeated search in the same turn. */
   searchRetryBoundary?: SearchRetryBoundary
+  /** UTC anchor of the previous search's relative date window. */
+  searchAnchor?: string
+  /** Only used as retrieval exclusions when requesting new options. */
+  shownEventIds?: ReadonlySet<string>
+  excludeShownEvents?: boolean
   /** Producer/SDK cancellation combined with this read's deadline. */
   abortSignal?: AbortSignal
 }
@@ -50,6 +55,8 @@ export interface ToolResult {
   metadata?: Record<string, unknown>
   /** Private planner bookkeeping; omitted from model-facing tool results. */
   searchRetryBoundary?: SearchRetryBoundary
+  /** UTC anchor actually used to resolve this search's dates. */
+  searchAnchor?: string
 }
 
 // ============================================================================

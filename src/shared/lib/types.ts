@@ -238,6 +238,10 @@ export interface EventInsert {
 // Filters for querying events
 export interface EventFilters {
   startsAfter?: string // ISO datetime
+  /** Today separates the local calendar date from the window for timed events. */
+  today?: { dayStart: string; dayEnd: string; now: string; explicitStart?: string }
+  /** Server-only exclusion for cards already shown on an alternatives turn. */
+  excludeEventIds?: readonly string[]
   startsBefore?: string // ISO datetime
   neighborhoods?: Neighborhood[]
   venueIds?: string[]

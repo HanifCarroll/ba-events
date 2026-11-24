@@ -1,9 +1,9 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import { useD1Binding } from '#shared/lib/db/d1-binding.server.ts'
-import { buildGuestDebugTranscript, persistGuestChatDebug, recordGuestRequestStarted, recordGuestRequestTerminal } from './guest-debug.server.ts'
+import { persistGuestChatDebug, recordGuestRequestStarted, recordGuestRequestTerminal } from './guest-debug.server.ts'
 
 function bindRun(run: () => Promise<unknown>) {
-  useD1Binding({ DB: { prepare: () => ({ bind: () => ({ run }) }), batch: vi.fn() } })
+  useD1Binding({ DB: { prepare: () => ({ bind: () => ({ first: async () => null, run }) }), batch: vi.fn() } })
 }
 afterEach(() => { vi.useRealTimers(); useD1Binding(undefined) })
 
@@ -13,15 +13,15 @@ const terminal = () => recordGuestRequestTerminal({ requestId: 'req-1', conversa
 
 for (const [name, persist] of Object.entries({ transcript, start, terminal })) {
   it(`awaits the ${name} write`, async () => {
-    const gate = Promise.withResolvers<void>()
+    const gate = Promise.withResolvers<{ meta: { changes: number } }>()
     const run = vi.fn(() => gate.promise)
     bindRun(run)
     let settled = false
     const pending = persist().then(() => { settled = true })
-    await Promise.resolve()
+    await vi.waitFor(() => expect(run).toHaveBeenCalledTimes(1))
     expect(run).toHaveBeenCalledTimes(1)
     expect(settled).toBe(false)
-    gate.resolve()
+    gate.resolve({ meta: { changes: 1 } })
     await pending
     expect(settled).toBe(true)
   })
@@ -42,43 +42,4 @@ it('does not touch D1 without the relevant diagnostic identifier', async () => {
   await recordGuestRequestStarted({ requestId: '', conversationId: 'guest-1' })
   await recordGuestRequestTerminal({ requestId: '', conversationId: 'guest-1', status: 'completed' })
   expect(run).not.toHaveBeenCalled()
-})
-
-describe('buildGuestDebugTranscript', () => {
-  it('appends the assembled assistant message after incoming uiMessages', () => {
-    const uiMessages = [
-      { id: 'u1', role: 'user' as const, parts: [{ type: 'text' as const, text: 'Hi' }] },
-    ]
-    const transcript = buildGuestDebugTranscript(uiMessages, {
-      id: 'a1',
-      role: 'assistant',
-      parts: [{ type: 'text', text: 'Hello' }],
-      executionTrace: [{ stepIndex: 0, stepType: 'initial', text: '', finishReason: 'tool-calls', toolCalls: [], toolResults: [] }],
-    })
-
-    expect(transcript).toHaveLength(2)
-    expect(transcript[0]).toEqual(uiMessages[0])
-    expect(transcript[1]).toMatchObject({
-      id: 'a1',
-      role: 'assistant',
-      parts: [{ type: 'text', text: 'Hello' }],
-    })
-  })
-
-  it('includes the canonical data-response part, not text alone', () => {
-    const canonical = { contractVersion: 3, requestId: 'req-1', kind: 'recommendations' }
-    const uiMessages = [
-      { id: 'u1', role: 'user' as const, parts: [{ type: 'text' as const, text: 'Hi' }] },
-    ]
-    const transcript = buildGuestDebugTranscript(uiMessages, {
-      id: 'a1',
-      role: 'assistant',
-      parts: [
-        { type: 'text', text: 'Here' },
-        { type: 'data-response', data: canonical },
-      ],
-    })
-    const assistant = transcript[1] as { parts: Array<{ type?: string; data?: unknown }> }
-    expect(assistant.parts.some((p) => p.type === 'data-response' && p.data === canonical)).toBe(true)
-  })
 })

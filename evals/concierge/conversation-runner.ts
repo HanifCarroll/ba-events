@@ -92,8 +92,14 @@ export async function scoreConversationTurn(
       }
     }
   }
+  if (expectation.newOptions) {
+    const seen = new Set(previousResults.flatMap(result => result.events.map(event => event.id)))
+    if (run.events.some(event => seen.has(event.id))) failures.push('events: repeats a previously displayed option')
+  }
   for (const call of run.toolCalls.filter(call => call.toolName === 'search_events')) {
-    const intent = await frozenSearchIntent(call.input as SearchEventsInput)
+    const searchInput = call.input as SearchEventsInput
+    const intent = await frozenSearchIntent(searchInput)
+    if (expectation.today && (searchInput.timeFilter !== 'today' || !intent.must.today || intent.must.startsBefore !== '2026-10-14T09:00:00.000Z')) failures.push('constraints: today window not preserved')
     if (expectation.neighborhood && !intent.must.neighborhoodIds?.includes(expectation.neighborhood)) failures.push('constraints: neighborhood not preserved')
     if (expectation.isFree && intent.must.isFree !== true) failures.push('constraints: free status not preserved')
     if (expectation.maxPrice !== undefined && (intent.must.maxPrice === undefined || intent.must.maxPrice > expectation.maxPrice)) failures.push('constraints: maximum price not preserved')

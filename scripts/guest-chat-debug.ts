@@ -9,6 +9,7 @@
  */
 
 import { readD1, type ReadD1 } from './read-d1.ts'
+import { isServerGuestTranscript } from '../src/features/chat/api/guest-debug-format.ts'
 
 interface GuestChatDebugRow {
   conversation_id: string
@@ -20,19 +21,26 @@ interface GuestChatDebugRow {
 
 interface DebugMessage {
   role?: string
-  parts?: Array<{ type?: string; text?: string }>
+  parts?: Array<{ type?: string; text?: string; data?: DebugResponse }>
   content?: string
   error?: string
   executionTrace?: Array<{
     stepIndex?: number
     stepType?: string
-    text?: string
-    reasoning?: string
     finishReason?: string
-    toolCalls?: Array<{ toolName?: string; input?: unknown }>
-    toolResults?: Array<{ toolName?: string; success?: boolean; output?: unknown }>
+    toolCalls?: Array<{ toolCallId?: string; toolName?: string; input?: unknown }>
+    toolResults?: Array<{ toolCallId?: string; toolName?: string; success?: boolean; output?: DebugToolOutput }>
   }>
 }
+
+interface DebugEvent { name?: string; starts_at?: string; time_tba?: boolean }
+interface DebugToolOutput {
+  success?: boolean
+  error?: string
+  events?: DebugEvent[]
+  metadata?: { resultCount?: number; searchMode?: string; totalMatches?: number; coverage?: { totalMatches?: number } }
+}
+interface DebugResponse { events?: DebugEvent[]; suggestions?: unknown; searchContext?: unknown }
 
 function extractVisibleText(message: DebugMessage): string {
   if (Array.isArray(message.parts)) {
@@ -55,8 +63,44 @@ export async function readGuestChat(read: ReadD1, conversationId: string) {
     [conversationId],
   )
   if (!row) return null
-  const messages: unknown = JSON.parse(row.messages)
-  return { ...row, messages: Array.isArray(messages) ? messages as DebugMessage[] : [] }
+  const stored: unknown = JSON.parse(row.messages)
+  if (isServerGuestTranscript(stored)) return { ...row, messages: stored.messages as DebugMessage[] }
+  // Old rows still show display history, but their traces have no trustworthy source.
+  const messages = Array.isArray(stored) ? (stored as DebugMessage[]).flatMap(message =>
+    message && typeof message === 'object' ? [{ role: message.role, parts: message.parts, content: message.content }] : []) : []
+  return { ...row, messages }
+}
+
+export function formatGuestDebugMessages(messages: DebugMessage[]): string[] {
+  const lines = [`messages (${messages.length}):`]
+  for (const message of messages) {
+    const role = message.role ?? '(unknown)'
+    const text = extractVisibleText(message)
+    const error = typeof message.error === 'string' ? ` ERROR=${message.error}` : ''
+    lines.push(`  [${role}] ${text || '(no text)'}${error}`)
+    if (role !== 'assistant') continue
+    if (!message.executionTrace?.length) lines.push('    executionTrace: (not recorded)')
+    for (const step of message.executionTrace ?? []) {
+      lines.push(`    step ${step.stepIndex ?? '?'} type=${step.stepType ?? '?'} finish=${step.finishReason ?? '?'}`)
+      for (const [index, call] of (step.toolCalls ?? []).entries()) {
+        const result = call.toolCallId
+          ? step.toolResults?.find(result => result.toolCallId === call.toolCallId)
+          : step.toolResults?.[index]
+        const output = result?.output
+        const metadata = output?.metadata
+        const events = Array.isArray(output?.events) ? output.events : []
+        lines.push(`      ${call.toolName ?? 'unknown'} input=${JSON.stringify(call.input ?? null)}`)
+        lines.push(`        success=${result?.success ?? output?.success ?? 'unknown'} resultCount=${metadata?.resultCount ?? (result ? events.length : 'unknown')}${output?.error ? ` error=${output.error}` : ''}`)
+        lines.push(`        searchMode=${metadata?.searchMode ?? '(none)'} totalMatches=${metadata?.totalMatches ?? metadata?.coverage?.totalMatches ?? '(none)'} coverage=${JSON.stringify(metadata?.coverage ?? null)}`)
+        for (const event of events) lines.push(`        ${JSON.stringify(event.name ?? '(unnamed)')} starts_at=${event.starts_at ?? '(unknown)'} time_tba=${event.time_tba ?? 'unknown'}`)
+      }
+    }
+    const response = Array.isArray(message.parts) ? message.parts.findLast(part => part.type === 'data-response')?.data : undefined
+    lines.push(`    response events: ${JSON.stringify(Array.isArray(response?.events) ? response.events.map(event => event.name ?? '(unnamed)') : [])}`)
+    lines.push(`    suggestions: ${JSON.stringify(response?.suggestions ?? [])}`)
+    lines.push(`    searchContext: ${JSON.stringify(response?.searchContext ?? null)}`)
+  }
+  return lines
 }
 
 async function main() {
@@ -66,35 +110,13 @@ async function main() {
   const row = await readGuestChat(readD1(args.includes('--staging')), conversationId)
   if (!row) throw new Error('No guest chat debug record found for that conversation id')
 
+  console.error('Warning: output contains private chat content.')
   console.log(`conversation_id: ${row.conversation_id}`)
   console.log(`updated_at: ${row.updated_at}`)
   console.log(`locale: ${row.locale ?? '(none)'}`)
   console.log(`last_user_text: ${row.last_user_text ?? '(none)'}`)
 
-  const { messages } = row
-  console.log(`messages (${messages.length}):`)
-  for (const message of messages) {
-    const role = message.role ?? '(unknown)'
-    const text = extractVisibleText(message)
-    const error = typeof message.error === 'string' ? ` ERROR=${message.error}` : ''
-    console.log(`  [${role}] ${text || '(no text)'}${error}`)
-    if (Array.isArray(message.executionTrace)) {
-      for (const step of message.executionTrace) {
-        const calls = (step.toolCalls ?? [])
-          .map((call) => `${call.toolName ?? 'unknown'} ${JSON.stringify(call.input ?? {})}`)
-          .join('; ')
-        console.log(
-          `    step ${step.stepIndex ?? '?'} type=${step.stepType ?? '?'} finish=${step.finishReason ?? '?'}${calls ? ` tools=${calls}` : ''}`
-        )
-        if (typeof step.reasoning === 'string' && step.reasoning.trim().length > 0) {
-          console.log(`      reasoning: ${step.reasoning}`)
-        }
-        if (typeof step.text === 'string' && step.text.trim().length > 0) {
-          console.log(`      thinking: ${step.text}`)
-        }
-      }
-    }
-  }
+  console.log(formatGuestDebugMessages(row.messages).join('\n'))
 }
 
 if (import.meta.main) main().catch((error) => {

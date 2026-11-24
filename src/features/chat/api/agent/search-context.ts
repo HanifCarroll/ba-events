@@ -15,6 +15,7 @@ import {
   canonicalFromDataResponse,
 } from '#features/chat/lib/canonical.ts'
 import type { SearchEventsInput } from '../tools/search-events.ts'
+import { SEARCH_TIME_FILTERS } from '../tools/search-query-rules.ts'
 import { sanitizeText } from './follow-up.ts'
 
 const MAX_QUERY_CHARS = 2000
@@ -33,7 +34,7 @@ const boundedSearchInputSchema = Schema.Struct({
   isFree: Schema.optional(Schema.Boolean),
   maxPrice: Schema.optional(Schema.Finite),
   minAge: Schema.optional(Schema.Finite),
-  timeFilter: Schema.optional(Schema.Literals(['now', 'tonight', 'tomorrow', 'weekend', 'week', 'future'])),
+  timeFilter: Schema.optional(Schema.Literals(SEARCH_TIME_FILTERS)),
   avoid: Schema.optional(Schema.Array(boundedString(MAX_FILTER_STRING)).pipe(Schema.check(Schema.isMaxLength(MAX_FILTER_VALUES)))),
   objective: Schema.optional(Schema.Literals(['search', 'surprise'])),
   limit: Schema.optional(Schema.Int.pipe(
@@ -48,11 +49,13 @@ const lastSearchContextSchema = Schema.Struct({
     Schema.check(Schema.isMaxLength(MAX_QUERY_CHARS)),
   ),
   input: boundedSearchInputSchema,
+  searchAnchor: Schema.optional(Schema.String.pipe(Schema.check(Schema.isPattern(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/)))),
 })
 
 export interface LastSearchContext {
   originalQuery: string
   input: SearchEventsInput
+  searchAnchor?: string
 }
 
 type CanonicalWithSearchContext = CanonicalChatResponse & {
@@ -68,6 +71,7 @@ export function searchContextFromCanonical(data: unknown): LastSearchContext | n
   return {
     originalQuery: sanitizeText(parsed.success.originalQuery, MAX_QUERY_CHARS),
     input: parsed.success.input as unknown as SearchEventsInput,
+    ...(parsed.success.searchAnchor && Number.isFinite(Date.parse(parsed.success.searchAnchor)) ? { searchAnchor: parsed.success.searchAnchor } : {}),
   }
 }
 
@@ -77,16 +81,18 @@ export function searchContextFromCanonical(data: unknown): LastSearchContext | n
  */
 export function attachSearchContext(
   canonical: CanonicalChatResponse,
-  context: { originalQuery: string; input: unknown }
+  context: { originalQuery: string; input: unknown; searchAnchor?: string }
 ): CanonicalChatResponse {
   const parsed = Schema.decodeUnknownResult(lastSearchContextSchema, { onExcessProperty: 'error' })({
     originalQuery: sanitizeText(context.originalQuery, MAX_QUERY_CHARS),
     input: context.input,
+    ...(context.searchAnchor ? { searchAnchor: context.searchAnchor } : {}),
   })
   if (parsed._tag !== 'Success') return canonical
   ;(canonical as CanonicalWithSearchContext).searchContext = {
     originalQuery: parsed.success.originalQuery,
     input: parsed.success.input as unknown as SearchEventsInput,
+    ...(parsed.success.searchAnchor ? { searchAnchor: parsed.success.searchAnchor } : {}),
   }
   return canonical
 }

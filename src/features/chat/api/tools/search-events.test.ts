@@ -12,6 +12,7 @@ import {
   searchVenuesByName,
 } from '#shared/lib/db/client.server.ts'
 import { rerankEvents } from '#shared/lib/search/rerank.ts'
+import { logger } from '#shared/lib/logger.ts'
 
 vi.mock('#shared/lib/db/client.server.ts', () => ({
   getEventsHappeningNow: vi.fn(),
@@ -44,6 +45,26 @@ const mockedSearchVenuesByName = searchVenuesByName as unknown as Mock
 const mockedRerankEvents = rerankEvents as unknown as Mock
 
 const context = { userContext: { userId: null, isAuthenticated: false }, locale: 'en' as const }
+
+it('logs the exclusion count but never IDs from the displayed history', async () => {
+  const debug = vi.spyOn(logger, 'debug')
+  const info = vi.spyOn(logger, 'info')
+  const shownEventIds = new Set(['synthetic-saved-event-a', 'synthetic-saved-event-b'])
+  try {
+    mockedSearchEventsWithFilters.mockResolvedValue([])
+    mockedCountEventsWithFilters.mockResolvedValue(0)
+    mockedGetFurthestEventDate.mockResolvedValue(null)
+    const result = await searchEventsTool.execute({ objective: 'search', timeFilter: 'today' }, { ...context, excludeShownEvents: true, shownEventIds })
+    expect(result.success).toBe(true)
+    expect(mockedSearchEventsWithFilters).toHaveBeenCalledWith(expect.objectContaining({ excludeEventIds: [...shownEventIds] }), expect.any(Number), undefined)
+    expect(debug).toHaveBeenCalledWith('[search_events] Search parameters', expect.objectContaining({ excludedEventCount: 2 }))
+    const logs = JSON.stringify([debug.mock.calls, info.mock.calls])
+    for (const id of shownEventIds) expect(logs).not.toContain(id)
+  } finally {
+    debug.mockRestore()
+    info.mockRestore()
+  }
+})
 
 describe('search retry constraint authority', () => {
   it('rejects widening before any event retrieval or hosted reranking', async () => {

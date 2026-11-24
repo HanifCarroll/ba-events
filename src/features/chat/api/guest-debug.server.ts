@@ -8,13 +8,15 @@
  *
  * This is a debug aid, not a feature: it must never fail the chat response.
  * Every error is swallowed and logged with `logger.warn`. This table is never exposed by a public API.
+ * Up to 256 KiB of transcript JSON is retained, favoring the newest turns.
  */
 
 import { Data, Effect } from 'effect'
 import { logger } from '#shared/lib/logger.ts'
 import { requireD1 } from '#shared/lib/db/d1-binding.server.ts'
 
-import type { UIMessage } from 'ai'
+import { searchContextFromCanonical } from './agent/search-context.ts'
+import { GUEST_DEBUG_FORMAT_VERSION, isServerGuestTranscript } from './guest-debug-format.ts'
 import type { MessageExecutionStep } from '#shared/lib/types.ts'
 
 export type GuestDebugAssistantMessage = {
@@ -40,25 +42,24 @@ class GuestDebugPersistenceError extends Data.TaggedError('GuestDebugPersistence
 
 const guestDebugFailure = (message: string, cause?: unknown) => new GuestDebugPersistenceError({ message, cause })
 
-export function persistGuestChatDebugEffect(input: {
+type GuestDebugWrite = {
   conversationId: string | null
   locale: 'en' | 'es'
   ip: string
+  /** Untrusted client history, always projected before persistence. */
   messages: unknown
+  /** The current response, separately supplied by the server. */
+  assistant?: GuestDebugAssistantMessage
   lastUserText: string | null
-}): Effect.Effect<void, never> {
+}
+
+export function persistGuestChatDebugEffect(input: GuestDebugWrite): Effect.Effect<void, never> {
   const conversationId = input.conversationId
   if (!conversationId) return Effect.undefined
 
   const program = Effect.tryPromise({
     try: () => runWithTimeout(() =>
-      upsertGuestChatDebug({
-        conversationId,
-        locale: input.locale,
-        ip: input.ip,
-        messages: input.messages,
-        lastUserText: input.lastUserText,
-      })
+      Effect.runPromise(upsertGuestChatDebugEffect({ ...input, conversationId }))
     ),
     catch: (cause) => guestDebugFailure('Guest transcript write timed out', cause),
   })
@@ -73,38 +74,107 @@ export function persistGuestChatDebugEffect(input: {
   })
 }
 
-export function persistGuestChatDebug(input: {
-  conversationId: string | null
-  locale: 'en' | 'es'
-  ip: string
-  messages: unknown
-  lastUserText: string | null
-}) {
+export function persistGuestChatDebug(input: GuestDebugWrite) {
   return Effect.runPromise(persistGuestChatDebugEffect(input))
 }
 
-export function buildGuestDebugTranscript(
-  uiMessages: UIMessage[],
-  assistant: GuestDebugAssistantMessage
-): unknown[] {
-  return [...uiMessages, assistant]
+export const GUEST_DEBUG_TRANSCRIPT_MAX_BYTES = 256 * 1024
+const MAX_TRANSCRIPT_WRITE_ATTEMPTS = 3
+const utf8 = new TextEncoder()
+
+function records(messages: unknown): Record<string, unknown>[] {
+  return Array.isArray(messages)
+    ? messages.filter((message): message is Record<string, unknown> => !!message && typeof message === 'object' && !Array.isArray(message))
+    : []
 }
 
-export function upsertGuestChatDebugEffect(input: {
-  conversationId: string
-  locale: 'en' | 'es'
-  ip: string
-  messages: unknown
-  lastUserText: string | null
-}): Effect.Effect<void, never> {
+/** The client can supply display history, never an execution trace, error, or provenance. */
+function clientHistory(messages: unknown): Record<string, unknown>[] {
+  return records(messages).flatMap(({ id, role, parts, content }) => {
+    if (typeof id !== 'string' || (role !== 'user' && role !== 'assistant')) return []
+    const visible: Record<string, unknown>[] = []
+    for (const { type, text, data } of records(parts)) {
+      if (type === 'text' && typeof text === 'string') visible.push({ type, text })
+      else if (role === 'assistant' && type === 'data-response' && data && typeof data === 'object') {
+        const response = data as Record<string, unknown>
+        const events = records(response.events).flatMap(({ name }) => typeof name === 'string' ? [{ name }] : [])
+        const suggestions = records(response.suggestions).map(({ id, label, prompt, icon, type }) =>
+          Object.fromEntries(Object.entries({ id, label, prompt, icon, type }).filter(([, value]) => typeof value === 'string')))
+        visible.push({ type, data: { requestId: typeof response.requestId === 'string' ? response.requestId : undefined,
+          events, suggestions, searchContext: searchContextFromCanonical(response) } })
+      }
+    }
+    return [{ id, role, parts: visible, ...(typeof content === 'string' ? { content } : {}) }]
+  })
+}
+
+function debugMessageKey(message: Record<string, unknown>): string | undefined {
+  if (message.role === 'assistant') {
+    const response = records(message.parts).find(part => part.type === 'data-response')?.data
+    if (response && typeof response === 'object' && 'requestId' in response && typeof response.requestId === 'string') {
+      return `request:${response.requestId}`
+    }
+  }
+  return typeof message.id === 'string' ? `message:${message.id}` : undefined
+}
+
+/** Keep server-owned traces when later snapshots resend only display parts. */
+function mergeGuestDebugTranscript(previous: string | null, clientMessages: unknown, assistant?: GuestDebugAssistantMessage) {
+  const parsed: unknown = previous ? JSON.parse(previous) : []
+  const stored = isServerGuestTranscript(parsed) ? records(parsed.messages) : clientHistory(parsed)
+  const serverMessage = assistant ? { ...assistant, serverRecorded: true } : undefined
+  const incoming = clientHistory(clientMessages)
+  if (serverMessage) incoming.push(serverMessage)
+  const keyed = (rows: typeof stored) => new Map(rows.flatMap(message => {
+    const key = debugMessageKey(message)
+    return key ? [[key, message] as const] : []
+  }))
+  const storedByKey = keyed(stored)
+  const serverKey = serverMessage && debugMessageKey(serverMessage)
+  const newest = incoming.at(-1)
+  const newestKey = newest && debugMessageKey(newest)
+  const late = newestKey !== undefined && stored.slice(0, -1).some(message => debugMessageKey(message) === newestKey)
+  const firstKey = incoming[0] && debugMessageKey(incoming[0])
+  const prefix = firstKey ? stored.findIndex(message => debugMessageKey(message) === firstKey) : -1
+  const base = late ? stored : [...stored.slice(0, Math.max(0, prefix)), ...incoming]
+  const serialized: string[] = []
+  const prefixJson = `{"version":${GUEST_DEBUG_FORMAT_VERSION},"messages":[`
+  const suffixJson = ']}'
+  let bytes = prefixJson.length + suffixJson.length
+  for (const message of base.toReversed()) {
+    const key = debugMessageKey(message)
+    const fromStorage = key ? storedByKey.get(key) : undefined
+    const trusted = key && key === serverKey ? serverMessage : fromStorage?.serverRecorded === true ? fromStorage : undefined
+    const entry = JSON.stringify(trusted ?? message)
+    const entryBytes = utf8.encode(entry).byteLength + (serialized.length ? 1 : 0)
+    if (bytes + entryBytes > GUEST_DEBUG_TRANSCRIPT_MAX_BYTES) break
+    serialized.push(entry)
+    bytes += entryBytes
+  }
+  return { messages: `${prefixJson}${serialized.reverse().join(',')}${suffixJson}`, late }
+}
+
+function upsertGuestChatDebugEffect(input: GuestDebugWrite & { conversationId: string }): Effect.Effect<void, never> {
   if (!input.conversationId) return Effect.undefined
 
   const now = new Date().toISOString()
   return Effect.match(Effect.tryPromise({
-    try: () => requireD1().prepare(`INSERT INTO guest_chat_debug (conversation_id, locale, ip, messages, last_user_text, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (conversation_id) DO UPDATE SET locale = excluded.locale, ip = excluded.ip,
-        messages = excluded.messages, last_user_text = excluded.last_user_text, updated_at = excluded.updated_at`)
-      .bind(input.conversationId, input.locale, input.ip, JSON.stringify(input.messages ?? []), input.lastUserText, now, now).run(),
+    try: async () => {
+      const db = requireD1()
+      for (let attempt = 0; attempt < MAX_TRANSCRIPT_WRITE_ATTEMPTS; attempt++) {
+        const previous = await db.prepare('SELECT messages, last_user_text FROM guest_chat_debug WHERE conversation_id = ?')
+          .bind(input.conversationId).first<{ messages: string; last_user_text: string | null }>()
+        const { messages, late } = mergeGuestDebugTranscript(previous?.messages ?? null, input.messages, input.assistant)
+        const lastUserText = late && previous ? previous.last_user_text : input.lastUserText
+        const result = await db.prepare(`INSERT INTO guest_chat_debug (conversation_id, locale, ip, messages, last_user_text, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (conversation_id) DO UPDATE SET locale = excluded.locale, ip = excluded.ip,
+          messages = excluded.messages, last_user_text = excluded.last_user_text, updated_at = excluded.updated_at
+          WHERE guest_chat_debug.messages = ?`)
+          .bind(input.conversationId, input.locale, input.ip, messages, lastUserText, now, now, previous?.messages ?? null).run()
+        if (result.meta.changes > 0) return
+      }
+      throw new Error('Guest transcript changed during all write attempts')
+    },
     catch: (cause) => guestDebugFailure('Failed to persist guest chat debug row', cause),
   }), {
     onFailure: (error) => logger.warn('[guest-debug] Failed to persist guest chat debug row', {
@@ -113,16 +183,6 @@ export function upsertGuestChatDebugEffect(input: {
     }),
     onSuccess: () => undefined,
   })
-}
-
-export function upsertGuestChatDebug(input: {
-  conversationId: string
-  locale: 'en' | 'es'
-  ip: string
-  messages: unknown
-  lastUserText: string | null
-}) {
-  return Effect.runPromise(upsertGuestChatDebugEffect(input))
 }
 
 /**

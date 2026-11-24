@@ -21,8 +21,8 @@ import type { ChatEventPayload, EventWithVenue, Venue } from '#shared/lib/types.
 /**
  * Get the current time in Buenos Aires timezone.
  */
-export function getNowInBA(): Date {
-  return toZonedTime(new Date(), BA_TIMEZONE)
+export function getNowInBA(now = new Date()): Date {
+  return toZonedTime(now, BA_TIMEZONE)
 }
 
 /**

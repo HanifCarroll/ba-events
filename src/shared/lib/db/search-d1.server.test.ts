@@ -12,7 +12,12 @@ import {
 } from './search-d1.server.ts'
 import { cloudflareSearchBackend, useCloudflareBindings } from './search-bindings.server.ts'
 import { lexicalEventSearch, semanticEventSearch } from './client.server.ts'
-import { searchEventsTool } from '#features/chat/api/tools/search-events.ts'
+import { searchEventsTool, type SearchEventsInput } from '#features/chat/api/tools/search-events.ts'
+import { orchestrate, type AgentRunner } from '#features/chat/api/agent/orchestrate.ts'
+import { searchContextFromCanonical } from '#features/chat/api/agent/search-context.ts'
+import { canonicalizeSearchIntent, mustToFilters } from '#features/chat/api/tools/search-intent.ts'
+import { getNowInBA } from '#features/chat/api/tools/utils.ts'
+import { runSharedChatTurn } from '#features/chat/api/agent/shared-turn.server.ts'
 import { findSimilarVenueD1, intakeSimilarVenuesD1, mostSimilarVenue } from '#features/import/core/venue-similarity-d1.ts'
 
 let db: D1Database
@@ -35,15 +40,16 @@ async function venue(name: string, fields: { neighborhood?: string; address?: st
 }
 
 type EventFields = Partial<{ search_document: string | null; description_es: string; starts_at: string; ends_at: string;
-  status: string; venue_id: string; categories: string[]; price: number; is_free: boolean; min_age: number; facets: object; scope: 'in' | 'out' | null }>
+  time_tba: boolean; is_all_day: boolean; status: string; venue_id: string; categories: string[]; price: number; is_free: boolean; min_age: number; facets: object; scope: 'in' | 'out' | null }>
 async function event(name: string, fields: EventFields = {}) {
   const eventId = id()
   await db.prepare(`INSERT INTO events (id, name, search_document, description_es, starts_at, ends_at, status, venue_id,
-    categories, price, is_free, min_age, facets, source, scope) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'luma', ?)`).bind(
+    categories, price, is_free, min_age, facets, time_tba, is_all_day, source, scope)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'luma', ?)`).bind(
     eventId, name, fields.search_document === undefined ? name : fields.search_document, fields.description_es ?? null,
     at(fields.starts_at ?? '2026-12-01T22:00:00Z'), fields.ends_at ? at(fields.ends_at) : null, fields.status ?? 'scheduled',
     fields.venue_id ?? null, JSON.stringify(fields.categories ?? []), fields.price ?? null, fields.is_free ? 1 : 0,
-    fields.min_age ?? null, JSON.stringify(fields.facets ?? {}), fields.scope === undefined ? 'in' : fields.scope).run()
+    fields.min_age ?? null, JSON.stringify(fields.facets ?? {}), fields.time_tba ? 1 : 0, fields.is_all_day ? 1 : 0, fields.scope === undefined ? 'in' : fields.scope).run()
   return eventId
 }
 
@@ -68,6 +74,137 @@ it('leaves out-of-scope and unjudged events out of all discovery results and cov
   expect(ids(await getEventsHappeningNowD1(db, new Date('2026-12-01T22:00:00Z')))).toEqual([inScope])
   expect(await getFurthestEventDateD1(db)).toBe('2026-12-01T20:00:00.000Z')
 })
+
+it('replays today and alternatives against a fixture catalog without repeating cards', async () => {
+  useCloudflareBindings({ DB: db })
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(new Date('2026-11-24T11:30:00Z'))
+  try {
+    const starts = '2026-11-24T03:00:00Z'
+    const blues = await event('Blues time pending', { starts_at: starts, time_tba: true, description_es: 'Puertas a las 21:00.', is_free: true })
+    const afternoon = await event('Printmaking workshop', { starts_at: '2026-11-24T13:00:00Z', is_free: true })
+    await event('Short dance class', { starts_at: '2026-11-24T15:00:00Z', ends_at: '2026-11-24T16:00:00Z', is_free: true })
+    const evening = await event('Outdoor film', { starts_at: '2026-11-24T23:00:00Z', is_free: true })
+    const late = await event('Late drawing session', { starts_at: '2026-11-25T06:00:00Z', is_free: true })
+    await event('Paid show', { starts_at: '2026-11-24T20:00:00Z' })
+    await event('Tomorrow only', { starts_at: '2026-11-25T13:00:00Z', is_free: true })
+
+    const turn = (requestId: string, text: string, toolInput: SearchEventsInput, previous: Awaited<ReturnType<typeof runSharedChatTurn>>[] = []) => {
+      const runAgentFn: AgentRunner = async ({ tools, messages }) => {
+        const toolCallId = `${requestId}-search`
+        const output = await tools.search_events.execute!(toolInput, { toolCallId, messages, context: undefined })
+        return { text: 'I found another option.', responseId: null, steps: [{
+          toolCalls: [{ toolCallId, toolName: 'search_events', input: toolInput }],
+          toolResults: [{ toolCallId, toolName: 'search_events', output }],
+        }] }
+      }
+      return runSharedChatTurn({ requestId, text, locale: 'en', userContext: { userId: null, isAuthenticated: false },
+        lastSearch: previous.length ? searchContextFromCanonical(previous[previous.length - 1].canonical) : null,
+        priorHints: previous.map(({ canonical }) => ({ assistantMessageId: canonical.requestId, requestId: canonical.requestId,
+          createdAt: null, events: canonical.events.map(row => ({ eventId: row.id, saved: row.saved })), operations: [] })),
+      }, { orchestrateFn: input => orchestrate({ ...input, runAgentFn }) })
+    }
+
+    const first = await turn('today', "What's on today?", { objective: 'search', timeFilter: 'now', isFree: true, limit: 2 })
+    expect(ids(first.canonical.events)).toEqual([blues, afternoon])
+    expect(first.canonical.suggestions.map(s => s.id)).toContain('show-alternatives')
+
+    // Preserve the free/today filters, but don't offer a class that ended before the follow-up.
+    vi.setSystemTime(new Date('2026-11-24T18:30:00Z'))
+    const second = await turn('alternatives', 'show me a few alternative options',
+      { objective: 'search', query: "what's on today alternative options", timeFilter: 'now', limit: 5 }, [first])
+    expect(ids(second.canonical.events)).toEqual([evening, late])
+    expect(searchContextFromCanonical(second.canonical)).toMatchObject({ searchAnchor: '2026-11-24T18:30:00.000Z',
+      input: { timeFilter: 'today', isFree: true } })
+    expect(second.reads[0]?.input).not.toHaveProperty('query')
+    expect(second.canonical.suggestions.map(s => s.id)).not.toContain('show-alternatives')
+
+    const third = await turn('exhausted', 'muéstrame algunas opciones alternativas', { objective: 'search', timeFilter: 'future' }, [first, second])
+    expect(third.canonical).toMatchObject({ kind: 'no_results', text: 'No encontré otras opciones que coincidan con tu búsqueda.', events: [], suggestions: [] })
+  } finally {
+    vi.useRealTimers()
+    useCloudflareBindings({})
+  }
+})
+
+it.each([
+  ['now', 'What is happening right now?', 'Still running'],
+  ['tonight', "What's on tonight?", 'Later this night'],
+  ['week', "What's on this week?", 'Later this night'],
+  ['future', 'What events are coming up?', 'Later this night'],
+] as const)('re-resolves the %s window when the chip is tapped', async (timeFilter, originalQuery, expected) => {
+  useCloudflareBindings({ DB: db })
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(new Date('2026-11-25T05:00:00Z'))
+  try {
+    await event('Already ended', { starts_at: '2026-11-25T01:00:00Z', ends_at: '2026-11-25T03:00:00Z' })
+    await event('Still running', { starts_at: '2026-11-25T04:30:00Z', ends_at: '2026-11-25T07:00:00Z' })
+    await event('Later this night', { starts_at: '2026-11-25T06:00:00Z' })
+    const result = await orchestrate({
+      requestId: 'repeat-current-window', locale: 'en', originalQuery: 'Other options?',
+      userContext: { userId: null, isAuthenticated: false }, priorDisplayedEvents: [],
+      lastSearch: { originalQuery, input: { timeFilter }, searchAnchor: '2026-11-25T01:30:00.000Z' },
+      runAgentFn: async ({ tools, messages }) => {
+        expect(tools.get_directions).toBeDefined()
+        const toolCallId = 'search'
+        const output = await tools.search_events.execute!({ objective: 'search', limit: 5 }, { toolCallId, messages, context: undefined })
+        return { text: 'Here’s another option.', responseId: null, steps: [{ toolResults: [{ toolCallId, output }] }] }
+      },
+    })
+    expect(result.canonical.events.map(row => row.name)).toEqual([expected])
+    expect(searchContextFromCanonical(result.canonical)?.searchAnchor).toBe('2026-11-25T05:00:00.000Z')
+  } finally {
+    vi.useRealTimers()
+    useCloudflareBindings({})
+  }
+})
+
+it('applies local calendar dates and live overlap to today across all retrieval paths', async () => {
+  const timestamps = [
+    ['Previous date only', '2026-11-23T03:00:00Z', { time_tba: true }],
+    ['Overnight', '2026-11-24T02:00:00Z', { ends_at: '2026-11-24T05:00:00Z' }],
+    ['Already ended', '2026-11-24T02:30:00Z', { ends_at: '2026-11-24T04:00:00Z' }],
+    ['Today date only', '2026-11-24T03:00:00Z', { time_tba: true }],
+    ['Today all day', '2026-11-24T03:00:00Z', { is_all_day: true }],
+    ['Early morning', '2026-11-24T06:00:00Z', { ends_at: '2026-11-24T07:00:00Z' }],
+    ['Evening', '2026-11-24T23:00:00Z', { ends_at: '2026-11-25T04:00:00Z' }],
+    ['Tomorrow date only', '2026-11-25T03:00:00Z', { time_tba: true }],
+    ['Tomorrow all day', '2026-11-25T03:00:00Z', { is_all_day: true }],
+    ['After midnight', '2026-11-25T06:00:00Z', {}],
+    ['At cutoff', '2026-11-25T09:00:00Z', {}],
+    ['Tomorrow afternoon', '2026-11-25T16:00:00Z', {}],
+  ] as const
+  const rows = await Promise.all(timestamps.map(async ([name, starts_at, flags]) => ({
+    id: await event(`Agenda ${name}`, { ...flags, starts_at }), starts_at, status: 'scheduled', values: [1, 0],
+  })))
+  const { index, query } = fakeVectorize(rows)
+  const selected = (indices: readonly number[]) => new Set(indices.map(i => rows[i].id))
+  const filtersAt = async (timeFilter: 'today' | 'tonight' | 'tomorrow', now: string, dateFrom?: string) =>
+    mustToFilters((await canonicalizeSearchIntent({ timeFilter, ...(dateFrom ? { dateFrom } : {}) }, getNowInBA(new Date(now)))).must)
+
+  // Local 01:00, 15:00, and 22:00. Tonight/tomorrow retain their existing start-only windows.
+  for (const [now, today, tonight] of [
+    ['2026-11-24T04:00:00Z', [1, 3, 4, 5], [5]],
+    ['2026-11-24T18:00:00Z', [3, 4, 6, 9], [6, 7, 8, 9, 10]],
+    ['2026-11-25T01:00:00Z', [3, 4, 6, 9], [6, 7, 8, 9, 10]],
+  ] as const) {
+    const filters = await filtersAt('today', now)
+    const expected = selected(today)
+    expect(new Set(ids(await searchEventsWithFiltersD1(db, filters, 20))), now).toEqual(expected)
+    expect(new Set(ids(await lexicalEventSearchD1(db, 'agenda', filters, 20))), now).toEqual(expected)
+    expect(new Set(ids(await semanticEventSearchD1(db, index, [1, 0], filters, 20))), now).toEqual(expected)
+    expect(await countEventsWithFiltersD1(db, filters), now).toBe(expected.size)
+    expect(new Set(ids(await searchEventsWithFiltersD1(db, await filtersAt('tonight', now), 20)))).toEqual(selected(tonight))
+    expect(new Set(ids(await searchEventsWithFiltersD1(db, await filtersAt('tomorrow', now), 20)))).toEqual(selected([7, 8, 9, 10, 11]))
+  }
+  // Before-midnight matches survive even though Vectorize's nearest-neighbor pool starts at midnight.
+  expect(query).toHaveBeenNthCalledWith(1, [1, 0], expect.objectContaining({ filter: {
+    status: 'scheduled', starts_at: { $gte: Date.parse('2026-11-24T03:00:00Z'), $lte: Date.parse('2026-11-24T09:00:00Z') },
+  } }))
+  const explicit = await filtersAt('today', '2026-11-24T04:00:00Z', '2026-11-24')
+  expect(new Set(ids(await searchEventsWithFiltersD1(db, explicit, 20)))).toEqual(selected([3, 4, 5]))
+})
+
 
 describe('events_fts', () => {
   it('follows inserts, updates of the indexed columns, and deletes', async () => {
@@ -259,12 +396,16 @@ describe('filter-only reads', () => {
     expect(ids(await searchEventsWithFiltersD1(db, { startsAfter: '2027-01-01T00:00:00Z' }, 50))).toEqual([last])
   })
 
-  it('finds events happening now', async () => {
-    const running = await event('En curso', { starts_at: '2026-12-01T20:00:00Z', ends_at: '2026-12-01T23:00:00Z' })
-    const open = await event('Sin fin', { starts_at: '2026-12-01T21:00:00Z' })
-    await event('Terminó', { starts_at: '2026-12-01T18:00:00Z', ends_at: '2026-12-01T19:00:00Z' })
+  it('counts only provably ongoing, recent unknown-end, and local all-day events as happening now', async () => {
+    const allDay = await event('Exposición de día completo', { starts_at: '2026-12-01T03:00:00Z', is_all_day: true })
+    const running = await event('En curso', { starts_at: '2026-12-01T16:00:00Z', ends_at: '2026-12-01T23:00:00Z' })
+    const open = await event('Sin fin', { starts_at: '2026-12-01T20:00:00Z' })
+    await event('Todo el día anterior', { starts_at: '2026-11-30T03:00:00Z', is_all_day: true })
+    await event('Hora desconocida', { starts_at: '2026-12-01T03:00:00Z', time_tba: true })
+    await event('Fin desconocido hace tres horas', { starts_at: '2026-12-01T19:00:00Z' })
+    await event('Terminó', { starts_at: '2026-12-01T18:00:00Z', ends_at: '2026-12-01T22:00:00Z' })
     await event('Más tarde', { starts_at: '2026-12-01T23:30:00Z' })
-    expect(ids(await getEventsHappeningNowD1(db, new Date('2026-12-01T22:00:00Z')))).toEqual([running, open])
+    expect(ids(await getEventsHappeningNowD1(db, new Date('2026-12-01T22:00:00Z')))).toEqual([allDay, running, open])
   })
 
   it('finds venues by part of their name, with % and _ as plain characters', async () => {
