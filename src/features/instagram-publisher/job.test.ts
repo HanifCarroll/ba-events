@@ -549,6 +549,19 @@ describe('tick: publisher investigation', () => {
     expect(w.pushes).toHaveLength(0)
   })
 
+  it('reports finished findings but never replaces a preview Hanif already approved', async () => {
+    const { w, finish } = world(wrong)
+    await w.job().tick()
+    during(w)
+    finish(exclude)
+    w.approve()
+    slot(w)
+    await w.job().tick()
+    expect(w.draft()).toMatchObject({ revision: 1, state: 'published', exclude: [] })
+    expect(w.reviewPosts).toEqual([{ threadTs: w.draft().slack.ts, text: expect.stringContaining(exclude.reason) }])
+    expect(w.pushes).toHaveLength(0)
+  })
+
   it('does not reuse an all-ok resolution after the outgoing copy changes', async () => {
     const { w, finish } = world()
     await w.job().tick()

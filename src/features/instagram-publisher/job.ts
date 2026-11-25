@@ -535,12 +535,14 @@ export class Job {
     }
     if (investigation) await alertFailure(investigation)
     const { approved, rejected } = await reactions()
-    if (approved || rejected) {
-      if (investigation && !investigation.findings) {
+    const overridden = approved || rejected
+    if (overridden && (!investigation || (!investigation.findings && !hasCompleted(location(this.s.stateDir, investigation.request))))) {
+      if (investigation) {
         await this.stopInvestigation(draft, 'reaction')
         investigation.findings = askAll(investigation.request.events, 'A Slack reaction stopped the investigation.')
-        this.save(draft)
       }
+      if (!open) state.replied = true // Do not poll reactions on a settled preview with no finished investigation to report.
+      if (investigation || !open) this.save(draft)
       return
     }
     if (!investigation) {
@@ -583,11 +585,13 @@ export class Job {
     const repair = exclusions.length > 0 || Object.values(findings).some(item => item.verdict === 'fixed')
     const day = baLocal(this.s.now()).date
     const count = draft.reviewRebuilds?.day === day ? draft.reviewRebuilds.count : 0
-    const canRebuild = draft.state === 'previewed' && !draft.publish && !draft.storyShare && this.s.now() < window.cutoff && count < MAX_REVIEW_REBUILDS
-    const questions = request.events.flatMap(({ id, title }) => {
+    const canRebuild = !overridden && draft.state === 'previewed' && !draft.publish && !draft.storyShare && this.s.now() < window.cutoff && count < MAX_REVIEW_REBUILDS
+    const questions = overridden ? [] : request.events.flatMap(({ id, title }) => {
       const item = findings[id]!
-      if (item.verdict === 'ask') return [`${title}: ${item.question} Checked: ${item.checked}`]
-      if (repair && !canRebuild && item.verdict !== 'ok') return [`${title}: This preview still shows the old information and cannot be rebuilt automatically. Approve this version?`]
+      if (item.verdict === 'ask') return [{ text: `${title}: ${item.question} Checked: ${item.checked}`, push: !item.hermes && !investigation.failure }]
+      if (repair && !canRebuild && item.verdict !== 'ok') return [{
+        text: `${title}: This preview still shows the old information and cannot be rebuilt automatically. Approve this version?`, push: true,
+      }]
       return []
     })
     const fieldLabel = { description_display_es: 'Spanish description', description_display_en: 'English description',
@@ -603,7 +607,10 @@ export class Job {
           }).join(', ')}.`
       return alerts.slackLiteral(`${title}: ${detail}`)
     })
-    if (result.post.question) { lines.push(alerts.slackLiteral(result.post.question)); questions.push(result.post.question) }
+    if (result.post.question) {
+      lines.push(alerts.slackLiteral(result.post.question))
+      if (!overridden) questions.push({ text: result.post.question, push: true })
+    }
     if (result.post.verdict === 'wrong') lines.push('The post also has a confirmed issue and cannot publish automatically.')
     if (questions.length) lines.push('Respondé con ✅ o ❌ en la vista previa.')
     if (!investigation.replied) await this.reviewAction(draft, 'investigator Slack reply', async () => {
@@ -619,8 +626,7 @@ export class Job {
       }
       return
     }
-    const pushQuestions = investigation.failure ? (result.post.question ? [result.post.question] : [])
-      : questions.filter(question => !Object.values(findings).some(item => item.verdict === 'ask' && item.hermes && question.includes(`: ${item.question} Checked:`)))
+    const pushQuestions = questions.filter(question => question.push).map(question => question.text)
     if (pushQuestions.length && !state.homeAttempted && open && (this.s.now() < window.cutoff || (threadWindow && this.s.now() < threadWindow.cutoff))) {
       const latest = await reactions()
       if (latest.approved || latest.rejected) return

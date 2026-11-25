@@ -101,6 +101,7 @@ export async function catalogFix(dir: string, input: FixInput, use = withProduct
       return await use(async query => {
         await applyCatalogFix(query, input, changes => {
           active(dir)
+          if (runtime.fileHash(request.input.frames) !== request.framesHash) throw new Error('The preview frames changed before the correction.')
           receipt = { ...input, operation: randomUUID(), at: new Date().toISOString(), changes }
           append('submitted')
           return receipt.operation
@@ -112,7 +113,7 @@ export async function catalogFix(dir: string, input: FixInput, use = withProduct
       // Don't let a provider exception leak headers or credential-bearing configuration into a model session.
       if (receipt && error instanceof StaleCatalogFix) { append('refused'); throw error }
       if (receipt) throw new Error('The D1 correction was submitted. Check the fix log before retrying.')
-      if (error instanceof Error && /^(Catalog correction refused|Correct only |The corrected start |A free event |Invalid catalog correction|Use a UTC |Price must |is_free must )/u.test(error.message)) throw error
+      if (error instanceof Error && /^(Catalog correction refused|Correct only |The corrected start |A free event |Invalid catalog correction|Use a UTC |Price must |is_free must |The preview frames changed)/u.test(error.message)) throw error
       throw new Error('Could not prepare the correction. Hermes should check the D1 Write token and binding.')
     }
   } finally { rmSync(lock, { recursive: true, force: true }) }

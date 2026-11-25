@@ -10,7 +10,7 @@ export const fixInput = z.strictObject({ id: eventId, field: z.enum(fixFields), 
   to: z.string().max(4000).nullable(), evidence: line(500), allOccurrences: z.boolean() })
 export type FixInput = z.infer<typeof fixInput>
 export interface FixReceipt extends FixInput { operation: string; at: string; changes: { id: string; from: string | number | null; to: string | number | null }[] }
-export type CatalogQuery = (sql: string, params: Array<string | number | null>) => Promise<unknown[]>
+export type CatalogQuery = (sql: string, params: string[]) => Promise<unknown[]>
 export class StaleCatalogFix extends Error {}
 
 const fields = [...fixFields, 'description_es', 'description_en', 'ends_at', 'venue_id', 'time_tba', 'is_all_day', 'categories', 'facets',
@@ -94,10 +94,10 @@ export async function applyCatalogFix(query: CatalogQuery, input: FixInput, befo
   const compare = [...fields, 'venue', 'barrio'].map(key => `c.${key} IS json_extract(old.value, '$.${key}')`).join(' AND ')
   const result = await query(`WITH candidates AS (${select} ${filter}), snapshot AS (SELECT value FROM json_each(?))
     INSERT INTO publisher_catalog_fixes (operation, field, changes)
-    SELECT ?, ?, ? WHERE (SELECT count(*) FROM candidates) = ? AND NOT EXISTS (
+    SELECT ?, ?, ? WHERE (SELECT count(*) FROM candidates) = CAST(? AS INTEGER) AND NOT EXISTS (
       SELECT 1 FROM snapshot old WHERE NOT EXISTS (
         SELECT 1 FROM candidates c WHERE c.id = json_extract(old.value, '$.id') AND ${compare}))
-    RETURNING operation`, [...ids, JSON.stringify(rows), operation, field, JSON.stringify(updates), rows.length])
+    RETURNING operation`, [...ids, JSON.stringify(rows), operation, field, JSON.stringify(updates), String(rows.length)])
   if (!result.length) throw new StaleCatalogFix('Catalog correction refused: the catalog changed before the write.')
   if (z.array(z.object({ operation: eventId })).parse(result)[0]?.operation !== operation) throw new Error('Unexpected catalog correction acknowledgement.')
   return changes
