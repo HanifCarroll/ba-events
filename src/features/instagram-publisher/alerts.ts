@@ -7,6 +7,7 @@ import { addDays, baLocal, englishDates, hhmm, WEEKDAYS_EN } from './format.ts'
 import { draftId, FORMATS, runWindow, TICK_MS } from './formats.ts'
 import { InstagramError, PROFILE_URL } from './instagram.ts'
 import type { Draft, Services } from './job.ts'
+import type { Verdict } from './review.ts'
 import { writeJson } from './runtime.ts'
 import type { StickerFailure } from './story-stickers.ts'
 
@@ -69,6 +70,29 @@ export function threadsFailed(item: Item, reason: string | null, unclear: boolea
       codes(item.id, reason ? errorCode(reason) : undefined, `state ${homeRelative(stateFile)}`)].join('\n'),
     fingerprint: JSON.stringify([unclear, reason]),
   }
+}
+
+export function reviewFix(draft: Draft, id: string | null, finding: Verdict) {
+  const issue = [finding.field, finding.reason].join(': ')
+  return {
+    key: id ? `review-fix/${id}` : `${draftKey(draft)}/review-fix`,
+    title: 'Publisher review found incorrect content',
+    text: [`⚠️ *Fix a problem found by the publisher review*. ${TRIAGE}`,
+      'Hermes should check the linked evidence and correct the catalog or the publisher.',
+      codes(`Draft ${draft.id} r${draft.revision}`, `Event ${id ?? 'not specific to one event'}`, slackLiteral(issue))].join('\n'),
+    fingerprint: issue,
+  }
+}
+
+/** Quote short model and catalog excerpts without allowing Slack mentions or markup. */
+export const slackLiteral = (value: string) => value.replace(/[\r\n]+/g, ' ').replaceAll('`', "'")
+  .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replace(/[*_~]/g, '')
+
+export function reviewUnavailable(draft: Draft, slot: Date, now: Date, error: unknown) {
+  const failure = describeFailure(error)
+  return [`⚠️ *The ${label(draft)} has no automated review for its ${when(slot, now)} slot*. ${TRIAGE}`,
+    'Hermes should check the review setup. Without a review, the publisher only posts with an in-time ✅.',
+    codes(draft.id, `revision ${draft.revision}`, slackLiteral(failure.message))].join('\n')
 }
 
 export function tokenAlert(warning: string, now: Date) {

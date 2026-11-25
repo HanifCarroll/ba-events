@@ -11,11 +11,13 @@ import { PublishStop, checkWrite, decide, readReactions } from './approval.ts'
 import * as alerts from './alerts.ts'
 import { fetchArtwork, type Artwork } from './artwork.ts'
 import { caption as captionFor, footerHandle, heldText, postedText, skippedMentionsText, skipText, slackPreview, tooFewText, type SkipReason } from './copy.ts'
+import { baLocal } from './format.ts'
 import { FORMATS, activeRuns, draftId, parseDraftId, runWindow, type FormatKey, type RunWindow } from './formats.ts'
 import { FRAME, LAYOUT_VERSION, framesHtml } from './html.ts'
 import { PROFILE_URL, StillProcessing, emptyPublishState, eventFrameTag, instagramApi, publish, type InstagramApi, type PublishJob, type PublishState, type Slide } from './instagram.ts'
 import { nextTrack, readTracks, readyTrack, type DraftTrack, type ReadyTrack } from './reel/music.ts'
 import { reelTiming, type ReelTiming } from './reel/project.ts'
+import { allOk, copyHash, validateReview, type ReviewInput, type ReviewResult, type ReviewState, type Reviewer } from './review.ts'
 import * as runtime from './runtime.ts'
 import type { Config, EventNow, TokenCheck } from './runtime.ts'
 import { selectEvents, type CatalogEvent, type PostEvent } from './select.ts'
@@ -48,6 +50,11 @@ export interface Draft {
   /** Reel only: the track this draft uses (kept by regenerate unless --track picks another). */
   track?: DraftTrack | null
   framesHash: string
+  /** Missing only on previews that predate review. */
+  review?: ReviewState
+  reviewHistory?: ReviewResult[]
+  reviewRebuilds?: { day: string; count: number }
+  pendingReviewFixes?: ReturnType<typeof alerts.reviewFix>[]
   /** Auto mode shown on this Instagram revision; absent on older drafts means manual. */
   slack: { fileIds: string[]; ts: string | null; auto?: boolean }
   approvedSeenAt: string | null
@@ -81,6 +88,8 @@ export interface Services {
   render(html: string, outDir: string, height: number): Promise<string[]>
   /** Returns [reel.mp4, cover.jpg]. */
   renderReel(window: RunWindow, events: PostEvent[], timing: ReelTiming, track: ReadyTrack, outDir: string, artwork: Artwork): Promise<string[]>
+  review: Reviewer
+  reviewPush(body: string): Promise<void>
   slackUploadFiles(frames: string[], draftId: string): Promise<Array<{ id: string; title: string }>>
   slackShareFiles(files: Array<{ id: string; title: string }>, text: string): Promise<unknown>
   slackShareTs(fileId: string): Promise<string | null>
@@ -92,7 +101,7 @@ export interface Services {
   loadThreadsToken(now: Date): Promise<ThreadsTokenCheck>
   threads(accessToken: string): Promise<ThreadsApi>
   composeStory: ComposeStory
-  alert(key: string, title: string, text: string, fingerprint?: string): Promise<boolean>
+  alert(key: string, title: string, text: string, fingerprint?: string, timeoutMs?: number): Promise<boolean>
   resolveAlert(key: string, text?: string): Promise<boolean | void>
   sleep(ms: number): Promise<void>
   log(message: string): void
@@ -108,6 +117,8 @@ export const liveServices = (): Services => ({
   artwork: (events, dir) => fetchArtwork(events, dir, runtime.log),
   render: (html, outDir, height) => runtime.renderFrames(html, outDir, height),
   renderReel: (window, events, timing, track, outDir, artwork) => runtime.renderReel(window, events, timing, track, outDir, artwork),
+  review: runtime.reviewDraft,
+  reviewPush: runtime.reviewPush,
   slackUploadFiles: runtime.slackUploadFiles,
   slackShareFiles: runtime.slackShareFiles,
   slackShareTs: runtime.slackShareTs,
@@ -119,15 +130,19 @@ export const liveServices = (): Services => ({
   loadThreadsToken,
   threads: token => threadsApi(token),
   composeStory: async (...args) => (await import('./story-composer.ts')).composeStory(...args),
-  alert: runtime.alert,
+  alert: (key, title, text, fingerprint, timeoutMs) => runtime.alert(key, title, text, fingerprint, undefined, timeoutMs),
   resolveAlert: runtime.resolveAlert,
   sleep: runtime.sleep,
   log: runtime.log,
 })
 
 const MAX_PUBLISH_FAILURES = 6
+const MAX_REVIEW_REBUILDS = 2
+const REVIEW_ALERT_LEAD_MS = 30 * 60_000
 /** States a tick no longer advances (a pending notification is still delivered). */
 const SETTLED: DraftState[] = ['published', 'skipped', 'failed', 'held']
+
+type ReviewContext = Pick<Draft, 'reviewHistory' | 'reviewRebuilds' | 'pendingReviewFixes'>
 
 export class Job {
   constructor(readonly s: Services) {}
@@ -191,20 +206,26 @@ export class Job {
   // Drafting and previewing
 
   /** Build revision `revision` of a draft into its own directory and preview it. Approval always starts empty. */
-  async createDraft(format: FormatKey, from: string, exclude: string[], revision: number, trackId: string | null = null, threads?: ThreadsDraft): Promise<Draft> {
+  async createDraft(format: FormatKey, from: string, exclude: string[], revision: number, trackId: string | null = null,
+    threads?: ThreadsDraft, reviewContext?: ReviewContext & { skipThread?: string | null; unavailableAlert?: boolean }): Promise<Draft> {
     const id = draftId(format, from)
     const dir = join(this.framesDir(id), `rev-${revision}`)
     const built = await this.build(format, from, exclude, dir, format === 'reel' ? trackId ?? this.chooseTrack() : null)
     const draft: Draft = {
       id, format, from, to: built.window.to, revision, layout: LAYOUT_VERSION, state: 'previewing', exclude, events: built.events, caption: built.caption, track: built.track,
       frames: built.frames ?? [], framesHash: built.frames ? runtime.fileHash(built.frames) : '', slack: { fileIds: [], ts: null },
+      review: { reelHoldMids: built.timing?.cards.slice(1).map(card => card.holdMid), unavailableAlert: reviewContext?.unavailableAlert },
+      reviewHistory: reviewContext?.reviewHistory, reviewRebuilds: reviewContext?.reviewRebuilds, pendingReviewFixes: reviewContext?.pendingReviewFixes,
       approvedSeenAt: null, r2Uploaded: null, publish: null, publishFailures: 0, notify: null, skipReason: null, note: null, updatedAt: '', threads,
     }
     if (!built.frames) {
       rmSync(dir, { recursive: true, force: true })
       draft.state = 'skipped'
       draft.skipReason = skipText({ kind: 'too-few', count: built.events.length })
-      draft.notify = { text: tooFewText(format, built.window, built.events.length), threadTs: null }
+      const skipThread = reviewContext?.skipThread
+      draft.notify = skipThread
+        ? { text: `${draft.skipReason} after removing events that did not pass review. Nothing new will publish.`, threadTs: skipThread }
+        : { text: tooFewText(format, built.window, built.events.length), threadTs: null }
       this.save(draft)
       this.s.log(`${id}: ${draft.skipReason}`)
       await this.deliver(draft)
@@ -225,6 +246,7 @@ export class Job {
       this.verifyFrames(draft)
       const config = this.s.config()
       const format = draft.format
+      draft.review ??= {} // This preview has not been handed to Slack yet.
       draft.slack.auto = config.auto[format]
       let text = slackPreview(format, runWindow(format, draft.from), draft.caption, draft.slack.auto, draft.track ?? undefined)
       if (isThreadsFormat(format)) {
@@ -237,6 +259,9 @@ export class Job {
           draft.threads = newThreadsDraft(threadsText(format, draft.events), auto)
           if (draft.threads.text) text += threadsPreview(draft.threads.text, window.publishAt, auto)
         } else delete draft.threads
+      }
+      if (draft.slack.auto || (this.currentThreads(draft) && draft.threads?.auto)) {
+        text += '\n\nLa publicación automática requiere que esta versión pase la revisión.'
       }
       // A Reel's preview attaches the video only.
       const files = await this.s.slackUploadFiles(draft.format === 'reel' ? draft.frames.slice(0, 1) : draft.frames, draft.id)
@@ -269,6 +294,133 @@ export class Job {
     if (!draft || draft.format !== 'hoy') throw new Error(`No Hoy draft ${id}; see \`status\``)
     this.verifyFrames(draft)
     return this.s.composeStory(stickerFrames(draft.frames, draft.events, draft.layout), { previewDir: outDir })
+  }
+
+  // Review: the result belongs to one preview, not just the draft ID.
+
+  private currentThreads(draft: Draft) {
+    return draft.threads && (!draft.threads.threadTs || draft.threads.threadTs === draft.slack.ts) ? draft.threads : undefined
+  }
+
+  private reviewInput(draft: Draft): ReviewInput {
+    return { format: draft.format, from: draft.from, to: draft.to, caption: draft.caption,
+      threads: this.currentThreads(draft)?.text ?? null, events: draft.events, frames: draft.frames, reelHoldMids: draft.review?.reelHoldMids }
+  }
+
+  private matchingReview(draft: Draft) {
+    const result = draft.review?.result
+    const input = this.reviewInput(draft)
+    if (result?.revision !== draft.revision || result.framesHash !== draft.framesHash || result.copyHash !== copyHash(input)) return undefined
+    try { this.verifyFrames(draft); return validateReview(input, result) } catch { return undefined }
+  }
+
+  private reviewAllowsAuto(draft: Draft) {
+    if (!draft.review) return true // Grandfather a preview sent on the previous version of the publisher.
+    const result = this.matchingReview(draft)
+    return Boolean(result && allOk(result))
+  }
+
+  private async runReview(draft: Draft): Promise<ReviewResult> {
+    this.verifyFrames(draft)
+    const input = this.reviewInput(draft)
+    const startedAt = this.s.now().toISOString()
+    const result = validateReview(input, await this.s.review(input))
+    this.verifyFrames(draft)
+    return { ...result, revision: draft.revision, framesHash: draft.framesHash, copyHash: copyHash(input), startedAt, completedAt: this.s.now().toISOString() }
+  }
+
+  async review(id: string) {
+    parseDraftId(id)
+    const draft = this.loadDraft(id)
+    if (!draft?.slack.ts || !draft.frames.length) throw new Error(`No rendered preview for ${id}; see \`status\`.`)
+    return this.runReview(draft)
+  }
+
+  private async advanceReview(draft: Draft, window: RunWindow): Promise<Draft | undefined> {
+    const review = draft.review
+    const ts = draft.slack.ts
+    if (!review || !ts) return
+    const now = this.s.now()
+    const thread = this.currentThreads(draft)
+    const threadWindow = isThreadsFormat(draft.format) && thread && this.s.config().threads.enabled && !retainThreads(thread)
+      && (thread.state === 'waiting' || thread.state === 'publishing') ? threadsWindow(draft.format, draft.from) : null
+    const instagramOpen = ['previewed', 'publishing'].includes(draft.state) && now < window.deadline
+    const threadsOpen = threadWindow && now < threadWindow.cutoff
+    const open = instagramOpen || threadsOpen
+    if (!open && (!review.result || (review.replied && !review.unavailableAlert))) return
+    const reactions = async () => readReactions(await this.s.slackReactions(ts))
+    let result = this.matchingReview(draft)
+    if (!result && open && !(await reactions()).rejected) {
+      try {
+        if (review.result) throw new Error('The saved review no longer matches this preview. Regenerate the draft.')
+        result = await this.runReview(draft)
+      } catch (error) {
+        const failure = alerts.describeFailure(error).message
+        this.s.log(`${draft.id}: review failed: ${failure}`)
+        const slot = threadsOpen && (!instagramOpen || threadWindow.publishAt < window.publishAt) ? threadWindow.publishAt : window.publishAt
+        if (!review.unavailableAlert && this.s.now().getTime() >= slot.getTime() - REVIEW_ALERT_LEAD_MS) {
+          await this.reviewAction(draft, 'unavailable alert', async () => {
+            review.unavailableAlert = await this.s.alert(`${alerts.draftKey(draft)}/review`, alerts.draftTitle(draft),
+              alerts.reviewUnavailable(draft, slot, this.s.now(), error), `revision ${draft.revision}`, 20_000)
+            if (review.unavailableAlert) this.save(draft)
+          })
+        }
+        return
+      }
+      draft.review = { reelHoldMids: review.reelHoldMids, result, unavailableAlert: review.unavailableAlert }
+      const fixes = result.events.filter(event => event.verdict === 'wrong').map(event => alerts.reviewFix(draft, event.id, event))
+      if (result.post.verdict === 'wrong') fixes.push(alerts.reviewFix(draft, null, result.post))
+      if (fixes.length) draft.pendingReviewFixes = [...(draft.pendingReviewFixes ?? []), ...fixes]
+      this.save(draft)
+    }
+    if (!result) return
+    const state = draft.review!
+    if (state.unavailableAlert) await this.reviewAction(draft, 'resolve alert', async () => {
+      if (await this.s.resolveAlert(`${alerts.draftKey(draft)}/review`, `✅ Review completed for ${draft.id} r${draft.revision}.`) !== false) {
+        delete state.unavailableAlert
+        this.save(draft)
+      }
+    })
+    const wrong = result.events.filter(event => event.verdict === 'wrong')
+    const hasError = wrong.length > 0 || result.post.verdict === 'wrong'
+    if (wrong.length && draft.state === 'previewed' && !draft.publish && !draft.storyShare && this.s.now() < window.cutoff) {
+      const { approved, rejected } = await reactions()
+      const day = baLocal(this.s.now()).date
+      if (!approved && !rejected && this.s.now() < window.cutoff
+        && (draft.reviewRebuilds?.day !== day || draft.reviewRebuilds.count < MAX_REVIEW_REBUILDS)) {
+        return this.regenerate(draft.id, wrong.map(event => event.id), null, { day, count: draft.reviewRebuilds?.day === day ? draft.reviewRebuilds.count + 1 : 1 })
+      }
+    }
+    const eventName = (id: string) => draft.events.find(event => event.id === id)!.title
+    const questions = result.events.flatMap(event => event.question ? [`${eventName(event.id)}: ${event.question}`] : [])
+    if (result.post.question) questions.push(result.post.question)
+    if (!state.replied) await this.reviewAction(draft, 'Slack reply', async () => {
+      const questionText = questions.length ? `\nRespondé con ✅ o ❌ en la vista previa.\n${questions.map(alerts.slackLiteral).join('\n')}` : ''
+      const message = allOk(result) ? 'Revisado: sin problemas.' : hasError
+        ? `Revisión: se detectó un error. Esta versión no se publicará automáticamente.${questionText}`
+        : `Revisión: hace falta tu decisión.${questionText}`
+      await this.s.slackPost(message, ts)
+      state.replied = true
+      this.save(draft)
+    })
+    if (questions.length && !state.homeAttempted && ((instagramOpen && this.s.now() < window.cutoff)
+      || (threadWindow && this.s.now() < threadWindow.cutoff))) {
+      const { approved, rejected } = await reactions()
+      if (approved || rejected) return
+      // Home has no verified decision readback here. Reserve the push once; a lost response must not ping Hanif twice.
+      state.homeAttempted = true
+      this.save(draft)
+      const link = `https://app.slack.com/archives/${runtime.SLACK_CHANNEL}/p${ts.replace('.', '')}`
+      await this.reviewAction(draft, 'Home push', () => this.s.reviewPush([
+        draft.id, ...(hasError ? ['This version also has a confirmed issue and will not publish automatically.'] : []), ...questions,
+        '', 'Publicar: react ✅ on the Slack preview to approve this version. No publicar: react ❌ to skip both posts.',
+        `The publisher reads only the Slack reactions. Slack preview: ${link}`,
+      ].join('\n')))
+    }
+  }
+
+  private async reviewAction(draft: Draft, action: string, run: () => Promise<void>) {
+    try { await run() } catch { this.s.log(`${draft.id}: could not deliver review ${action}`) }
   }
 
   // Outcomes and notifications
@@ -383,7 +535,7 @@ export class Job {
   }
 
   private instagramAuto(draft: Draft) {
-    return draft.slack.auto === true && this.s.config().auto[draft.format]
+    return draft.slack.auto === true && this.s.config().auto[draft.format] && this.reviewAllowsAuto(draft)
   }
 
   /** Returns true only when the draft is published. A pending Business Suite Share takes precedence over all gates. */
@@ -484,7 +636,7 @@ export class Job {
     await this.skip(draft, reason)
   }
 
-  async advance(draft: Draft, failures: alerts.TickFailures) {
+  async advance(draft: Draft, failures: alerts.TickFailures): Promise<boolean | void> {
     const now = this.s.now()
     const window = runWindow(draft.format, draft.from)
     if (draft.state === 'rebuilding') {
@@ -497,11 +649,19 @@ export class Job {
       return this.s.alert(alerts.draftKey(draft), alerts.draftTitle(draft), alerts.previewExpired(draft, now, failures.last(draft.id)))
     }
     if (draft.state === 'previewing') await this.sendPreview(draft)
+    const rebuilt = await this.advanceReview(draft, window)
+    if (rebuilt) return rebuilt.state === 'previewed' ? this.advance(rebuilt, failures) : undefined
     if (draft.state === 'previewed') {
       const reactions = readReactions(await this.s.slackReactions(draft.slack.ts!))
-      if (reactions.approved && !draft.approvedSeenAt) { draft.approvedSeenAt = now.toISOString(); this.save(draft) }
-      const decision = decide(window, reactions, draft.approvedSeenAt ? new Date(draft.approvedSeenAt) : null, this.instagramAuto(draft), now)
-      if (decision.action === 'skip') return this.skip(draft, decision.reason)
+      const checkedAt = this.s.now()
+      if (reactions.approved && !draft.approvedSeenAt) { draft.approvedSeenAt = checkedAt.toISOString(); this.save(draft) }
+      const decision = decide(window, reactions, draft.approvedSeenAt ? new Date(draft.approvedSeenAt) : null, this.instagramAuto(draft), checkedAt)
+      if (decision.action === 'skip') {
+        // Hoy's auto window stays open after its approval cutoff. An unavailable review can still recover in that window.
+        if (decision.reason.kind === 'no-approval' && checkedAt < window.deadline && draft.review && !this.matchingReview(draft)
+          && draft.slack.auto && this.s.config().auto[draft.format]) return
+        return this.skip(draft, decision.reason)
+      }
       if (decision.action === 'wait') return
     }
     if (draft.state !== 'previewed' && draft.state !== 'publishing') return
@@ -560,11 +720,25 @@ export class Job {
         // Creation already tried any skip notice, but a pending preview gets another chance.
         if (draft.notify && !attempted.has(draft.id)) await this.deliver(draft)
         if (!SETTLED.includes(draft.state)) await this.advance(draft, failures)
+        else await this.advanceReview(draft, runWindow(draft.format, draft.from))
       } catch (error) {
         failures.record(draft, Boolean(draft.slack.ts), error)
       }
     }
     await this.tickThreads()
+    // Fix alerts are durable across rebuilds and don't delay a safe replacement or a human-approved send.
+    for (const draft of this.allDrafts()) {
+      if (!draft.pendingReviewFixes?.length) continue
+      const pending: NonNullable<Draft['pendingReviewFixes']> = []
+      for (const fix of draft.pendingReviewFixes) {
+        const sent = await this.s.alert(fix.key, fix.title, fix.text, fix.fingerprint, 20_000).catch(() => false)
+        if (!sent) pending.push(fix)
+      }
+      if (pending.length !== draft.pendingReviewFixes.length) {
+        draft.pendingReviewFixes = pending.length ? pending : undefined
+        this.save(draft)
+      }
+    }
     this.prune()
     // Exit 0 for handled failures; notify-failure reports crashes the tick couldn't catch.
     await failures.report(id => this.loadDraft(id))
@@ -590,7 +764,7 @@ export class Job {
         save: () => this.save(draft),
         reactions: () => this.s.slackReactions(ts),
         enabled,
-        auto: () => this.s.config().threads.auto[format],
+        auto: () => this.s.config().threads.auto[format] && this.currentThreads(draft) === threads && this.reviewAllowsAuto(draft),
         checkEvents: () => this.checkEvents(draft),
         reply: text => this.s.slackPost(text, ts),
         log: text => this.s.log(`${draft.id}: ${text}`),
@@ -613,7 +787,7 @@ export class Job {
     } catch { this.s.log('Could not update the Threads token alert') }
   }
 
-  async regenerate(id: string, excludeIds: string[], trackId: string | null = null): Promise<Draft> {
+  async regenerate(id: string, excludeIds: string[], trackId: string | null = null, reviewRebuilds?: Draft['reviewRebuilds']): Promise<Draft> {
     const { format, from } = parseDraftId(id)
     const old = this.loadDraft(id)
     if (!old) throw new Error(`No draft ${id}; see \`status\``)
@@ -634,9 +808,13 @@ export class Job {
     // A sent, closed, or past-cutoff Threads draft still owns its earlier preview and any outcome or alert.
     const threads = old.threads && isThreadsFormat(format) && (retainThreads(old.threads) || now >= threadsWindow(format, from).cutoff)
       ? { ...old.threads, threadTs: old.threads.threadTs ?? old.slack.ts ?? undefined } : undefined
-    this.save({ ...old, revision, state: 'rebuilding', exclude, track: savedTrack, approvedSeenAt: null, slack: { fileIds: [], ts: null }, notify: null, r2Uploaded: null, threads })
-    const draft = await this.createDraft(format, from, exclude, revision, track, threads)
-    if (draft.state === 'skipped') throw new Error(`Without ${exclude.join(', ')} only ${draft.events.length} events qualify; the draft is skipped`)
+    const reviewHistory = old.review?.result ? [...(old.reviewHistory ?? []), old.review.result] : old.reviewHistory
+    const context = { reviewHistory, reviewRebuilds: reviewRebuilds ?? old.reviewRebuilds, pendingReviewFixes: old.pendingReviewFixes }
+    const unavailableAlert = old.review?.unavailableAlert
+    this.save({ ...old, ...context, review: { unavailableAlert }, revision, state: 'rebuilding', exclude, track: savedTrack,
+      approvedSeenAt: null, slack: { fileIds: [], ts: null }, notify: null, r2Uploaded: null, threads })
+    const draft = await this.createDraft(format, from, exclude, revision, track, threads, { ...context, unavailableAlert, skipThread: reviewRebuilds && old.slack.ts })
+    if (draft.state === 'skipped' && !reviewRebuilds) throw new Error(`Without ${exclude.join(', ')} only ${draft.events.length} events qualify; the draft is skipped`)
     return draft
   }
 }
@@ -682,6 +860,10 @@ export async function dryRun(format: FormatKey, from: string, outDir: string, { 
 }
 
 export const tick = () => runtime.withLock(() => new Job(liveServices()).tick())
+
+export async function review(id: string) {
+  console.log(JSON.stringify(await new Job(liveServices()).review(id), null, 2))
+}
 
 export async function stickersDryRun(id: string, outDir: string) {
   const job = new Job(liveServices())

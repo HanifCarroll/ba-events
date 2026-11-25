@@ -11,7 +11,8 @@ import { addDays, baInstant } from './format.ts'
 import type { RunWindow } from './formats.ts'
 import { LAYOUT_VERSION } from './html.ts'
 import { Job, dryRun, type Draft, type Services } from './job.ts'
-import type { Config } from './runtime.ts'
+import { DEFAULT_REVIEW, type Config } from './runtime.ts'
+import { OK, type Reviewer, type Verdict } from './review.ts'
 import type { CatalogEvent } from './select.ts'
 import { StoryComposerError, type ComposeStory, type StickerFrame } from './story-stickers.ts'
 import { threadsApi } from './threads-api.ts'
@@ -74,7 +75,15 @@ class World {
   recovery: Array<{ key: string; text: string }> = []
   r2: string[] = []
   music = musicDir()
-  config: Config = { auto: { hoy: false, finde: false, gratis: false, reel: false }, linkStickers: { hoy: false }, threads: { enabled: false, auto: { hoy: false, finde: false, gratis: false } }, r2: { bucket: 'b', publicBaseUrl: 'https://ig.example' }, reel: { musicDir: this.music } }
+  config: Config = { auto: { hoy: false, finde: false, gratis: false, reel: false }, linkStickers: { hoy: false }, threads: { enabled: false, auto: { hoy: false, finde: false, gratis: false } }, r2: { bucket: 'b', publicBaseUrl: 'https://ig.example' }, reel: { musicDir: this.music }, review: DEFAULT_REVIEW }
+  reviewPosts: Array<{ text: string; threadTs?: string }> = []
+  pushes: string[] = []
+  reviewCalls = 0
+  verdict: (id: string) => Verdict = () => OK
+  reviewer: Reviewer = async input => {
+    this.reviewCalls++
+    return { model: 'fake-vision', post: OK, events: input.events.map(event => ({ id: event.id, ...this.verdict(event.id) })) }
+  }
   composeStory: ComposeStory = async () => { throw new Error('Unexpected call to the browser') }
   reelRenders: Array<{ track: string; total: number; events: string[]; flyers: number }> = []
   /** The page the last still-frame render got, and every directory the flyers were downloaded into. */
@@ -124,8 +133,11 @@ class World {
       slackUploadFiles: async (frames, id) => frames.map((_, i) => ({ id: `F${id}-${this.renderCount}-${i}`, title: `${id}-${i}` })),
       slackShareFiles: async (_files, text) => { this.slackPosts.push({ text }) },
       slackShareTs: async () => `${this.nextTs++}.0`,
+      review: (...args) => this.reviewer(...args),
+      reviewPush: async body => { this.pushes.push(body) },
       slackPost: async (text, threadTs) => {
         if (this.slackFails > 0 && text.startsWith(this.slackFailPrefix)) { this.slackFails--; throw new Error('Slack chat.postMessage failed: ratelimited') }
+        if (/^Revis(?:ado|ión):/.test(text)) { this.reviewPosts.push({ text, threadTs }); return { ts: 'review' } }
         this.slackPosts.push({ text, threadTs })
         return { ts: `${this.nextTs++}.0` }
       },
@@ -172,6 +184,217 @@ async function previewed() {
   expect(w.draft().state).toBe('previewed')
   return w
 }
+
+describe('tick: draft review', () => {
+  const badId = uuid(1)
+  const wrong: Verdict = { verdict: 'wrong', field: 'summary', reason: 'The Teatro físico flyer is for a performance, not dog training.', question: null }
+  const question: Verdict = { verdict: 'question', field: null, reason: null, question: 'Is 21:00 the show time or the doors time?' }
+  const world = () => {
+    const w = new World()
+    w.config.auto.finde = true
+    w.config.threads.enabled = true
+    w.config.threads.auto.finde = true
+    Object.assign(w.catalog[0]!, { name: '18 mundos — Montaje anual', venue: 'Café Artigas', summary: 'Entrenamiento canino unipersonal para fortalecer la obediencia con tu perro.' })
+    return w
+  }
+  const slot = (w: World) => w.at('2026-11-19', 12)
+
+  it('saves one review of the preview and auto-publishes both channels', async () => {
+    const w = world()
+    await w.job().tick()
+    const draft = w.draft()
+    expect(draft.review?.result).toMatchObject({ revision: 1, framesHash: draft.framesHash, model: 'fake-vision' })
+    expect(w.reviewPosts).toEqual([{ text: 'Revisado: sin problemas.', threadTs: draft.slack.ts }])
+    slot(w)
+    await w.job().tick()
+    await w.job().tick()
+    expect(w.draft()).toMatchObject({ state: 'published', threads: { state: 'published' } })
+    expect(w.reviewCalls).toBe(1)
+  })
+
+  it('excludes the dance/theatre flyer misread as dog training and reviews the replacement', async () => {
+    const w = world()
+    const reviewer = w.reviewer
+    w.reviewer = async input => {
+      const event = input.events.find(event => event.id === badId)
+      if (event) {
+        expect(event.description).toContain('Entrenamiento canino')
+        expect(input.threads).toContain('18 mundos')
+        w.verdict = id => id === badId ? wrong : OK
+      }
+      return reviewer(input)
+    }
+    await w.job().tick()
+    expect(w.draft()).toMatchObject({ revision: 2, exclude: [badId] })
+    expect(w.alerts).toEqual([expect.objectContaining({ key: `review-fix/${badId}`, text: expect.stringContaining('summary') })])
+    slot(w)
+    await w.job().tick()
+    expect(w.draft()).toMatchObject({ state: 'published', threads: { state: 'published' } })
+    expect(w.draft().threads?.text).not.toContain('18 mundos')
+    expect(w.reviewCalls).toBe(2)
+    expect(w.draft().reviewHistory).toEqual([expect.objectContaining({ revision: 1,
+      events: expect.arrayContaining([{ id: badId, ...wrong }]) })])
+  })
+
+  it('skips both channels and replies to the previous preview if removing the event leaves too few', async () => {
+    const w = world()
+    w.catalog = w.catalog.slice(0, 4)
+    w.verdict = id => id === badId ? wrong : OK
+    await w.job().tick()
+    expect(w.draft().state).toBe('skipped')
+    expect(w.slackPosts).toContainEqual({ text: expect.stringContaining('only 3 events qualified'), threadTs: '1.0' })
+    slot(w)
+    await w.job().tick()
+    expect(w.ig.published).toHaveLength(0)
+    expect(w.threads.posts).toHaveLength(0)
+  })
+
+  it.each(['question', 'missing', 'wrong'] as const)('does not auto-publish with %s, but accepts ✅ on the same revision', async outcome => {
+    const w = world()
+    if (outcome === 'missing') w.reviewer = async () => { w.reviewCalls++; throw new Error('Review unavailable') }
+    else w.verdict = id => id === badId ? outcome === 'question' ? question : wrong : OK
+    if (outcome === 'wrong') w.approve() // Prevent an automatic rebuild before the slot.
+    await w.job().tick()
+    w.reactions = []
+    if (outcome === 'wrong') {
+      // An unrepairable wrong revision still needs a ✅, including after its rebuild budget is used.
+      const saved = w.draft()
+      saved.reviewRebuilds = { day: '2026-11-19', count: 2 }
+      writeFileSync(w.job().draftFile(saved.id), JSON.stringify(saved))
+    }
+    w.at('2026-11-19', 11, 30)
+    await w.job().tick()
+    slot(w)
+    await w.job().tick()
+    expect(w.ig.published).toHaveLength(0)
+    expect(w.threads.posts).toHaveLength(0)
+    if (outcome === 'question') {
+      expect(w.reviewPosts[0]?.text).toContain(question.question)
+      expect(w.pushes).toHaveLength(1)
+      expect(w.pushes[0]).toContain('The publisher reads only the Slack reactions.')
+    }
+    if (outcome === 'missing') {
+      expect(w.alerts.filter(alert => alert.key.endsWith('/review'))).toHaveLength(1)
+      expect(w.reviewCalls).toBe(3)
+    }
+    w.approve()
+    await w.job().tick()
+    expect(w.draft()).toMatchObject({ revision: 1, state: 'published', threads: { state: 'published' } })
+  })
+
+  it('tries no third rebuild even across ticks and keeps previous exclusions', async () => {
+    const w = world()
+    const reviewer = w.reviewer
+    w.reviewer = input => {
+      w.verdict = id => id === input.events[0]?.id ? wrong : OK
+      return reviewer(input)
+    }
+    slot(w)
+    await w.job().tick()
+    await w.job().tick()
+    expect(w.draft()).toMatchObject({ revision: 3, reviewRebuilds: { count: 2 }, state: 'previewed' })
+    expect(w.draft().exclude).toHaveLength(2)
+    expect(w.reviewCalls).toBe(3)
+    expect(w.ig.published).toHaveLength(0)
+    expect(w.threads.posts).toHaveLength(0)
+  })
+
+  it('keeps Hermes fixes pending if alerts fail, without delaying the replacement', async () => {
+    const w = world()
+    w.verdict = id => id === badId ? wrong : OK
+    const job = w.job()
+    const alert = job.s.alert
+    job.s.alert = async (...args) => args[0].startsWith('review-fix/') ? false : alert(...args)
+    await job.tick()
+    expect(w.draft()).toMatchObject({ revision: 2, pendingReviewFixes: [{ key: `review-fix/${badId}` }] })
+    slot(w)
+    await w.job().tick()
+    expect(w.draft().state).toBe('published')
+    expect(w.draft().pendingReviewFixes).toBeUndefined()
+    expect(w.alerts.some(item => item.key === `review-fix/${badId}`)).toBe(true)
+  })
+
+  it.each(['revision', 'framesHash', 'threads', 'disk'] as const)('rejects an earlier result if %s differs', async field => {
+    const w = world()
+    await w.job().tick()
+    const saved = w.draft()
+    if (field === 'threads') saved.threads!.text += '\nDifferent text'
+    else if (field === 'revision') saved.review!.result!.revision++
+    else if (field === 'framesHash') saved.review!.result!.framesHash = 'another hash'
+    else writeFileSync(saved.frames[0]!, 'changed after review')
+    writeFileSync(w.job().draftFile(saved.id), JSON.stringify(saved))
+    slot(w)
+    await w.job().tick()
+    expect(w.ig.published).toHaveLength(0)
+    expect(w.threads.posts).toHaveLength(0)
+    expect(w.reviewCalls).toBe(1)
+  })
+
+  it.each(['legacy', 'rejected'])('preserves the rules for a %s preview', async scenario => {
+    const w = world()
+    await w.job().tick()
+    if (scenario === 'legacy') {
+      const saved = w.draft()
+      delete saved.review
+      writeFileSync(w.job().draftFile(saved.id), JSON.stringify(saved))
+    } else {
+      w.approve()
+      w.reactions.push({ name: 'x', users: [HANIF] })
+    }
+    slot(w)
+    await w.job().tick()
+    const state = scenario === 'legacy' ? 'published' : 'skipped'
+    expect(w.draft()).toMatchObject({ state, threads: { state } })
+    expect(w.reviewCalls).toBe(1)
+  })
+
+  it('retries unavailable reviews and resolves the Hermes alert when the same revision passes', async () => {
+    const w = world()
+    const reviewer = w.reviewer
+    w.reviewer = async () => { throw new Error('Review unavailable') }
+    w.at('2026-11-19', 11, 30)
+    await w.job().tick()
+    expect(w.alerts.map(item => item.key)).toEqual(['draft/finde-2026-11-20/review'])
+    w.reviewer = reviewer
+    slot(w)
+    await w.job().tick()
+    expect(w.draft()).toMatchObject({ revision: 1, state: 'published', threads: { state: 'published' } })
+    expect(w.recovery).toContainEqual({ key: 'draft/finde-2026-11-20/review', text: '✅ Review completed for finde-2026-11-20 r1.' })
+  })
+
+  it('sends the saved Reel cover, video, and card sample times to the reviewer', async () => {
+    const w = world()
+    const job = w.job()
+    const from = '2026-11-20'
+    const reel = await job.createDraft('reel', from, [], 1)
+    const reviewer = w.reviewer
+    w.reviewer = input => {
+      expect(input.format).toBe('reel')
+      expect(input.frames.map(path => path.split('/').at(-1))).toEqual(['reel.mp4', 'cover.jpg'])
+      expect(input.reelHoldMids).toHaveLength(input.events.length + 1) // event cards and closing card; cover is already saved
+      expect(input.caption).toBe(reel.caption)
+      expect(input.threads).toBeNull()
+      return reviewer(input)
+    }
+    await job.review(reel.id)
+    expect(w.reviewCalls).toBe(1)
+  })
+
+  it('prints a fresh verdict on request without changing draft state or notifying anyone', async () => {
+    const w = world()
+    const job = w.job()
+    await job.tick()
+    const path = job.draftFile(w.draft().id)
+    const before = readFileSync(path, 'utf8')
+    w.verdict = id => id === badId ? wrong : OK
+    const result = await job.review(w.draft().id)
+    expect(result.events).toContainEqual({ id: badId, ...wrong })
+    expect(readFileSync(path, 'utf8')).toBe(before)
+    expect(w.reviewPosts).toHaveLength(1)
+    expect(w.alerts).toEqual([])
+    expect(w.pushes).toEqual([])
+  })
+})
 
 describe('tick: preview alerts', () => {
   it('reconciles a new preview in the same tick without recording a failure', async () => {
