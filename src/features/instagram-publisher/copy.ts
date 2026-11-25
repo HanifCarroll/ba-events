@@ -7,7 +7,7 @@ import type { PostEvent } from './select.ts'
 export const CLOSING = {
   headline: '¿A cuál vas?',
   body: { finde: 'Contanos en los comentarios y guardá el post para el finde.', gratis: 'Contanos en los comentarios y guardá el post para la semana.' },
-  lead: 'Todos los planes, gratis y sin registrarte:',
+  lead: 'Usá la agenda gratis y sin registrarte:',
   button: 'baeventos.com',
   footer: 'Link en la bio',
 } as const
