@@ -10,6 +10,7 @@ import { FakeThreads } from './fake-threads.ts'
 import { addDays, baInstant } from './format.ts'
 import type { RunWindow } from './formats.ts'
 import { LAYOUT_VERSION } from './html.ts'
+import type { Finding, InvestigationRequest } from './investigation.ts'
 import { Job, dryRun, type Draft, type Services } from './job.ts'
 import { DEFAULT_REVIEW, type Config } from './runtime.ts'
 import { OK, type Reviewer, type Verdict } from './review.ts'
@@ -79,6 +80,7 @@ class World {
   reviewPosts: Array<{ text: string; threadTs?: string }> = []
   pushes: string[] = []
   reviewCalls = 0
+  investigator?: Services['investigator']
   verdict: (id: string) => Verdict = () => OK
   reviewer: Reviewer = async input => {
     this.reviewCalls++
@@ -134,6 +136,7 @@ class World {
       slackShareFiles: async (_files, text) => { this.slackPosts.push({ text }) },
       slackShareTs: async () => `${this.nextTs++}.0`,
       review: (...args) => this.reviewer(...args),
+      investigator: this.investigator,
       reviewPush: async body => { this.pushes.push(body) },
       slackPost: async (text, threadTs) => {
         if (this.slackFails > 0 && text.startsWith(this.slackFailPrefix)) { this.slackFails--; throw new Error('Slack chat.postMessage failed: ratelimited') }
@@ -393,6 +396,246 @@ describe('tick: draft review', () => {
     expect(w.reviewPosts).toHaveLength(1)
     expect(w.alerts).toEqual([])
     expect(w.pushes).toEqual([])
+  })
+})
+
+describe('tick: publisher investigation', () => {
+  const flaggedId = uuid(1)
+  const question: Verdict = { verdict: 'question', field: null, reason: null, question: 'Is 21:00 the start or the doors time?' }
+  const wrong: Verdict = { verdict: 'wrong', field: 'summary', reason: 'Entrenamiento Perro is a theatre group, not a dog-training class.', question: null }
+  const ok: Finding = { verdict: 'ok', reason: 'The venue lists the start at 21:00.', url: 'https://venue.example/18-mundos' }
+  const exclude: Finding = { verdict: 'exclude', reason: 'This occurrence is out of scope.' }
+  const ask: Finding = { verdict: 'ask', question: 'Does the show start at 21:00?', checked: 'The venue and ticket pages do not agree.' }
+  const world = (verdict = question) => {
+    const w = new World()
+    w.config.auto.finde = w.config.threads.auto.finde = w.config.threads.enabled = true
+    Object.assign(w.catalog[0]!, { name: '18 mundos — Montaje anual', venue: 'Café Artigas', summary: 'Entrenamiento canino.' })
+    w.verdict = id => id === flaggedId ? verdict : OK
+    const runs: Array<{ request: InvestigationRequest; dir: string }> = []
+    w.investigator = { start: async (request, dir) => { runs.push({ request, dir }) }, running: async () => true }
+    const finish = (finding: Finding, id = flaggedId, at = w.clock.getTime()) => {
+      const { dir } = runs.at(-1)!
+      writeFileSync(join(dir, `${id}.result.json`), JSON.stringify({ at, finding }))
+      writeFileSync(join(dir, 'completed.json'), JSON.stringify({ at }))
+    }
+    return { w, runs, finish }
+  }
+  const during = (w: World, minute = 15) => w.at('2026-11-18', 18, minute)
+  const slot = (w: World) => w.at('2026-11-19', 12)
+
+  it('queues once and lets an all-ok investigation clear only that exact preview for both channels', async () => {
+    const { w, runs, finish } = world()
+    await w.job().tick()
+    during(w)
+    await w.job().tick()
+    expect(runs).toHaveLength(1)
+    const saved = w.draft()
+    expect(runs[0]?.request).toMatchObject({ revision: 1, framesHash: saved.framesHash, events: [{ id: flaggedId, ...question }] })
+    expect(runs[0]!.request.endsAt - runs[0]!.request.startsAt).toBe(30 * 60_000)
+    expect(w.reviewPosts).toHaveLength(0)
+    finish(ok)
+    await w.job().tick()
+    expect(w.reviewPosts).toEqual([{ threadTs: saved.slack.ts, text: expect.stringContaining(ok.url) }])
+    slot(w)
+    await w.job().tick()
+    await w.job().tick()
+    expect(w.draft()).toMatchObject({ revision: 1, state: 'published', threads: { state: 'published' } })
+    expect(w.threads.posts).toHaveLength(1)
+    expect(w.reviewCalls).toBe(1)
+    expect(w.pushes).toHaveLength(0)
+  })
+
+  it('keeps the verified 18 mundos performance after a catalog fix, rebuilds, and reviews the new card', async () => {
+    const { w, runs, finish } = world(wrong)
+    await w.job().tick()
+    const original = w.draft()
+    during(w)
+    const summary = 'Un montaje de teatro físico.'
+    w.catalog[0]!.summary = summary
+    const receipt = { operation: uuid(20), id: flaggedId, field: 'description_summary_es', from: 'Entrenamiento canino.', to: summary,
+      allOccurrences: true, at: w.clock.toISOString(), evidence: 'Flyer: teatro físico.', changes: [{ id: flaggedId, from: 'Entrenamiento canino.', to: summary }] }
+    writeFileSync(join(runs[0]!.dir, 'fixes.jsonl'), `${JSON.stringify({ state: 'applied', receipt })}\n`)
+    w.verdict = () => OK
+    finish({ verdict: 'fixed', fixes: [receipt.operation] })
+    await w.job().tick()
+    expect(w.draft()).toMatchObject({ revision: 2, catalogFixes: [receipt], exclude: [], reviewRebuilds: { count: 1 } })
+    expect(w.draft().events.find(event => event.id === flaggedId)?.description).toBe(summary)
+    expect(w.reviewCalls).toBe(2)
+    expect(w.reviewPosts[0]).toMatchObject({ threadTs: original.slack.ts, text: expect.stringContaining('Corrected Spanish summary on 1 occurrence.') })
+    slot(w)
+    await w.job().tick()
+    expect(w.draft()).toMatchObject({ state: 'published', threads: { state: 'published' } })
+  })
+
+  it.each([false, true])('excludes a settled event and applies the minimum (below minimum: %s)', async tooFew => {
+    const { w, finish } = world(wrong)
+    if (tooFew) w.catalog = w.catalog.slice(0, 4)
+    await w.job().tick()
+    during(w)
+    finish(exclude)
+    await w.job().tick()
+    expect(w.draft()).toMatchObject({ revision: 2, exclude: [flaggedId], state: tooFew ? 'skipped' : 'previewed' })
+    expect(w.draft().events.some(event => event.id === flaggedId)).toBe(false)
+  })
+
+  it('excludes a confirmed wrong venue, alerts Hermes, and publishes the re-reviewed preview without asking Hanif', async () => {
+    const { w, finish } = world({ ...wrong, field: 'venue', reason: 'The organizer lists a different venue.' })
+    await w.job().tick()
+    const original = w.draft()
+    during(w)
+    const reason = 'The card gives the wrong venue.'
+    const hermes = 'Correct the venue using the organizer’s page: https://venue.example/18-mundos'
+    finish({ verdict: 'exclude', reason, hermes })
+    await w.job().tick()
+    expect(w.draft()).toMatchObject({ revision: 2, exclude: [flaggedId] })
+    expect(w.reviewCalls).toBe(2)
+    expect(w.reviewPosts[0]).toEqual({ threadTs: original.slack.ts, text: expect.stringContaining(reason) })
+    expect(w.alerts).toContainEqual(expect.objectContaining({ key: `review-fix/${flaggedId}`, text: expect.stringContaining(hermes) }))
+    slot(w)
+    await w.job().tick()
+    expect(w.draft()).toMatchObject({ state: 'published', threads: { state: 'published' } })
+    expect(w.pushes).toHaveLength(0)
+  })
+
+  it.each([false, true])('asks in Slack and Home even with a separate Hermes fix (Hermes fix: %s)', async needsFix => {
+    const { w, finish } = world()
+    await w.job().tick()
+    during(w)
+    const hermes = 'The ticket link on the catalog row needs correcting.'
+    finish(needsFix ? { ...ask, hermes } : ask)
+    await w.job().tick()
+    slot(w)
+    await w.job().tick()
+    expect(w.pushes).toEqual([expect.stringContaining(`${ask.question} Checked: ${ask.checked}`)])
+    expect(w.reviewPosts[0]?.text).toContain(ask.checked)
+    expect(w.alerts.some(alert => alert.key === `review-fix/${flaggedId}` && alert.text.includes(hermes))).toBe(needsFix)
+    expect(w.draft().state).toBe('previewed')
+    expect(w.threads.posts).toHaveLength(0)
+    w.approve()
+    await w.job().tick()
+    expect(w.draft()).toMatchObject({ revision: 1, state: 'published', threads: { state: 'published' } })
+  })
+
+  it('waits through intermittent unit probe failures and accepts completion during a probe', async () => {
+    const { w, finish } = world()
+    await w.job().tick()
+    during(w, 10)
+    w.investigator!.running = async () => { throw new Error('Could not reach the systemd user bus') }
+    await w.job().tick()
+    expect(w.draft().review?.investigation?.findings).toBeUndefined()
+    during(w, 20)
+    w.investigator!.running = async () => true
+    await w.job().tick()
+    during(w, 30)
+    w.investigator!.running = async () => false
+    await w.job().tick()
+    expect(w.draft().review?.investigation?.findings).toBeUndefined()
+    expect(w.alerts).toHaveLength(0)
+    w.investigator!.running = async () => { finish(ok); return false }
+    await w.job().tick()
+    expect(w.draft().review?.investigation?.findings?.[flaggedId]).toEqual(ok)
+    expect(w.alerts).toHaveLength(0)
+  })
+
+  it.each(['start', 'crash', 'missing', 'invalid', 'late', 'unacknowledged'] as const)('fails closed on %s and alerts Hermes only', async failure => {
+    const { w, runs, finish } = world()
+    if (failure === 'start') w.investigator!.start = async () => { throw new Error('No user service') }
+    await w.job().tick()
+    if (failure === 'crash') {
+      w.investigator!.running = async () => false
+      during(w)
+      await w.job().tick()
+      expect(w.draft().review?.investigation?.findings).toBeUndefined()
+      expect(w.alerts).toHaveLength(0)
+      during(w, 25)
+    }
+    if (failure === 'missing' || failure === 'late') during(w, 40)
+    if (failure === 'late') finish(ok)
+    if (failure === 'invalid') finish(ok, uuid(20))
+    if (failure === 'unacknowledged') {
+      writeFileSync(join(runs[0]!.dir, 'fixes.jsonl'), '{"state":"submitted","receipt":{"operation":"unconfirmed"}}\n')
+      finish(ok)
+    }
+    await w.job().tick()
+    expect(w.draft().review?.investigation?.findings?.[flaggedId]?.verdict).toBe('ask')
+    expect(w.alerts.map(alert => alert.key)).toContain('investigator')
+    slot(w)
+    await w.job().tick()
+    expect(w.pushes).toHaveLength(0)
+    expect(w.draft().state).toBe('previewed')
+    expect(w.threads.posts).toHaveLength(0)
+  })
+
+  it('allows the second investigation, then asks without a third launch or rebuild and preserves earlier exclusions', async () => {
+    const { w, runs, finish } = world()
+    w.verdict = id => w.catalog.filter(event => !w.job().loadDraft('finde-2026-11-20')?.exclude.includes(event.id))[0]?.id === id ? wrong : OK
+    await w.job().tick()
+    during(w)
+    finish(exclude)
+    await w.job().tick()
+    finish(exclude, uuid(2))
+    await w.job().tick()
+    expect(runs).toHaveLength(2)
+    expect(w.draft()).toMatchObject({ revision: 3, exclude: [flaggedId, uuid(2)], reviewRebuilds: { count: 2 } })
+    expect(w.pushes).toEqual([expect.stringContaining('Two revisions have already been investigated.')])
+  })
+
+  it.each([false, true])('honors a reaction while the investigation is running (rejected: %s)', async rejected => {
+    const { w, runs } = world()
+    w.at('2026-11-19', 11, 55)
+    await w.job().tick()
+    slot(w)
+    await w.job().tick()
+    expect(w.draft()).toMatchObject({ state: 'previewed', threads: { state: 'waiting' } })
+    expect(w.ig.published).toHaveLength(0)
+    w.approve()
+    if (rejected) w.reactions.push({ name: 'x', users: [HANIF] })
+    await w.job().tick()
+    expect(readFileSync(join(runs[0]!.dir, 'stopped'), 'utf8')).toContain('reaction')
+    await w.job().tick()
+    expect(w.draft()).toMatchObject({ revision: 1, state: rejected ? 'skipped' : 'published' })
+    expect(w.threads.posts).toHaveLength(rejected ? 0 : 1)
+    expect(w.pushes).toHaveLength(0)
+  })
+
+  it('reports finished findings but never replaces a preview Hanif already approved', async () => {
+    const { w, finish } = world(wrong)
+    await w.job().tick()
+    during(w)
+    finish(exclude)
+    w.approve()
+    slot(w)
+    await w.job().tick()
+    expect(w.draft()).toMatchObject({ revision: 1, state: 'published', exclude: [] })
+    expect(w.reviewPosts).toEqual([{ threadTs: w.draft().slack.ts, text: expect.stringContaining(exclude.reason) }])
+    expect(w.pushes).toHaveLength(0)
+  })
+
+  it('does not reuse an all-ok resolution after the outgoing copy changes', async () => {
+    const { w, finish } = world()
+    await w.job().tick()
+    during(w)
+    finish(ok)
+    await w.job().tick()
+    const draft = w.draft()
+    draft.caption += '\nChanged after investigation'
+    writeFileSync(w.job().draftFile(draft.id), JSON.stringify(draft))
+    slot(w)
+    await w.job().tick()
+    expect(w.draft().state).toBe('previewed')
+    expect(w.threads.posts).toHaveLength(0)
+  })
+
+  it('prints a dry-run plan without writing or starting a new investigation', async () => {
+    const { w, runs } = world()
+    const fake = w.investigator
+    w.investigator = undefined
+    await w.job().tick()
+    w.investigator = fake
+    const draft = w.draft()
+    expect(await w.job().investigate(draft.id, true)).toMatchObject({ round: 1, request: { revision: 1, id: draft.id } })
+    expect(w.draft()).toEqual(draft)
+    expect(runs).toHaveLength(0)
   })
 })
 

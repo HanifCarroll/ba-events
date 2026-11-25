@@ -5,19 +5,23 @@
  *   tick                                             do whatever is due (the systemd timer runs this every 10 minutes)
  *   dry-run <hoy|finde|gratis|reel> --date <YYYY-MM-DD> --out <dir> [--track <id>] [--threads]  render a draft without publishing
  *   review <draft id> [--dry-run]                    print a fresh verdict without acting
+ *   investigate <draft id> [--dry-run]               queue or inspect the guarded follow-up to a saved review
+ *   catalog-fix <id> --field <field> --from <value> --to <value> --evidence <source> [--all-occurrences] (active investigation only)
  *   threads-report [--days 28]                       read Threads insights for posts from this publisher
  *   stickers-dry-run <hoy draft id> --out <dir>       capture every Instagram preview and discard without sharing
  *   regenerate <draft id> [--exclude <event id> ...] [--track <id>]  rebuild a draft (a Reel may switch track) and preview it again
  *   status                                           list the drafts, their state, and their times
  */
+import { parseArgs } from 'node:util'
 import { isFormatKey } from '../src/features/instagram-publisher/formats.ts'
 import { Job, dryRun, liveServices, regenerate, review, status, stickersDryRun, tick } from '../src/features/instagram-publisher/job.ts'
-import { renderFramesInProcess } from '../src/features/instagram-publisher/runtime.ts'
+import { catalogFix, investigatorTool, runInvestigator } from '../src/features/instagram-publisher/investigator-run.ts'
+import { renderFramesInProcess, withLock } from '../src/features/instagram-publisher/runtime.ts'
 import { threadsApi } from '../src/features/instagram-publisher/threads-api.ts'
 import { threadsReport } from '../src/features/instagram-publisher/threads-report.ts'
 import { readThreadsToken } from '../src/features/instagram-publisher/threads-token.ts'
 
-const USAGE = 'usage: instagram-publisher.ts tick | status | review <draft id> [--dry-run] | dry-run <hoy|finde|gratis|reel> --date <YYYY-MM-DD> --out <dir> [--track <id>] [--threads] | threads-report [--days 28] | regenerate <draft id> [--exclude <event id> ...] [--track <id>] | stickers-dry-run <hoy draft id> --out <dir>'
+const USAGE = 'usage: instagram-publisher.ts tick | status | review <draft id> [--dry-run] | investigate <draft id> [--dry-run] | catalog-fix <id> --field <field> --from <value> --to <value> --evidence <source> [--all-occurrences] | dry-run <hoy|finde|gratis|reel> --date <YYYY-MM-DD> --out <dir> [--track <id>] [--threads] | threads-report [--days 28] | regenerate <draft id> [--exclude <event id> ...] [--track <id>] | stickers-dry-run <hoy draft id> --out <dir>'
 
 function flags(args: string[], name: string): string[] {
   const values: string[] = []
@@ -42,6 +46,33 @@ async function main(argv: string[]) {
       const [id, flag] = args
       if (!id || args.length > 2 || (flag !== undefined && flag !== '--dry-run')) throw new Error(USAGE)
       return review(id)
+    }
+    case 'investigate': {
+      const [id, flag] = args
+      if (!id || args.length > 2 || (flag !== undefined && flag !== '--dry-run')) throw new Error(USAGE)
+      const job = new Job(liveServices())
+      const plan = flag ? await job.investigate(id, true) : await withLock(() => job.investigate(id, false))
+      console.log(JSON.stringify(plan, null, 2))
+      return
+    }
+    case 'catalog-fix': {
+      const [id, ...options] = args
+      const { values } = parseArgs({ args: options, options: { field: { type: 'string' }, from: { type: 'string' }, to: { type: 'string' },
+        evidence: { type: 'string' }, 'all-occurrences': { type: 'boolean' } } })
+      const dir = process.env.BA_INVESTIGATION_DIR
+      const { from, to, field, evidence } = values
+      if (!dir) throw new Error('catalog-fix requires an active investigator request.')
+      if (!id || field === undefined || from === undefined || to === undefined || evidence === undefined) throw new Error(USAGE)
+      const { fixInput } = await import('../src/features/instagram-publisher/catalog-fix.ts')
+      const input = fixInput.parse({ id, field, from: from === 'null' ? null : from, to: to === 'null' ? null : to, evidence, allOccurrences: values['all-occurrences'] === true })
+      console.log(JSON.stringify(await catalogFix(dir, input)))
+      return
+    }
+    case 'investigator-run': return runInvestigator(args[0]!)
+    case 'investigator-tool': {
+      const [dir, action, data] = args
+      console.log(JSON.stringify(await investigatorTool(dir!, action!, data!)))
+      return
     }
     case 'threads-report': {
       const [flag, value] = args

@@ -155,7 +155,7 @@ export function toCatalogEvent(row: Record<string, any>): CatalogEvent {
   }
 }
 
-async function d1Read(sql: string): Promise<unknown> {
+export async function d1Read(sql: string): Promise<unknown> {
   const { out, err, code } = await run([join(REPO, 'bin/ba-d1-read.sh'), sql], 120_000)
   if (code !== 0) throw new Error(`D1 read failed: ${err.trim().slice(0, 300)}`)
   return JSON.parse(out)
@@ -402,28 +402,33 @@ async function readIntakeFlyer(key: string) {
   return readArtworkBody(response).catch(() => { throw new Error(`Could not read retained intake evidence from R2 (HTTP ${response.status}).`) })
 }
 
-export const reviewDraft: Reviewer = async input => {
-  const config = readConfig().review
-  const key = readReviewKey(config.keyFile)
-  const prompt = readFileSync(join(REPO, 'src/features/instagram-publisher/review-prompt.md'), 'utf8')
-  const sources = await loadReviewSources(input.events.map(event => event.id), d1Read, readIntakeFlyer)
-  if (input.format !== 'reel') return reviewWithOpenAI(config, key, prompt, input, input.frames, sources)
+export const reviewSources = (ids: string[]) => loadReviewSources(ids, d1Read, readIntakeFlyer)
+
+export async function reviewStills(input: Parameters<Reviewer>[0], dir: string) {
+  if (input.format !== 'reel') return input.frames
   const [video, cover] = input.frames
   const mids = input.reelHoldMids
   if (!video || !cover || mids?.length !== input.events.length + 1 || mids.some(at => !Number.isFinite(at) || at <= 0)) {
     throw new Error('The saved Reel has no event card sample times. Regenerate it before reviewing.')
   }
+  const stills = [cover]
+  for (const [index, at] of mids.entries()) {
+    const path = join(dir, `card-${index + 1}.jpg`)
+    const result = await media(['ffmpeg', '-v', 'error', '-ss', String(at), '-i', video, '-frames:v', '1', '-q:v', '2', path])
+    if (result.code !== 0 || !existsSync(path)) throw new Error(`Could not extract Reel still ${index + 1} for review.`)
+    stills.push(path)
+  }
+  return stills
+}
+
+export const reviewDraft: Reviewer = async input => {
+  const config = readConfig().review
+  const key = readReviewKey(config.keyFile)
+  const prompt = readFileSync(join(REPO, 'src/features/instagram-publisher/review-prompt.md'), 'utf8')
+  const sources = await reviewSources(input.events.map(event => event.id))
   const dir = mkdtempSync(join(tmpdir(), 'ba-reel-review-'))
-  try {
-    const stills = [cover]
-    for (const [index, at] of mids.entries()) {
-      const path = join(dir, `card-${index + 1}.jpg`)
-      const result = await media(['ffmpeg', '-v', 'error', '-ss', String(at), '-i', video, '-frames:v', '1', '-q:v', '2', path])
-      if (result.code !== 0 || !existsSync(path)) throw new Error(`Could not extract Reel still ${index + 1} for review.`)
-      stills.push(path)
-    }
-    return await reviewWithOpenAI(config, key, prompt, input, stills, sources)
-  } finally { rmSync(dir, { recursive: true, force: true }) }
+  try { return await reviewWithOpenAI(config, key, prompt, input, await reviewStills(input, dir), sources) }
+  finally { rmSync(dir, { recursive: true, force: true }) }
 }
 
 export async function reviewPush(body: string, runner: Runner = run) {

@@ -88,6 +88,12 @@ export function reviewFix(draft: Draft, id: string | null, finding: Verdict) {
 export const slackLiteral = (value: string) => value.replace(/[\r\n]+/g, ' ').replaceAll('`', "'")
   .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replace(/[*_~]/g, '')
 
+export function investigatorFailed(draft: Draft, reason: string, dir: string) {
+  return [`⚠️ *The ${label(draft)} investigation did not finish*. ${TRIAGE}`,
+    'The publisher will not auto-publish this revision. Hermes should check the private run and fix logs before retrying any catalog change.',
+    codes(draft.id, `revision ${draft.revision}`, reason, homeRelative(dir))].join('\n')
+}
+
 export function reviewUnavailable(draft: Draft, slot: Date, now: Date, error: unknown) {
   const failure = describeFailure(error)
   return [`⚠️ *The ${label(draft)} has no automated review for its ${when(slot, now)} slot*. ${TRIAGE}`,
