@@ -25,7 +25,7 @@ const webUrl = z.url({ protocol: /^https?$/u }).max(500)
 export const finding = z.discriminatedUnion('verdict', [
   z.strictObject({ verdict: z.literal('ok'), reason: line(300), url: webUrl }),
   z.strictObject({ verdict: z.literal('fixed'), fixes: z.array(z.uuid()).min(1).max(12) }),
-  z.strictObject({ verdict: z.literal('exclude'), reason: line(300) }),
+  z.strictObject({ verdict: z.literal('exclude'), reason: line(300), hermes: line(300).optional() }),
   z.strictObject({ verdict: z.literal('ask'), question: line(300), checked: line(500), hermes: line(300).optional() }),
 ])
 export type Finding = z.infer<typeof finding>
@@ -33,6 +33,7 @@ export type Findings = Record<string, Finding>
 export interface Investigation {
   request: InvestigationRequest
   round: number
+  missedUnitProbes?: number
   findings?: Findings
   failure?: string
   failureAlerted?: boolean

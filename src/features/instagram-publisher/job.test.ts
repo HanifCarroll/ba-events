@@ -478,16 +478,37 @@ describe('tick: publisher investigation', () => {
     expect(w.draft().events.some(event => event.id === flaggedId)).toBe(false)
   })
 
-  it('includes the research in the Slack thread and one Home push, then waits for a check mark', async () => {
+  it('excludes a confirmed wrong venue, alerts Hermes, and publishes the re-reviewed preview without asking Hanif', async () => {
+    const { w, finish } = world({ ...wrong, field: 'venue', reason: 'The organizer lists a different venue.' })
+    await w.job().tick()
+    const original = w.draft()
+    during(w)
+    const reason = 'The card gives the wrong venue.'
+    const hermes = 'Correct the venue using the organizer’s page: https://venue.example/18-mundos'
+    finish({ verdict: 'exclude', reason, hermes })
+    await w.job().tick()
+    expect(w.draft()).toMatchObject({ revision: 2, exclude: [flaggedId] })
+    expect(w.reviewCalls).toBe(2)
+    expect(w.reviewPosts[0]).toEqual({ threadTs: original.slack.ts, text: expect.stringContaining(reason) })
+    expect(w.alerts).toContainEqual(expect.objectContaining({ key: `review-fix/${flaggedId}`, text: expect.stringContaining(hermes) }))
+    slot(w)
+    await w.job().tick()
+    expect(w.draft()).toMatchObject({ state: 'published', threads: { state: 'published' } })
+    expect(w.pushes).toHaveLength(0)
+  })
+
+  it.each([false, true])('asks in Slack and Home even with a separate Hermes fix (Hermes fix: %s)', async needsFix => {
     const { w, finish } = world()
     await w.job().tick()
     during(w)
-    finish(ask)
+    const hermes = 'The ticket link on the catalog row needs correcting.'
+    finish(needsFix ? { ...ask, hermes } : ask)
     await w.job().tick()
     slot(w)
     await w.job().tick()
     expect(w.pushes).toEqual([expect.stringContaining(`${ask.question} Checked: ${ask.checked}`)])
     expect(w.reviewPosts[0]?.text).toContain(ask.checked)
+    expect(w.alerts.some(alert => alert.key === `review-fix/${flaggedId}` && alert.text.includes(hermes))).toBe(needsFix)
     expect(w.draft().state).toBe('previewed')
     expect(w.threads.posts).toHaveLength(0)
     w.approve()
@@ -495,11 +516,39 @@ describe('tick: publisher investigation', () => {
     expect(w.draft()).toMatchObject({ revision: 1, state: 'published', threads: { state: 'published' } })
   })
 
+  it('waits through intermittent unit probe failures and accepts completion during a probe', async () => {
+    const { w, finish } = world()
+    await w.job().tick()
+    during(w, 10)
+    w.investigator!.running = async () => { throw new Error('Could not reach the systemd user bus') }
+    await w.job().tick()
+    expect(w.draft().review?.investigation?.findings).toBeUndefined()
+    during(w, 20)
+    w.investigator!.running = async () => true
+    await w.job().tick()
+    during(w, 30)
+    w.investigator!.running = async () => false
+    await w.job().tick()
+    expect(w.draft().review?.investigation?.findings).toBeUndefined()
+    expect(w.alerts).toHaveLength(0)
+    w.investigator!.running = async () => { finish(ok); return false }
+    await w.job().tick()
+    expect(w.draft().review?.investigation?.findings?.[flaggedId]).toEqual(ok)
+    expect(w.alerts).toHaveLength(0)
+  })
+
   it.each(['start', 'crash', 'missing', 'invalid', 'late', 'unacknowledged'] as const)('fails closed on %s and alerts Hermes only', async failure => {
     const { w, runs, finish } = world()
     if (failure === 'start') w.investigator!.start = async () => { throw new Error('No user service') }
     await w.job().tick()
-    if (failure === 'crash') w.investigator!.running = async () => false
+    if (failure === 'crash') {
+      w.investigator!.running = async () => false
+      during(w)
+      await w.job().tick()
+      expect(w.draft().review?.investigation?.findings).toBeUndefined()
+      expect(w.alerts).toHaveLength(0)
+      during(w, 25)
+    }
     if (failure === 'missing' || failure === 'late') during(w, 40)
     if (failure === 'late') finish(ok)
     if (failure === 'invalid') finish(ok, uuid(20))

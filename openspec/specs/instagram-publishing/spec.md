@@ -140,11 +140,13 @@ After rendering, the publisher MUST review the still frames (for a Reel, its cov
 - **WHEN** every flagged event is resolved as `ok` with evidence, or the investigator returns `fixed`, `exclude`, or `ask` entries
 - **THEN** the job replies with one line per event in the original preview thread
 - **AND** all `ok` clears the event gate for that exact revision only; a `fixed` or `exclude` result without any `ask` rebuilds with cumulative exclusions and a fresh review, at most twice per draft per Buenos Aires day before the cutoff; if too few qualify it skips in the old thread
-- **AND** any unresolved decision, including doubts after the investigation limit, requires ✅ and sends at most one Home push with the question and what was checked, unless Hanif already reacted
+- **AND** a confirmed error the investigator cannot correct is excluded and the evidence and requested correction go to Hermes without blocking the rebuild
+- **AND** an `ask`, including doubts after the investigation limit, requires ✅ and sends one Home push with the question and what was checked, even when Hermes also gets a fix request, unless Hanif already reacted or approval has closed
 
 #### Scenario: Investigation fails
 - **WHEN** the investigator cannot start, times out, or exits without a complete, valid, on-time result
 - **THEN** the revision requires ✅, and the infrastructure failure goes to Hermes, not to Hanif as a push question
+- **AND** before the time limit, the job does not infer a crash from a missing result without two consecutive unsuccessful unit checks
 
 #### Scenario: The investigator corrects the catalog
 - **WHEN** direct evidence proves a catalog value is wrong for a flagged event

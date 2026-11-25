@@ -86,9 +86,9 @@ The 10-minute tick saves `request.json` under `drafts/<id>/investigation-<revisi
 Pi has one allowlisted tool with operations for saved evidence, read-only catalog lookups via `bin/ba-d1-read.sh`, public HTTPS page and search reads, the guarded correction command, and private notes and findings. It has no general shell, filesystem access, Slack, or social writes. Public pages or search can block anonymous access. Treat search snippets as leads, not proof. The runbook is `scripts/publisher-investigator/prompt.md`.
 
 - **All flagged events resolved as `ok`:** allow auto mode only for the exact reviewed revision, frames, and copy, and only if the post verdict is also `ok`.
-- **`fixed` or `exclude` with no `ask`:** rebuild through `regenerate`, keep earlier exclusions, add explicitly excluded IDs, and quick-review the new preview. The two-rebuilds-per-draft-per-Buenos-Aires-day limit and the format minimum still apply. A draft can investigate at most twice across its revisions.
-- **Any `ask`:** keep the current preview on hold, even if other events were fixed. A genuine unresolved decision goes in the original preview thread and one Home push, with the places checked. Confirmed issues outside the fix command's fields go to Hermes instead of pushing Hanif.
-- **Missing, invalid, or late findings, or a unit failure:** nothing auto-publishes. The job alerts Hermes under `ba-events/instagram/investigator` rather than pushing Hanif about an infrastructure failure. The original preview is still eligible for a valid ✅. The job posts one plain line per flagged event for a completed investigation or fallback.
+- **`fixed` or `exclude` with no `ask`:** rebuild through `regenerate`, keep earlier exclusions, add explicitly excluded IDs, and quick-review the new preview. If a confirmed error cannot be corrected by the command, exclude the event and send the evidence and requested fix to Hermes. The two-rebuilds-per-draft-per-Buenos-Aires-day limit and the format minimum still apply. A draft can investigate at most twice across its revisions.
+- **Any `ask`:** keep the current preview on hold, even if other events were fixed. An unresolved decision goes in the original preview thread and one Home push with the places checked, even if Hermes also gets a separate fix request. The job does not send the push if Hanif has already reacted or approval has closed.
+- **Missing, invalid, or late findings, or a unit failure:** nothing auto-publishes. Before the run ends, a missing result needs two consecutive unsuccessful unit checks before the job treats it as a crash. The job alerts Hermes under `ba-events/instagram/investigator` rather than pushing Hanif about an infrastructure failure. The original preview is still eligible for a valid ✅. The job posts one plain line per flagged event for a completed investigation or fallback.
 
 ```sh
 mise exec -- node --experimental-transform-types scripts/instagram-publisher.ts investigate <draft-id> --dry-run
@@ -107,7 +107,7 @@ After CI has applied `0008_publisher_catalog_fix.sql`, provision a dedicated acc
 
 ```sh
 systemd-run --user --collect --wait -p MemoryMax=1000M -p MemorySwapMax=0 /usr/bin/true
-pi auth check openai
+pi auth check --provider openai
 pi --list-models gpt-6.2-sol
 ```
 

@@ -554,12 +554,23 @@ export class Job {
     if (!requestMatches(request, draft, this.reviewInput(draft))) return
     const dir = location(this.s.stateDir, request)
     if (!investigation.findings) {
-      const read = () => readFindings(dir, request, this.s.now().getTime())
-      let findings = read()
-      if (!findings && !hasCompleted(dir) && this.s.now().getTime() < request.endsAt) {
-        if (await this.s.investigator?.running(request).catch(() => false)) return
-        findings = read() // The unit may have completed while systemctl was checking it.
+      const pending = () => !hasCompleted(dir) && this.s.now().getTime() < request.endsAt
+      if (pending()) {
+        const running = await this.s.investigator?.running(request).catch(() => false)
+        if (pending()) {
+          const previous = investigation.missedUnitProbes ?? 0
+          const missed = running ? 0 : previous + 1
+          // A single probe can fail while the unit is still running. Persist the count across ticks.
+          if (missed < 2) {
+            if (missed !== previous) {
+              investigation.missedUnitProbes = missed || undefined
+              this.save(draft)
+            }
+            return
+          }
+        }
       }
+      const findings = readFindings(dir, request, this.s.now().getTime())
       try {
         const { applied, uncertain } = fixLog(dir)
         if (uncertain) this.failInvestigation(draft, investigation, 'A catalog correction has no D1 acknowledgement; check the fix log.')
@@ -567,10 +578,10 @@ export class Job {
           const item = findings[id]!
           const fixes = applied.filter(fix => fix.id === id)
           if (item.verdict === 'fixed') return item.fixes.length === fixes.length && fixes.every(fix => item.fixes.includes(fix.operation))
-          return item.verdict === 'ask' || !fixes.length
+          return item.verdict !== 'ok' || !fixes.length
         })) {
           investigation.findings = findings
-          for (const [id, item] of Object.entries(findings)) if (item.verdict === 'ask' && item.hermes) {
+          for (const [id, item] of Object.entries(findings)) if ('hermes' in item && item.hermes) {
             const fix = alerts.reviewFix(draft, id, { verdict: 'wrong', field: 'investigator', reason: item.hermes, question: null })
             draft.pendingReviewFixes = [...(draft.pendingReviewFixes ?? []), fix]
           }
@@ -588,7 +599,7 @@ export class Job {
     const canRebuild = !overridden && draft.state === 'previewed' && !draft.publish && !draft.storyShare && this.s.now() < window.cutoff && count < MAX_REVIEW_REBUILDS
     const questions = overridden ? [] : request.events.flatMap(({ id, title }) => {
       const item = findings[id]!
-      if (item.verdict === 'ask') return [{ text: `${title}: ${item.question} Checked: ${item.checked}`, push: !item.hermes && !investigation.failure }]
+      if (item.verdict === 'ask') return [{ text: `${title}: ${item.question} Checked: ${item.checked}`, push: !investigation.failure }]
       if (repair && !canRebuild && item.verdict !== 'ok') return [{
         text: `${title}: This preview still shows the old information and cannot be rebuilt automatically. Approve this version?`, push: true,
       }]
