@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { readFileSync, statSync } from 'node:fs'
 import { z } from 'zod'
+import type { Investigation } from './investigation.ts'
 import type { FormatKey } from './formats.ts'
 import type { PostEvent } from './select.ts'
 
@@ -41,6 +42,8 @@ export interface ReviewState {
   replied?: boolean
   homeAttempted?: boolean
   unavailableAlert?: boolean
+  investigatorEnabled?: boolean
+  investigation?: Investigation
 }
 export interface ReviewConfig { model: string; keyFile: string }
 

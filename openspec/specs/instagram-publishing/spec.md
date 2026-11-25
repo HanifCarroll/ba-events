@@ -124,21 +124,33 @@ Each draft MUST go to #ba-eventos as a new top-level message with every frame at
 
 ### Requirement: A new preview needs a revision-specific review for automatic publishing
 
-After rendering, the publisher MUST review the still frames (for a Reel, its cover and card stills), Instagram caption, and exact Threads text, if present. It MUST supply the selected catalog fields, Buenos Aires dates, and linked intake captions and source flyers when available. The reviewer MUST report material factual, scope, artwork, or rendering problems, not style preferences. It MUST return an `ok`, `wrong`, or `question` verdict for each event and identify any post-wide issue. A new preview MUST NOT auto-publish to either channel unless all verdicts are `ok` for the exact revision, frames hash, and saved content. A preview already sent or handed to Slack before review was introduced keeps its earlier approval rules.
+After rendering, the publisher MUST review the still frames (for a Reel, its cover and card stills), Instagram caption, and exact Threads text, if present. It MUST supply the selected catalog fields, Buenos Aires dates, and linked intake captions and source flyers when available. The reviewer MUST report material factual, scope, artwork, or rendering problems, not style preferences. It MUST return an `ok`, `wrong`, or `question` verdict for each event and identify any post-wide issue. A new preview MUST NOT auto-publish to either channel unless the post verdict is `ok` and every event is `ok` in the quick review or resolved as `ok` by the investigator for the exact revision, frames hash, and saved content. A preview already sent or handed to Slack before review was introduced keeps its earlier approval rules.
 
 #### Scenario: The reviewer accepts every event and the post
 - **WHEN** the reviewer returns all `ok` for the saved revision
 - **THEN** the job saves the result, model, and timestamps, replies in the preview thread, and uses the normal auto rules without running that successful review again
 
-#### Scenario: The reviewer finds a wrong event
-- **WHEN** the review reports a `wrong` event and the revision does not have Hanif's ✅ or ❌
-- **THEN** the job alerts Hermes with that event ID, field, and reason, and uses the normal regenerate path with cumulative exclusions, at most twice per draft per Buenos Aires calendar day before the cutoff
-- **AND** the rebuilt revision needs its own review and approval; if too few events qualify the job skips and replies in the old preview thread
-- **AND** if the job cannot rebuild, the wrong revision cannot auto-publish; a post-wide error never causes the job to exclude an arbitrary event
+#### Scenario: The quick review flags events
+- **WHEN** a new review reports any event as `wrong` or `question` and Hanif has not reacted ✅ or ❌
+- **THEN** the job queues a detached investigation once for that revision, holds automatic publishing in both channels, and checks the result on subsequent ticks
+- **AND** the investigator has at most 30 minutes and stops at least 20 minutes before the earliest applicable approval cutoff; at most two revisions of a draft may be investigated
+- **AND** a review already saved before investigation was introduced keeps its earlier behavior; a post-wide issue keeps its existing handling and cannot be cleared by event results
 
-#### Scenario: The reviewer has a question
-- **WHEN** the review returns a `question` without a wrong event to remove
-- **THEN** the job posts the plain-English question in the preview thread and, if Hanif has not decided, sends one Home push for that revision. If Home decisions are not available to the publisher, Slack ✅ and ❌ remain authoritative.
+#### Scenario: The investigation completes
+- **WHEN** every flagged event is resolved as `ok` with evidence, or the investigator returns `fixed`, `exclude`, or `ask` entries
+- **THEN** the job replies with one line per event in the original preview thread
+- **AND** all `ok` clears the event gate for that exact revision only; a `fixed` or `exclude` result without any `ask` rebuilds with cumulative exclusions and a fresh review, at most twice per draft per Buenos Aires day before the cutoff; if too few qualify it skips in the old thread
+- **AND** any unresolved decision, including doubts after the investigation limit, requires ✅ and sends at most one Home push with the question and what was checked, unless Hanif already reacted
+
+#### Scenario: Investigation fails
+- **WHEN** the investigator cannot start, times out, or exits without a complete, valid, on-time result
+- **THEN** the revision requires ✅, and the infrastructure failure goes to Hermes, not to Hanif as a push question
+
+#### Scenario: The investigator corrects the catalog
+- **WHEN** direct evidence proves a catalog value is wrong for a flagged event
+- **THEN** only the narrow correction command can change title, start time, price, free flag, display or summary descriptions, or cancel an event; it changes only matching scheduled rows whose old values still agree with the request
+- **AND** it maintains derived search data, logs every correction in publisher state and the draft, and refers unsupported corrections to Hermes
+- **AND** `investigate <draft id> --dry-run` shows what would be queued without applying fixes, launching Pi, or writing state.
 
 #### Scenario: The review is unavailable or Hanif decides explicitly
 - **WHEN** the review cannot return a valid result
@@ -297,7 +309,7 @@ Threads MUST save its own state, retries, container ID, media ID, permalink, and
 - **WHEN** the operator runs `threads-report` with a day count (default 28)
 - **THEN** the job reads saved Threads publications and the verified account's insights to report the date, format, views, likes, replies, reposts, quotes, link clicks if returned, permalink, and account follower count without writing anything.
 
-### Requirement: The job never writes the catalog and never exposes secrets
+### Requirement: Only the guarded correction command writes the catalog and secrets are never exposed
 The job MUST read D1 only through read-only SELECT statements, MUST NOT print the Instagram, Threads, Slack, Cloudflare, or OpenAI tokens or pass them in any process's arguments, and MUST NOT publish to Instagram when the Instagram token file is missing.
 
 #### Scenario: Token file missing
