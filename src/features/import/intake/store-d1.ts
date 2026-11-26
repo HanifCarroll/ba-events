@@ -391,7 +391,7 @@ export function d1Intake({ db, evidence, artwork, vectors }: IntakeBindings, sit
             const citedFields = fields(row), wholeLines = requiresWholeCaptionExcerpt(citedFields)
             return row.excerpt && (citedFields.includes('doors_time') || doorsRetained && citedFields.includes('time')) &&
               (row.media_id ? row.retained_media : wholeLines ? isWholeCaptionExcerpt(row.caption, row.excerpt) : row.caption.includes(row.excerpt)) &&
-              citesIntakeClock(row.excerpt, time, row.media_id ? undefined : row.caption, wholeLines, 2, 'doors')
+              citesIntakeClock(row.excerpt, time, row.media_id ? undefined : row.caption, wholeLines, 2)
           })) {
           throw new Error(doorsRetained ? SAME_CLOCK_RETAINED_REASON : SAME_CLOCK_REASON)
         }

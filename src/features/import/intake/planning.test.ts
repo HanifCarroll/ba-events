@@ -52,7 +52,7 @@ describe('Instagram candidate publication rules', () => {
     const caption = `${post.caption}\r\n  Nuestra función:  \r\n  Actúa: Luz y Sómbrá  `
     const credit = { observation_id: observationId, fields: ['performers'] as const, excerpt: 'Actúa: Luz', media_id: null }
     const input = { ...candidate(), performers: [{ name: 'Luz' }], evidence: [...candidate().evidence, credit] }
-    expect(validateEvidence(input, [{ ...post, caption }], [], now)).toContain('Credit, doors, and sale-opening caption evidence must quote complete lines')
+    expect(validateEvidence(input, [{ ...post, caption }], [], now)).toContain('Credit and sale-opening caption evidence must quote complete lines')
     expect(validateEvidence({ ...input, performers: [{ name: 'LUZ Y SOMBRA' }], evidence: [...candidate().evidence,
       { ...credit, excerpt: 'Nuestra función:\nActúa: Luz y Sómbrá' }] }, [{ ...post, caption }], [], now)).toEqual([])
   })
@@ -62,7 +62,7 @@ describe('Instagram candidate publication rules', () => {
     const evidence = [{ ...candidate().evidence[0], fields: ['name', 'venue', 'date', 'time', 'doors_time'] as const, excerpt }]
     expect(validateEvidence({ ...candidate(), doors_time: '20:00', evidence }, posts, [], now)).toEqual([])
   })
-  it.each([['21 hs', '21:00'], ['21:00', '21:00'], ['21.00 hs', '21:00'], ['9 PM', '21:00'],
+  it.each([['21 hs', '21:00'], ['21:00', '21:00'], ['21.00 hs', '21:00'], ['20.30', '20:30'], ['9 PM', '21:00'],
     ['9:30 p. m.', '21:30'], ['9:30 pm', '21:30']])('finds door clock %s as %s without requiring a role label', (clock, time) => {
     const excerpt = `Apertura:\n${clock}`
     const evidence = [...candidate().evidence, { observation_id: observationId, fields: ['doors_time'] as const, excerpt, media_id: null }]
@@ -71,18 +71,17 @@ describe('Instagram candidate publication rules', () => {
     expect(validateEvidence(input, posts, [], now)).toEqual([])
     expect(validateEvidence({ ...input, doors_time: '09:30' }, posts, [], now)).toContain('Door time must appear in the cited excerpt')
   })
-  it('accepts a bare hour explicitly introduced in a doors caption, but not as a start', () => {
-    const excerpt = 'Ingreso a las 21. A las 21:45 aproximadamente comienza el espectáculo.'
-    const evidence = [{ ...candidate().evidence[0], fields: ['name', 'date', 'venue', 'doors_time'] as const, excerpt }]
-    const posts = [{ ...post, caption: excerpt }]
-    const input = { ...candidate(), time: null, doors_time: '21:00', evidence }
+  it('matches a caption clock at a bare hour without inspecting the entry line’s wording', () => {
+    const caption = 'Ingreso a las 21. A las 21:45 aproximadamente comienza el espectáculo.'
+    const quote = { ...candidate().evidence[0], fields: ['doors_time'] as const, excerpt: 'a las 21' }
+    const input = { ...candidate(), time: null, doors_time: '21:00', evidence: [...candidate().evidence, quote] }
+    const posts = [{ ...post, caption: `${post.caption}\n${caption}` }]
     expect(validateEvidence(input, posts, [], now)).toEqual([])
-    const start = (time: string, excerpt: string) => validateEvidence({ ...input, time,
-      evidence: [...evidence, { ...candidate().evidence[0], fields: ['time'], excerpt }] }, posts, [], now)
-    expect(start('21:00', 'Ingreso a las 21')).toContain('Start time must appear in the cited excerpt')
-    expect(start('21:45', 'A las 21:45')).toContain('Start time must appear in the cited excerpt')
+    expect(validateEvidence({ ...input, doors_time: '18:00' }, posts, [], now)).toContain('Door time must appear in the cited excerpt')
+    expect(validateEvidence({ ...input, evidence: [...candidate().evidence, { ...quote, excerpt: 'Boletería a las 21' }] }, posts, [], now))
+      .toContain('Caption evidence must be an exact excerpt')
   })
-  it('uses the retained flyer clock as doors when its caption identifies flyer times as entry', () => {
+  it('verifies a retained flyer clock for the field the agent cites', () => {
     const caption = `${post.caption}\nLos horarios de los flyers son de ingreso.`
     const posts = [{ ...post, caption }]
     const flyer: Media = { id: eventId, observation_id: observationId, object_key: 'synthetic.jpg', sha256: 'a'.repeat(64), content_type: 'image/jpeg' }
@@ -90,8 +89,6 @@ describe('Instagram candidate publication rules', () => {
     const base = { ...candidate().evidence[0], fields: ['name', 'date', 'venue'] as const, excerpt: caption }
     expect(validateEvidence({ ...candidate(), time: null, doors_time: '21:00',
       evidence: [base, { ...flyerClock, fields: ['doors_time'] }] }, posts, [flyer], now)).toEqual([])
-    expect(validateEvidence({ ...candidate(), evidence: [base, { ...flyerClock, fields: ['time'] }] }, posts, [flyer], now))
-      .toContain('The caption identifies flyer times as doors, not the show start')
   })
   it.each(['20.11', '20.11 noviembre', '20.11.2026 hs'])('does not read a dotted date as a clock: %s', excerpt => {
     const evidence = [{ ...candidate().evidence[0], fields: ['name', 'date', 'venue', 'doors_time'] as const, excerpt }]
@@ -128,12 +125,15 @@ describe('Instagram candidate publication rules', () => {
     const both = `${single}\nShow: 9 PM`
     expect(validateEvidence({ ...input, evidence: evidence(both) }, [{ ...post, caption: both }], [], now)).toEqual([])
   })
-  it('does not count an official picker range as two roles when the plan keeps stored doors', () => {
-    const page = { kind: 'official_page' as const, url: 'https://teatro.example.org/obra', fields: ['time'] as const }
-    const picker = { ...page, excerpt: 'Empieza el lun. 23 de nov 2026 a las 21:00 - 21:00' }
-    expect(separatelyCitedDoors([picker], '21:00', [], true)).toBe(false)
-    const pair = { ...page, excerpt: 'Lunes 23 de noviembre | Puertas 21 hs | Show 21 hs' }
-    expect(separatelyCitedDoors([pair], '21:00', [], true)).toBe(true)
+  it('requires two separate clocks in an official-page quote when doors and start are equal', () => {
+    const page = { kind: 'official_page' as const, url: 'https://teatro.example.org/obra', fields: ['time', 'doors_time'] as const }
+    const input = { ...candidate(), doors_time: '21:00' }
+    const reasons = (excerpt: string) => validateEvidence({ ...input, evidence: [...input.evidence, { ...page, excerpt }] }, [post], [], now)
+    expect(reasons('Apertura de sala 21 hs')).toContain('Equal doors and start times need two separate clocks in the doors excerpt')
+    expect(reasons('21:00 - 21:00')).toContain('Equal doors and start times need two separate clocks in the doors excerpt')
+    expect(reasons('Apertura de sala 21 hs | Música a las 21')).toEqual([])
+    expect(separatelyCitedDoors([{ ...page, fields: ['time'], excerpt: 'Empieza el lun. 23 de nov 2026 a las 21:00 - 21:00' }],
+      '21:00', [], true)).toBe(false)
   })
   it('requires an explicit doors date before 06:00 even when only doors are known', () => {
     const excerpt = 'Synthetic Jazz, Puerta 00:30'
@@ -154,7 +154,7 @@ describe('Instagram candidate publication rules', () => {
     const input = { ...candidate(), offers_valid_from: '2026-11-15T18:00:00.000Z', evidence: [...candidate().evidence, quote] }
     expect(validateEvidence(input, [postWithSale], [], now)).toEqual([])
     expect(validateEvidence({ ...input, evidence: [...candidate().evidence, { ...quote, excerpt: '15.11.2026 — 3:00 p. m.' }] }, [postWithSale], [], now))
-      .toContain('Credit, doors, and sale-opening caption evidence must quote complete lines')
+      .toContain('Credit and sale-opening caption evidence must quote complete lines')
   })
   it.each([['organizer', 'Pássline'], ['organizer', 'Alternativa Teatral'], ['performers', 'Tu Entrada'],
     ['performers', 'passline.com'], ['performers', 'Synthetic Venue']] as const)(

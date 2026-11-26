@@ -150,7 +150,8 @@ describe('page-level doors on D1', () => {
     { name: 'Marea de Papel', excerpt: 'Ingreso 17h', time: '17:00', dateSource: 'post', doorsAt: '2026-11-23T20:00:00.000Z' },
     { name: 'Canciones de Sal', excerpt: 'Ingreso a las 20:30. Servimos la cena y luego comienza el espectáculo', time: '20:30', dateSource: 'page', doorsAt: '2026-11-23T23:30:00.000Z' },
     { name: 'Varieté Prisma', excerpt: 'Ingreso a las 21. A las 21:45 aproximadamente comienza el espectáculo.', time: '21:00', dateSource: 'page', doorsAt: '2026-11-24T00:00:00.000Z' },
-    { name: 'Cuarteto Tinta', excerpt: 'Puertas: 20:30', time: '20:30', dateSource: 'none', doorsAt: undefined },
+    { name: 'Cuarteto Tinta', excerpt: 'Apertura de sala 21 hs', time: '21:00', dateSource: 'post', doorsAt: '2026-11-24T00:00:00.000Z' },
+    { name: 'Orquesta Humedal', excerpt: 'Puertas: 20:30', time: '20:30', dateSource: 'none', doorsAt: undefined },
   ])('previews page-level doors for $name, date source: $dateSource', async ({ name, excerpt, time, dateSource, doorsAt }) => {
     const url = `${venue.website}/show`
     const caption = `${name} en ${venue.name}${dateSource === 'post' ? ' el lunes 23 de noviembre' : ''}`
@@ -351,24 +352,6 @@ describe('intake failure and retry orchestration', () => {
     await expect(Effect.runPromise(commitPlanEffect(db, preview.id, publishers))).rejects.toThrow("must be an excerpt of the page's visible text")
     line = excerpt
     await expect(Effect.runPromise(commitPlanEffect(db, preview.id, publishers))).resolves.toEqual(receipt)
-  })
-
-  it('refuses at commit when an official page now identifies its unlabeled start as doors', async () => {
-    const url = 'https://sala.example.org/show'
-    const excerpt = 'Empieza el lun. 23 de nov 2026 a las 21:00 - 23:30'
-    const ready = { ...plan, payload: { ...plan.payload, starts_at: '2026-11-24T00:00:00.000Z', venue_id: 'venue' },
-      evidence: [{ kind: 'official_page' as const, url, fields: ['date', 'time'] as const, excerpt }] }
-    const commit = vi.fn(() => Effect.succeed(receipt))
-    const store = commitStore(ready, {
-      venue: () => Effect.succeed({ id: 'venue', name: 'Sala Nube', neighborhood: 'Palermo', website: 'https://sala.example.org' }),
-      observationsByIds: () => Effect.succeed([]), commitPlan: commit,
-    })
-    const readPage = (url: string, sites: ReadonlySet<string>) => readOfficialPage(url, sites, async () => new Response(
-      `<h1>${ready.payload.name}</h1><p>${excerpt}</p><p>Abrimos las puertas a las 21h</p>`, { headers: { 'content-type': 'text/html' } }))
-    await expect(Effect.runPromise(commitPlanEffect(store, ready.id, { readPage,
-      embed: async () => { throw new Error('Unexpected embedding') }, presentation: async () => { throw new Error('Unexpected presentation') },
-    }))).rejects.toThrow('needs an explicit show start')
-    expect(commit).not.toHaveBeenCalled()
   })
 
   it('overlaps publication preparation but waits for both results before writing', async () => {
