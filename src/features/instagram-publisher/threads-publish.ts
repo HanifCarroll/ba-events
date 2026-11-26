@@ -1,4 +1,4 @@
-import { PublishStop, readReactions } from './approval.ts'
+import { PublishStop, type Reactions } from './approval.ts'
 import { TICK_MS } from './formats.ts'
 import { ThreadsError, type ThreadsApi } from './threads-api.ts'
 import { threadsReplies, type threadsWindow } from './threads-copy.ts'
@@ -26,6 +26,8 @@ export interface ThreadsDraft {
   failures: number
   notify: string | null
   failureAlertSent?: boolean
+  hold?: NonNullable<PublishStop['stale']>
+  holdAlertSent?: boolean
 }
 
 export function newThreadsDraft(text: string | null, auto: boolean): ThreadsDraft {
@@ -57,7 +59,7 @@ interface Services {
   now(): Date
   sleep(ms: number): Promise<void>
   save(): void
-  reactions(): Promise<Parameters<typeof readReactions>[0]>
+  reactions(): Promise<Reactions>
   enabled(): boolean
   auto(): boolean
   checkEvents(): Promise<void>
@@ -85,11 +87,11 @@ export async function advanceThreads(draft: ThreadsDraft, window: ReturnType<typ
     const checkGate = async () => {
       if (s.now() >= window.cutoff) throw new PublishStop('deadline', 'Threads cutoff reached')
       if (s.now() < window.publishAt) throw new PublishStop('unapproved', 'Waiting for Threads slot')
-      const reactions = readReactions(await s.reactions().catch(() => {
+      const reactions = await s.reactions().catch(() => {
         if (s.now() >= window.cutoff) throw new PublishStop('deadline', 'Threads cutoff reached')
         s.log('Threads: no se pudo leer la aprobación de Slack; se reintenta en el próximo tick')
         throw new PublishStop('unapproved', 'Waiting for a successful Slack reaction read')
-      }))
+      })
       if (reactions.rejected) throw new PublishStop('rejected', 'Hanif reacted ❌')
       if (s.now() >= window.cutoff) throw new PublishStop('deadline', 'Threads cutoff reached')
       if (!reactions.approved && !(draft.auto === true && s.auto())) throw new PublishStop('unapproved', 'Waiting for Threads approval')
@@ -176,7 +178,10 @@ export async function advanceThreads(draft: ThreadsDraft, window: ReturnType<typ
         if (error.kind === 'unapproved') return
         if (error.kind === 'deadline') settle(draft, 'skipped', threadsReplies.cutoff(window.cutoff))
         if (error.kind === 'rejected') stopThreads(draft, 'rejected')
-        if (error.kind === 'stale' && error.stale) stopThreads(draft, error.stale)
+        if (error.kind === 'stale' && error.stale) {
+          draft.hold = error.stale
+          stopThreads(draft, error.stale)
+        }
       } else {
         const reason = error instanceof ThreadsError ? error.message : 'no se pudo completar el intento'
         s.log(`Threads: ${reason}`)

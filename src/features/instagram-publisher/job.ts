@@ -8,7 +8,7 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { FixReceipt } from './catalog-fix.ts'
-import { PublishStop, checkWrite, decide, readReactions } from './approval.ts'
+import { PublishStop, checkWrite, decide, readReactions, type Reactions } from './approval.ts'
 import * as alerts from './alerts.ts'
 import { fetchArtwork, type Artwork } from './artwork.ts'
 import { caption as captionFor, footerHandle, heldText, postedText, skippedMentionsText, skipText, slackPreview, tooFewText, type SkipReason } from './copy.ts'
@@ -60,8 +60,8 @@ export interface Draft {
   pendingReviewFixes?: ReturnType<typeof alerts.reviewFix>[]
   investigationCount?: number
   catalogFixes?: FixReceipt[]
-  /** Approval mode saved for this revision. A silent auto draft has no channel or timestamp. */
-  slack: { fileIds: string[]; ts: string | null; auto?: boolean; channel?: string }
+  /** The active preview can outlive its revision. A pending share does not replace it until confirmed. */
+  slack: { fileIds: string[]; ts: string | null; auto?: boolean; channel?: string; revision?: number; vetoed?: boolean; pending?: PreviewShare }
   approvedSeenAt: string | null
   r2Uploaded: string | null
   publish: PublishState | null
@@ -74,7 +74,7 @@ export interface Draft {
   /** Total failures for the publish retry budget, separate from the shared tick streak. */
   publishFailures: number
   /** A Slack message still to deliver for this draft's outcome. */
-  notify: { text: string; threadTs: string | null; channel?: string; failures?: number } | null
+  notify: { text: string; threadTs: string | null; channel?: string; failures?: number; rebuilt?: boolean } | null
   skipReason: string | null
   note: string | null
   updatedAt: string
@@ -150,6 +150,7 @@ const REVIEW_ALERT_LEAD_MS = 30 * 60_000
 const SETTLED: DraftState[] = ['published', 'skipped', 'failed', 'held']
 
 type ReviewContext = Pick<Draft, 'reviewHistory' | 'reviewRebuilds' | 'pendingReviewFixes' | 'investigationCount' | 'catalogFixes'>
+type PreviewShare = { fileIds: string[]; channel: string; revision: number; includesThreads: boolean }
 
 const previewChannel = (draft: Draft) => draft.slack.channel ?? runtime.LEGACY_SLACK_CHANNEL
 const previewLink = (draft: Draft, ts: string) => `https://app.slack.com/archives/${previewChannel(draft)}/p${ts.replace('.', '')}`
@@ -219,13 +220,13 @@ export class Job {
 
   /** Build revision `revision` of a draft into its own directory and preview it. Approval always starts empty. */
   async createDraft(format: FormatKey, from: string, exclude: string[], revision: number, trackId: string | null = null,
-    threads?: ThreadsDraft, reviewContext?: ReviewContext & { skipThread?: { threadTs: string; channel: string }; unavailableAlert?: boolean }): Promise<Draft> {
+    threads?: ThreadsDraft, reviewContext?: ReviewContext & { previousPreview?: Draft['slack']; unavailableAlert?: boolean }): Promise<Draft> {
     const id = draftId(format, from)
     const dir = join(this.framesDir(id), `rev-${revision}`)
     const built = await this.build(format, from, exclude, dir, format === 'reel' ? trackId ?? this.chooseTrack() : null)
     const draft: Draft = {
       id, format, from, to: built.window.to, revision, layout: LAYOUT_VERSION, state: 'previewing', exclude, events: built.events, caption: built.caption, track: built.track,
-      frames: built.frames ?? [], framesHash: built.frames ? runtime.fileHash(built.frames) : '', slack: { fileIds: [], ts: null },
+      frames: built.frames ?? [], framesHash: built.frames ? runtime.fileHash(built.frames) : '', slack: reviewContext?.previousPreview ?? { fileIds: [], ts: null },
       review: { reelHoldMids: built.timing?.cards.slice(1).map(card => card.holdMid), unavailableAlert: reviewContext?.unavailableAlert },
       reviewHistory: reviewContext?.reviewHistory, reviewRebuilds: reviewContext?.reviewRebuilds, pendingReviewFixes: reviewContext?.pendingReviewFixes,
       investigationCount: reviewContext?.investigationCount, catalogFixes: reviewContext?.catalogFixes,
@@ -235,17 +236,17 @@ export class Job {
       rmSync(dir, { recursive: true, force: true })
       draft.state = 'skipped'
       draft.skipReason = skipText({ kind: 'too-few', count: built.events.length })
-      const skipThread = reviewContext?.skipThread
-      draft.notify = skipThread
-        ? { text: `${draft.skipReason} after removing events that did not pass review. Nothing new will publish.`, ...skipThread }
-        : null
+      if (draft.slack.ts) draft.notify = { threadTs: draft.slack.ts, text: `${draft.skipReason} after rebuilding. Nothing new will publish.` }
       this.save(draft)
       this.s.log(`${id}: ${draft.skipReason}`)
       await this.deliver(draft)
       return draft
     }
-    this.save(draft)
-    await this.sendPreview(draft)
+    this.queueRebuiltReply(draft)
+    this.prepareRevision(draft, this.s.config())
+    await this.tryReview(draft, this.reviewSlot(draft, built.window, this.openThreadsWindow(draft)))
+    await this.sendPreview(draft, built.window)
+    await this.deliver(draft)
     return draft
   }
 
@@ -264,53 +265,105 @@ export class Job {
     this.save(draft)
   }
 
-  private needsPreview(draft: Draft, window: RunWindow) {
-    const now = this.s.now()
-    if (!SETTLED.includes(draft.state) && now < window.cutoff && !this.instagramAuto(draft)) return true
-    const threads = this.openThreadsWindow(draft)
-    return Boolean(threads && now < threads.cutoff && !this.threadsAuto(draft))
+  private hasCurrentPreview(draft: Draft) {
+    return Boolean(draft.slack.ts && (draft.slack.revision ?? draft.revision) === draft.revision)
   }
 
-  private async sendPreview(draft: Draft) {
-    if (draft.slack.fileIds.length && !draft.slack.ts) {
-      // An earlier run uploaded the files but didn't learn where they landed; look before posting again.
-      draft.slack.ts = await this.s.slackShareTs(draft.slack.fileIds[0]!, previewChannel(draft))
-      if (!draft.slack.ts) { draft.slack.fileIds = []; delete draft.slack.channel; this.save(draft) }
+  private threadsPreviewed(draft: Draft) {
+    return this.hasCurrentPreview(draft) && this.currentThreads(draft)?.threadTs === draft.slack.ts
+  }
+
+  private needsPreview(draft: Draft, window: RunWindow) {
+    const now = this.s.now()
+    const waitingOnInvestigation = this.canDeferPreview(draft, window)
+    if (!SETTLED.includes(draft.state) && now < window.cutoff && !this.hasCurrentPreview(draft) && !this.instagramAuto(draft)
+      && !(waitingOnInvestigation && this.instagramAutoMode(draft))) return true
+    const threads = this.openThreadsWindow(draft)
+    return Boolean(threads && now < threads.cutoff && !this.threadsPreviewed(draft) && !this.threadsAuto(draft)
+      && !(waitingOnInvestigation && this.threadsAutoMode(draft)))
+  }
+
+  private queueRebuiltReply(draft: Draft) {
+    if (draft.slack.ts && (!draft.notify || draft.notify.rebuilt) && !SETTLED.includes(draft.state)) draft.notify = {
+      threadTs: draft.slack.ts, rebuilt: true,
+      text: `Rebuilt: revision ${draft.revision}. It can publish automatically if review and settings allow it. React ❌ here to stop it unless a new preview replaces this one.`,
     }
-    if (!draft.slack.ts) {
-      const { format } = draft
-      const window = runWindow(format, draft.from)
-      this.prepareRevision(draft, this.s.config())
-      await this.tryReview(draft, this.reviewSlot(draft, window, this.openThreadsWindow(draft)))
-      if (this.needsPreview(draft, window)) {
-        this.verifyFrames(draft)
-        const config = this.s.config()
-        let text = slackPreview(format, window, draft.caption, this.instagramAuto(draft), draft.track ?? undefined)
-        if (isThreadsFormat(format) && config.threads.enabled) {
-          const threads = this.currentThreads(draft)
-          if (threads?.text && !retainThreads(threads) && this.s.now() < threadsWindow(format, draft.from).cutoff) {
-            text += threadsPreview(threads.text, threadsWindow(format, draft.from).publishAt, this.threadsAuto(draft))
-          } else if (draft.threads?.mediaId) text += `\n\n${threadsPreviousRevision}`
-        }
-        // A Reel's preview attaches the video only.
-        const files = await this.s.slackUploadFiles(format === 'reel' ? draft.frames.slice(0, 1) : draft.frames, draft.id)
-        // Save the destination and file IDs before sharing so a lost response can be looked up in the right channel.
-        draft.slack.fileIds = files.map(file => file.id)
-        draft.slack.channel = config.slack.channel
+  }
+
+  private confirmPreview(draft: Draft, pending: PreviewShare, ts: string) {
+    const threads = this.currentThreads(draft)
+    draft.slack = { fileIds: pending.fileIds, ts, channel: pending.channel, revision: pending.revision, auto: draft.slack.auto }
+    draft.approvedSeenAt = null
+    if (pending.revision === draft.revision) {
+      if (pending.includesThreads && threads && !retainThreads(threads)) {
+        threads.threadTs = ts
+        threads.threadChannel = pending.channel
+      }
+      if (draft.notify?.rebuilt) draft.notify = null
+      if (draft.state === 'previewing') draft.state = 'previewed'
+    } else {
+      this.queueRebuiltReply(draft)
+    }
+    this.save(draft)
+    this.s.log(`${draft.id}: confirmed Slack preview for r${pending.revision} (${ts})`)
+  }
+
+  private pendingPreview(draft: Draft): PreviewShare | undefined {
+    // Previews already handed off before the separate pending record use the legacy channel and format.
+    return draft.slack.pending ?? (!draft.slack.ts && draft.slack.fileIds.length
+      ? { fileIds: draft.slack.fileIds, channel: previewChannel(draft), revision: draft.revision, includesThreads: Boolean(this.currentThreads(draft)?.text) }
+      : undefined)
+  }
+
+  private async sendPreview(draft: Draft, window: RunWindow) {
+    const pending = this.pendingPreview(draft)
+    if (pending) {
+      const ts = await this.s.slackShareTs(pending.fileIds[0]!, pending.channel)
+      if (ts) {
+        this.confirmPreview(draft, pending, ts)
+        if (pending.revision === draft.revision) return
+      } else {
+        delete draft.slack.pending
+        if (!draft.slack.ts) { draft.slack.fileIds = []; delete draft.slack.channel }
         this.save(draft)
-        await this.s.slackShareFiles(files, text, draft.slack.channel)
-        draft.slack.ts = await this.s.slackShareTs(files[0]!.id, draft.slack.channel)
-        if (!draft.slack.ts) throw new Error('Slack preview lookup failed: the upload has no message yet')
       }
     }
-    const threads = this.currentThreads(draft)
-    if (threads && !threads.threadTs && draft.slack.ts && !threads.attemptedAt && !threads.mediaId) {
-      threads.threadTs = draft.slack.ts
-      threads.threadChannel = draft.slack.channel
+    if (!this.needsPreview(draft, window)) {
+      if (draft.state === 'previewing' && (this.s.now() < window.cutoff || this.instagramAuto(draft) || this.hasCurrentPreview(draft))) {
+        draft.state = 'previewed'
+        this.save(draft)
+      }
+      return
     }
-    if (draft.state === 'previewing') draft.state = 'previewed'
+    // Don't replace an Instagram-only preview of this revision if Hanif already vetoed it.
+    if (this.hasCurrentPreview(draft) && (await this.readDecision(draft)).rejected) return
+    this.verifyFrames(draft)
+    const { format } = draft
+    const config = this.s.config()
+    const reviewed = this.reviewAllowsAuto(draft)
+    const igMode = SETTLED.includes(draft.state) || this.s.now() >= window.deadline ? 'closed'
+      : this.instagramAutoMode(draft) && !reviewed ? 'review-hold' : this.instagramAutoMode(draft)
+    let text = slackPreview(format, window, draft.caption, igMode, draft.track ?? undefined)
+    const threads = this.currentThreads(draft)
+    const threadsSlot = this.openThreadsWindow(draft)
+    const threadsText = threadsSlot && this.s.now() < threadsSlot.cutoff ? threads?.text : null
+    if (threadsText && threadsSlot) {
+      const auto = this.threadsAutoMode(draft)
+      text += threadsPreview(threadsText, threadsSlot.publishAt, auto && !reviewed ? 'review-hold' : auto)
+    } else if (config.threads.enabled && draft.threads?.mediaId) text += `\n\n${threadsPreviousRevision}`
+    const files = await this.s.slackUploadFiles(format === 'reel' ? draft.frames.slice(0, 1) : draft.frames, draft.id)
+    const share: PreviewShare = { fileIds: files.map(file => file.id), channel: config.slack.channel,
+      revision: draft.revision, includesThreads: Boolean(threadsText) }
+    draft.slack.pending = share
     this.save(draft)
-    this.s.log(`${draft.id}: ${draft.slack.ts ? `preview posted (${draft.slack.ts})` : 'ready without a Slack preview'}`)
+    await this.s.slackShareFiles(files, text, share.channel)
+    const ts = await this.s.slackShareTs(files[0]!.id, share.channel)
+    if (!ts) throw new Error('Slack preview lookup failed: the upload has no message yet')
+    this.confirmPreview(draft, share, ts)
+  }
+
+  private async trySendPreview(draft: Draft, window: RunWindow, failures: alerts.TickFailures) {
+    try { await this.sendPreview(draft, window) } catch (error) { failures.record(draft, this.hasCurrentPreview(draft), error) }
   }
 
   /** Fail closed when the frames on disk aren't the ones this revision previewed. */
@@ -344,8 +397,21 @@ export class Job {
       && (threads.state === 'waiting' || threads.state === 'publishing') ? threadsWindow(draft.format, draft.from) : null
   }
 
-  private readSlackReactions(draft: Draft) {
-    return draft.slack.ts ? this.s.slackReactions(draft.slack.ts, previewChannel(draft)) : Promise.resolve(undefined)
+  private async readDecision(draft: Draft, canApprove = this.hasCurrentPreview(draft), requiresApproval = () => false): Promise<Reactions> {
+    if (!draft.slack.ts) return readReactions(undefined)
+    let reaction: Reactions
+    try {
+      reaction = readReactions(await this.s.slackReactions(draft.slack.ts, previewChannel(draft)))
+    } catch (error) {
+      if (requiresApproval() && !draft.slack.vetoed) throw error
+      this.s.log(`${draft.id}: could not read Slack reactions; no approval read`)
+      return { approved: false, rejected: draft.slack.vetoed === true }
+    }
+    if (reaction.rejected !== Boolean(draft.slack.vetoed)) {
+      draft.slack.vetoed = reaction.rejected
+      this.save(draft)
+    }
+    return { approved: canApprove && reaction.approved, rejected: reaction.rejected }
   }
 
   private reviewInput(draft: Draft): ReviewInput {
@@ -425,12 +491,14 @@ export class Job {
     return result
   }
 
-  private async advanceReview(draft: Draft, window: RunWindow): Promise<Draft | undefined> {
+  private async advanceReview(draft: Draft, window: RunWindow, failures: alerts.TickFailures): Promise<Draft | undefined> {
     if (!draft.frames.length) return
+    if (!draft.slack.ts && !draft.slack.fileIds.length) this.prepareRevision(draft, this.s.config())
     const threadWindow = this.openThreadsWindow(draft)
     const slot = this.reviewSlot(draft, window, threadWindow)
-    // A previously silent revision can need approval if the live auto flags change before cutoff.
-    if (!draft.slack.ts && slot && (draft.slack.fileIds.length || this.needsPreview(draft, window))) await this.sendPreview(draft)
+    const reactions = () => this.readDecision(draft)
+    const result = this.matchingReview(draft) ?? await this.tryReview(draft, slot && !(await reactions()).rejected ? slot : null)
+    if (slot) await this.trySendPreview(draft, window, failures)
     const review = draft.review
     if (!review) return
     const ts = draft.slack.ts
@@ -438,8 +506,6 @@ export class Job {
     const instagramOpen = !SETTLED.includes(draft.state) && this.s.now() < window.deadline
     const pendingInvestigation = review.investigation && (!review.investigation.findings || (review.investigation.failure && !review.investigation.failureAlerted))
     if (!open && !pendingInvestigation && (!review.result || (review.replied && !review.unavailableAlert))) return
-    const reactions = async () => readReactions(await this.readSlackReactions(draft))
-    const result = this.matchingReview(draft) ?? await this.tryReview(draft, slot && !(await reactions()).rejected ? slot : null)
     if (!result) return
     const state = draft.review!
     if (state.unavailableAlert) await this.reviewAction(draft, 'resolve alert', async () => {
@@ -448,11 +514,10 @@ export class Job {
         this.save(draft)
       }
     })
-    if (!ts) return
-    if (state.investigatorEnabled && flagged(result).length) return this.advanceInvestigation(draft, result, window, threadWindow, open, ts)
+    if (state.investigatorEnabled && flagged(result).length) return this.advanceInvestigation(draft, result, window, threadWindow, open, failures)
     const wrong = result.events.filter(event => event.verdict === 'wrong')
     const hasError = wrong.length > 0 || result.post.verdict === 'wrong'
-    if (wrong.length && draft.state === 'previewed' && !draft.publish && !draft.storyShare && this.s.now() < window.cutoff) {
+    if (wrong.length && this.canRebuildAfterReview(draft, window)) {
       const { approved, rejected } = await reactions()
       const day = baLocal(this.s.now()).date
       if (!approved && !rejected && this.s.now() < window.cutoff
@@ -460,6 +525,7 @@ export class Job {
         return this.regenerate(draft.id, wrong.map(event => event.id), null, { day, count: draft.reviewRebuilds?.day === day ? draft.reviewRebuilds.count + 1 : 1 })
       }
     }
+    if (!ts) return
     const eventName = (id: string) => draft.events.find(event => event.id === id)!.title
     const questions = result.events.flatMap(event => event.question ? [`${eventName(event.id)}: ${event.question}`] : [])
     if (result.post.question) questions.push(result.post.question)
@@ -472,7 +538,7 @@ export class Job {
       state.replied = true
       this.save(draft)
     })
-    if (questions.length && !state.homeAttempted && ((instagramOpen && this.s.now() < window.cutoff)
+    if (questions.length && this.hasCurrentPreview(draft) && !state.homeAttempted && ((instagramOpen && this.s.now() < window.cutoff)
       || (threadWindow && this.s.now() < threadWindow.cutoff))) {
       const { approved, rejected } = await reactions()
       if (approved || rejected) return
@@ -488,6 +554,22 @@ export class Job {
     }
   }
 
+  private canRebuildAfterReview(draft: Draft, window: RunWindow) {
+    return ['previewing', 'previewed'].includes(draft.state) && !draft.publish && !draft.storyShare && this.s.now() < window.cutoff
+      && (draft.reviewRebuilds?.day !== baLocal(this.s.now()).date || draft.reviewRebuilds.count < MAX_REVIEW_REBUILDS)
+  }
+
+  private canDeferPreview(draft: Draft, window: RunWindow) {
+    const result = this.matchingReview(draft)
+    if (!result || result.post.verdict !== 'ok' || !flagged(result).length) return false
+    if (!draft.review?.investigatorEnabled) return this.canRebuildAfterReview(draft, window) && result.events.some(item => item.verdict === 'wrong')
+    const findings = draft.review.investigation?.findings
+    if (!findings) return true
+    const entries = Object.values(findings)
+    return this.canRebuildAfterReview(draft, window) && !entries.some(item => item.verdict === 'ask')
+      && entries.some(item => item.verdict === 'fixed' || item.verdict === 'exclude')
+  }
+
   private investigationPlan(draft: Draft, result: ReviewResult, window: RunWindow, threadWindow?: ReturnType<typeof threadsWindow> | null) {
     const now = this.s.now()
     const other = threadWindow && now < threadWindow.cutoff ? threadWindow : null
@@ -500,7 +582,7 @@ export class Job {
     const round = (draft.investigationCount ?? 0) + 1
     const why = round > MAX_INVESTIGATIONS ? 'Two revisions have already been investigated.'
       : request.endsAt <= request.startsAt ? 'There is no investigation time left before cutoff.'
-        : draft.state !== 'previewed' || draft.publish || draft.storyShare || draft.approvedSeenAt ? 'The draft is no longer open for corrections.' : null
+        : !['previewing', 'previewed'].includes(draft.state) || draft.publish || draft.storyShare || draft.approvedSeenAt ? 'The draft is no longer open for corrections.' : null
     return { request, round, why, dir: location(this.s.stateDir, request) }
   }
 
@@ -527,7 +609,7 @@ export class Job {
     parseDraftId(id)
     const draft = this.loadDraft(id)
     const result = draft && this.matchingReview(draft)
-    if (!draft?.slack.ts || !result || !flagged(result).length) throw new Error('No matching quick review with flagged events.')
+    if (!draft || !result || !flagged(result).length) throw new Error('No matching quick review with flagged events.')
     const current = this.currentThreads(draft)
     const thread = this.s.config().threads.enabled && isThreadsFormat(draft.format) && current && !retainThreads(current)
       ? threadsWindow(draft.format, draft.from) : null
@@ -535,7 +617,7 @@ export class Job {
     if (draft.review?.investigation) return { existing: true, ...draft.review.investigation }
     if (dryRun) return plan
     if (plan.why) throw new Error(plan.why)
-    const { approved, rejected } = readReactions(await this.readSlackReactions(draft))
+    const { approved, rejected } = await this.readDecision(draft, this.hasCurrentPreview(draft), () => true)
     if (approved || rejected) throw new Error('Hanif already decided on this preview.')
     draft.review!.investigatorEnabled = true
     return this.queueInvestigation(draft, plan)
@@ -573,10 +655,11 @@ export class Job {
   }
 
   private async advanceInvestigation(draft: Draft, result: ReviewResult, window: RunWindow,
-    threadWindow: ReturnType<typeof threadsWindow> | null, open: boolean, ts: string): Promise<Draft | undefined> {
+    threadWindow: ReturnType<typeof threadsWindow> | null, open: boolean, failures: alerts.TickFailures): Promise<Draft | undefined> {
     const state = draft.review!
-    const reactions = async () => readReactions(await this.readSlackReactions(draft))
+    const reactions = () => this.readDecision(draft)
     let investigation = state.investigation
+    const hadFindings = Boolean(investigation?.findings)
     // A terminal failure alert must still be delivered if Hanif reacted or the cutoff has passed.
     const alertFailure = async (item: Investigation) => {
       if (item.failure && !item.failureAlerted) await this.reviewAction(draft, 'investigator alert', async () => {
@@ -648,7 +731,12 @@ export class Job {
     const repair = exclusions.length > 0 || Object.values(findings).some(item => item.verdict === 'fixed')
     const day = baLocal(this.s.now()).date
     const count = draft.reviewRebuilds?.day === day ? draft.reviewRebuilds.count : 0
-    const canRebuild = !overridden && draft.state === 'previewed' && !draft.publish && !draft.storyShare && this.s.now() < window.cutoff && count < MAX_REVIEW_REBUILDS
+    const canRebuild = !overridden && this.canRebuildAfterReview(draft, window)
+    const willRebuild = repair && canRebuild && !Object.values(findings).some(item => item.verdict === 'ask')
+    if (!hadFindings && !willRebuild && !overridden && open && this.needsPreview(draft, window)) {
+      await this.trySendPreview(draft, window, failures)
+    }
+    const ts = draft.slack.ts
     const questions = overridden ? [] : request.events.flatMap(({ id, title }) => {
       const item = findings[id]!
       if (item.verdict === 'ask') return [{ text: `${title}: ${item.question} Checked: ${item.checked}`, push: !investigation.failure }]
@@ -676,13 +764,13 @@ export class Job {
     }
     if (result.post.verdict === 'wrong') lines.push('The post also has a confirmed issue and cannot publish automatically.')
     if (questions.length) lines.push('Respondé con ✅ o ❌ en la vista previa.')
-    if (!investigation.replied) await this.reviewAction(draft, 'investigator Slack reply', async () => {
+    if (ts && !investigation.replied) await this.reviewAction(draft, 'investigator Slack reply', async () => {
       await this.s.slackPost(`Revisión: investigación\n${lines.join('\n')}`, ts, previewChannel(draft))
       investigation.replied = true
       state.replied = true
       this.save(draft)
     })
-    if (repair && canRebuild && !Object.values(findings).some(item => item.verdict === 'ask') && investigation.replied) {
+    if (willRebuild) {
       const latest = await reactions()
       if (!latest.approved && !latest.rejected && this.s.now() < window.cutoff) {
         return this.regenerate(draft.id, exclusions, null, { day, count: count + 1 })
@@ -690,7 +778,8 @@ export class Job {
       return
     }
     const pushQuestions = questions.filter(question => question.push).map(question => question.text)
-    if (pushQuestions.length && !state.homeAttempted && open && (this.s.now() < window.cutoff || (threadWindow && this.s.now() < threadWindow.cutoff))) {
+    if (ts && this.hasCurrentPreview(draft) && pushQuestions.length && !state.homeAttempted && open
+      && (this.s.now() < window.cutoff || (threadWindow && this.s.now() < threadWindow.cutoff))) {
       const latest = await reactions()
       if (latest.approved || latest.rejected) return
       state.homeAttempted = true
@@ -713,7 +802,8 @@ export class Job {
   private async settle(draft: Draft, state: DraftState, text: string | null, extra: Partial<Draft> = {}) {
     Object.assign(draft, extra)
     draft.state = state
-    draft.notify = text && draft.slack.ts ? { text, threadTs: draft.slack.ts } : null
+    const rebuilt = draft.notify?.rebuilt ? `${draft.notify.text}\n` : ''
+    draft.notify = text && draft.slack.ts ? { text: `${rebuilt}${text}`, threadTs: draft.slack.ts } : null
     this.save(draft)
     this.s.log(`${draft.id}: ${state}${text ? ` (${text})` : ''}`)
     await this.deliver(draft)
@@ -732,12 +822,14 @@ export class Job {
   async deliver(draft: Draft) {
     const notify = draft.notify
     if (!notify) return
+    const key = `${alerts.draftKey(draft)}/slack`
     if (!notify.threadTs) {
-      draft.notify = null // Older drafts could have a queued top-level skip; never send it now.
+      // Quietly close a legacy delivery alert; never send the old top-level notice.
+      if (await this.s.resolveAlert(key) === false) return
+      draft.notify = null
       this.save(draft)
       return
     }
-    const key = `${alerts.draftKey(draft)}/slack`
     try {
       await this.s.slackPost(notify.text, notify.threadTs, notify.channel ?? previewChannel(draft))
     } catch (error) {
@@ -747,6 +839,7 @@ export class Job {
       this.save(draft)
       if (notify.failures >= alerts.ALERT_FAILURES) {
         await this.s.alert(key, alerts.draftTitle(draft), alerts.slackAlert(draft, failure, notify.failures, this.s.now()), failure.cause)
+          .catch(() => this.s.log(`${draft.id}: could not raise the Slack reply alert`))
       }
       return
     }
@@ -754,6 +847,7 @@ export class Job {
     this.save(draft)
     // The alert command does nothing when no alert was open, including for replies queued on the old version.
     await this.s.resolveAlert(key, alerts.slackRecovered(draft, this.s.now(), notify.threadTs))
+      .catch(() => this.s.log(`${draft.id}: could not close the Slack reply alert`))
   }
 
   // Publishing
@@ -821,13 +915,19 @@ export class Job {
     this.save(draft)
   }
 
-  private instagramAuto(draft: Draft) {
-    return draft.slack.auto === true && this.s.config().auto[draft.format] && this.reviewAllowsAuto(draft)
+  private instagramAutoMode(draft: Draft) {
+    return draft.slack.auto === true && this.s.config().auto[draft.format]
   }
 
-  private threadsAuto(draft: Draft) {
-    return isThreadsFormat(draft.format) && this.currentThreads(draft)?.auto === true
-      && this.s.config().threads.auto[draft.format] && this.reviewAllowsAuto(draft)
+  private threadsAutoMode(draft: Draft) {
+    return isThreadsFormat(draft.format) && this.currentThreads(draft)?.auto === true && this.s.config().threads.auto[draft.format]
+  }
+
+  private instagramAuto(draft: Draft) { return this.instagramAutoMode(draft) && this.reviewAllowsAuto(draft) }
+  private threadsAuto(draft: Draft) { return this.threadsAutoMode(draft) && this.reviewAllowsAuto(draft) }
+
+  private instagramDecision(draft: Draft) {
+    return this.readDecision(draft, this.hasCurrentPreview(draft), () => !this.instagramAuto(draft))
   }
 
   /** Returns true only when the draft is published. A pending Business Suite Share takes precedence over all gates. */
@@ -841,7 +941,7 @@ export class Job {
     // Reconciling an earlier unclear publish never calls this, so it isn't blocked by any of these checks.
     let eventsChecked = false
     const beforeWrite = async () => {
-      checkWrite(window, readReactions(await this.readSlackReactions(draft)), this.instagramAuto(draft), this.s.now())
+      checkWrite(window, await this.instagramDecision(draft), this.instagramAuto(draft), this.s.now())
       if (!eventsChecked) { await this.checkEvents(draft); eventsChecked = true }
     }
     if (draft.format === 'hoy' && config.linkStickers.hoy && !draft.publish && !draft.stickerFallback) {
@@ -936,15 +1036,17 @@ export class Job {
       await this.settle(draft, 'failed', null, { note: 'A regenerate did not finish; run it again.' })
       return this.s.alert(alerts.draftKey(draft), alerts.draftTitle(draft), alerts.rebuildAlert(draft, now))
     }
-    if (draft.state === 'previewing' && now >= window.cutoff) {
-      await this.settle(draft, 'failed', null, { note: 'The preview never reached Slack before the cutoff.' })
-      return this.s.alert(alerts.draftKey(draft), alerts.draftTitle(draft), alerts.previewExpired(draft, now, failures.last(draft.id)))
+    const rebuilt = await this.advanceReview(draft, window, failures)
+    if (rebuilt) return SETTLED.includes(rebuilt.state) ? undefined : this.advance(rebuilt, failures)
+    if (draft.state === 'previewing' && this.s.now() >= window.cutoff && !this.instagramAuto(draft)) {
+      // Hoy can still pass a retried review and auto-publish before its later deadline.
+      if (this.s.now() >= window.deadline || !this.instagramAutoMode(draft)) {
+        await this.settle(draft, 'failed', null, { note: 'The preview never reached Slack before the cutoff.' })
+        return this.s.alert(alerts.draftKey(draft), alerts.draftTitle(draft), alerts.previewExpired(draft, now, failures.last(draft.id)))
+      }
     }
-    if (draft.state === 'previewing') await this.sendPreview(draft)
-    const rebuilt = await this.advanceReview(draft, window)
-    if (rebuilt) return rebuilt.state === 'previewed' ? this.advance(rebuilt, failures) : undefined
-    if (draft.state === 'previewed') {
-      const reactions = readReactions(await this.readSlackReactions(draft))
+    if (draft.state === 'previewing' || draft.state === 'previewed') {
+      const reactions = await this.instagramDecision(draft)
       const checkedAt = this.s.now()
       if (reactions.approved && !draft.approvedSeenAt) { draft.approvedSeenAt = checkedAt.toISOString(); this.save(draft) }
       const decision = decide(window, reactions, draft.approvedSeenAt ? new Date(draft.approvedSeenAt) : null, this.instagramAuto(draft), checkedAt)
@@ -956,7 +1058,7 @@ export class Job {
       }
       if (decision.action === 'wait') return
     }
-    if (draft.state !== 'previewed' && draft.state !== 'publishing') return
+    if (!['previewing', 'previewed', 'publishing'].includes(draft.state)) return
     let done: boolean
     try {
       done = await this.publishDraft(draft, window)
@@ -1012,9 +1114,10 @@ export class Job {
       try {
         // Creation already tried any skip notice, but a pending preview gets another chance.
         this.collectCatalogFixes(draft)
-        if (draft.notify && !attempted.has(draft.id)) await this.deliver(draft)
+        if (draft.notify && !draft.notify.rebuilt && !attempted.has(draft.id)) await this.deliver(draft)
         if (!SETTLED.includes(draft.state)) await this.advance(draft, failures)
-        else await this.advanceReview(draft, runWindow(draft.format, draft.from))
+        else await this.advanceReview(draft, runWindow(draft.format, draft.from), failures)
+        if (draft.notify?.rebuilt && !draft.slack.pending) await this.deliver(draft)
       } catch (error) {
         failures.record(draft, Boolean(draft.slack.ts), error)
       }
@@ -1050,24 +1153,30 @@ export class Job {
     for (const draft of this.allDrafts()) {
       const { threads, format } = draft
       if (!threads || !isThreadsFormat(format)) continue
-      const ts = threads.threadTs ?? (threads.revision === undefined ? draft.slack.ts : null)
-      const channel = threads.threadChannel ?? (ts === draft.slack.ts ? previewChannel(draft) : runtime.LEGACY_SLACK_CHANNEL)
-      // A new Threads write waits until the initial review and any needed Slack handoff are complete.
+      const active = this.currentThreads(draft) === threads
+      const ts = active ? draft.slack.ts : threads.threadTs
+      const channel = active ? previewChannel(draft) : threads.threadChannel ?? runtime.LEGACY_SLACK_CHANNEL
       const window = threadsWindow(format, draft.from)
-      const previewPending = draft.state === 'previewing' || (!draft.slack.ts && draft.slack.fileIds.length > 0)
-      if (previewPending && this.s.now() < window.cutoff && !threads.attemptedAt && !threads.mediaId) continue
       await advanceThreads(threads, window, {
         api,
         now: () => this.s.now(),
         sleep: ms => this.s.sleep(ms),
         save: () => this.save(draft),
-        reactions: () => ts ? this.s.slackReactions(ts, channel) : Promise.resolve(undefined),
+        reactions: () => active ? this.readDecision(draft, this.threadsPreviewed(draft), () => !this.threadsAuto(draft)) : Promise.resolve(readReactions(undefined)),
         enabled,
         auto: () => this.threadsAuto(draft),
         checkEvents: () => this.checkEvents(draft),
         reply: ts ? text => this.s.slackPost(text, ts, channel) : undefined,
         log: text => this.s.log(`${draft.id}: ${text}`),
       }).catch(() => this.s.log(`${draft.id}: could not advance Threads state; see the saved draft`))
+      if (threads.state === 'held' && threads.hold && !threads.holdAlertSent) {
+        try {
+          if (await this.s.alert(`${alerts.draftKey(draft)}/threads`, alerts.draftTitle(draft), alerts.heldAlert(draft, threads.hold, this.s.now(), 'Threads'))) {
+            threads.holdAlertSent = true
+            this.save(draft)
+          }
+        } catch { this.s.log(`${draft.id}: could not raise the Threads hold alert`) }
+      }
       if (threads.state === 'failed' && !threads.failureAlertSent) {
         const alert = alerts.threadsFailed(draft, threads.error, Boolean(threads.attemptedAt && !threads.mediaId), this.draftFile(draft.id))
         try {
@@ -1116,10 +1225,21 @@ export class Job {
     const context = { reviewHistory, reviewRebuilds: reviewRebuilds ?? old.reviewRebuilds, pendingReviewFixes: old.pendingReviewFixes,
       investigationCount: old.investigationCount, catalogFixes: old.catalogFixes }
     const unavailableAlert = old.review?.unavailableAlert
+    const previousPreview = { fileIds: old.slack.ts ? old.slack.fileIds : [], ts: old.slack.ts, channel: old.slack.channel,
+      revision: old.slack.revision ?? old.revision, vetoed: old.slack.vetoed ?? (old.skipReason === skipText({ kind: 'rejected' }) || undefined),
+      pending: this.pendingPreview(old) }
     this.save({ ...old, ...context, review: { unavailableAlert }, revision, state: 'rebuilding', exclude, track: savedTrack,
-      approvedSeenAt: null, slack: { fileIds: [], ts: null }, notify: null, r2Uploaded: null, threads })
-    const skipThread = reviewRebuilds && old.slack.ts ? { threadTs: old.slack.ts, channel: previewChannel(old) } : undefined
-    const draft = await this.createDraft(format, from, exclude, revision, track, threads, { ...context, unavailableAlert, skipThread })
+      approvedSeenAt: null, slack: previousPreview, notify: null, r2Uploaded: null, threads })
+    // Keep the veto and replies under the previous thread until a new preview is confirmed.
+    let draft: Draft
+    try {
+      draft = await this.createDraft(format, from, exclude, revision, track, threads, { ...context, unavailableAlert, previousPreview })
+    } catch (error) {
+      const rendered = this.loadDraft(id)
+      if (!reviewRebuilds || rendered?.state !== 'previewing') throw error
+      this.s.log(`${id}: ${error instanceof Error ? error.message : String(error)}`)
+      draft = rendered // The tick retries preview delivery independently of publication.
+    }
     if (draft.state === 'skipped' && !reviewRebuilds) throw new Error(`Without ${exclude.join(', ')} only ${draft.events.length} events qualify; the draft is skipped`)
     return draft
   }

@@ -300,6 +300,7 @@ describe('tick: draft review', () => {
   it('skips both channels and replies to the previous preview if removing the event leaves too few', async () => {
     const w = world()
     w.catalog = w.catalog.slice(0, 4)
+    w.config.auto.finde = false // Only a draft that already needed a preview has a thread for the skip.
     w.verdict = id => id === badId ? wrong : OK
     await w.job().tick()
     expect(w.draft().state).toBe('skipped')
@@ -314,7 +315,10 @@ describe('tick: draft review', () => {
     const w = world()
     if (outcome === 'missing') w.reviewer = async () => { w.reviewCalls++; throw new Error('Review unavailable') }
     else w.verdict = id => id === badId ? outcome === 'question' ? question : wrong : OK
-    if (outcome === 'wrong') w.approve() // Prevent an automatic rebuild before the slot.
+    if (outcome === 'wrong') {
+      w.config.threads.auto.finde = false // A visible manual destination lets Hanif stop the automatic rebuild.
+      w.approve()
+    }
     await w.job().tick()
     w.reactions = []
     if (outcome === 'wrong') {
@@ -412,6 +416,21 @@ describe('tick: draft review', () => {
     expect(w.reviewCalls).toBe(1)
   })
 
+  it('explains that a successful retry can release both automatic posts without approval', async () => {
+    const w = world()
+    const review = w.reviewer
+    w.reviewer = async () => { throw new Error('Review temporarily unavailable') }
+    await w.job().tick()
+    const preview = w.slackPosts[0]?.text
+    expect(preview).toContain('can still publish automatically if the review passes')
+    expect(preview).toContain('puede publicarse automáticamente si pasa la revisión')
+    expect(preview).not.toContain('once you react')
+    w.reviewer = review
+    slot(w)
+    await w.job().tick()
+    expect(w.draft()).toMatchObject({ state: 'published', threads: { state: 'published' } })
+  })
+
   it('retries unavailable reviews and resolves the Hermes alert when the same revision passes', async () => {
     const w = world()
     const reviewer = w.reviewer
@@ -484,6 +503,51 @@ describe('tick: publisher investigation', () => {
   const during = (w: World, minute = 15) => w.at('2026-11-18', 18, minute)
   const slot = (w: World) => w.at('2026-11-19', 12)
 
+  it('verifies a flagged fact automatically without sending a decision preview', async () => {
+    const { w, runs, finish } = world(wrong)
+    await w.job().tick()
+    expect(runs).toHaveLength(1)
+    expect(w.slackCalls).toEqual([])
+    during(w)
+    finish(ok)
+    await w.job().tick()
+    slot(w)
+    await w.job().tick()
+    expect(w.draft()).toMatchObject({ revision: 1, state: 'published', threads: { state: 'published' } })
+    expect(w.slackCalls).toEqual([])
+  })
+
+  it.each(['publish', 'reject', 'slack-down'])('keeps a visible thread through a silent rebuild (%s)', async action => {
+    const { w, finish } = world(wrong)
+    const review = w.reviewer
+    w.reviewer = async () => { throw new Error('Review temporarily unavailable') }
+    await w.job().tick()
+    const { ts, channel } = w.draft().slack
+    expect(ts).toBeTruthy()
+    w.reviewer = review
+    during(w)
+    await w.job().tick()
+    finish(exclude)
+    w.verdict = () => OK
+    if (action === 'slack-down') w.slackFails = 100
+    await w.job().tick()
+    expect(w.draft()).toMatchObject({ revision: 2, slack: { ts, channel } })
+    if (action !== 'slack-down') expect(w.replies()).toContainEqual(expect.stringMatching(/Rebuilt/))
+    expect(w.slackCalls.filter(call => call.method === 'files.completeUploadExternal')).toHaveLength(1)
+    if (action === 'reject') w.reject()
+    slot(w)
+    const job = w.job()
+    if (action === 'slack-down') job.s.slackReactions = async () => { throw new Error('Slack down') }
+    await job.tick()
+    const expected = action === 'reject' ? 'skipped' : 'published'
+    expect(w.draft()).toMatchObject({ state: expected, threads: { state: expected } })
+    if (action === 'publish') {
+      expect(w.slackCalls.filter(call => call.method === 'chat.postMessage' && /^(Posted:|Threads: publicado)/.test(call.text!)))
+        .toEqual([expect.objectContaining({ ts, channel, text: expect.stringContaining('Posted:') }),
+          expect.objectContaining({ ts, channel, text: expect.stringContaining('Threads: publicado') })])
+    }
+  })
+
   it('queues once and lets an all-ok investigation clear only that exact preview for both channels', async () => {
     const { w, runs, finish } = world()
     await w.job().tick()
@@ -496,7 +560,7 @@ describe('tick: publisher investigation', () => {
     expect(w.reviewPosts).toHaveLength(0)
     finish(ok)
     await w.job().tick()
-    expect(w.reviewPosts).toEqual([{ threadTs: saved.slack.ts, text: expect.stringContaining(ok.url) }])
+    expect(w.slackCalls).toEqual([])
     slot(w)
     await w.job().tick()
     await w.job().tick()
@@ -509,7 +573,6 @@ describe('tick: publisher investigation', () => {
   it('keeps the verified 18 mundos performance after a catalog fix, rebuilds, and reviews the new card', async () => {
     const { w, runs, finish } = world(wrong)
     await w.job().tick()
-    const original = w.draft()
     during(w)
     const summary = 'Un montaje de teatro físico.'
     w.catalog[0]!.summary = summary
@@ -522,7 +585,7 @@ describe('tick: publisher investigation', () => {
     expect(w.draft()).toMatchObject({ revision: 2, catalogFixes: [receipt], exclude: [], reviewRebuilds: { count: 1 } })
     expect(w.draft().events.find(event => event.id === flaggedId)?.description).toBe(summary)
     expect(w.reviewCalls).toBe(2)
-    expect(w.reviewPosts[0]).toMatchObject({ threadTs: original.slack.ts, text: expect.stringContaining('Corrected Spanish summary on 1 occurrence.') })
+    expect(w.slackCalls).toEqual([])
     slot(w)
     await w.job().tick()
     expect(w.draft()).toMatchObject({ state: 'published', threads: { state: 'published' } })
@@ -542,7 +605,6 @@ describe('tick: publisher investigation', () => {
   it('excludes a confirmed wrong venue, alerts Hermes, and publishes the re-reviewed preview without asking Hanif', async () => {
     const { w, finish } = world({ ...wrong, field: 'venue', reason: 'The organizer lists a different venue.' })
     await w.job().tick()
-    const original = w.draft()
     during(w)
     const reason = 'The card gives the wrong venue.'
     const hermes = 'Correct the venue using the organizer’s page: https://venue.example/18-mundos'
@@ -550,7 +612,7 @@ describe('tick: publisher investigation', () => {
     await w.job().tick()
     expect(w.draft()).toMatchObject({ revision: 2, exclude: [flaggedId] })
     expect(w.reviewCalls).toBe(2)
-    expect(w.reviewPosts[0]).toEqual({ threadTs: original.slack.ts, text: expect.stringContaining(reason) })
+    expect(w.slackCalls).toEqual([])
     expect(w.alerts).toContainEqual(expect.objectContaining({ key: `review-fix/${flaggedId}`, text: expect.stringContaining(hermes) }))
     slot(w)
     await w.job().tick()
@@ -643,6 +705,7 @@ describe('tick: publisher investigation', () => {
 
   it.each([false, true])('honors a reaction while the investigation is running (rejected: %s)', async rejected => {
     const { w, runs } = world()
+    w.config.auto.finde = false // Manual Instagram needs a preview while the investigation runs.
     w.at('2026-11-19', 11, 55)
     await w.job().tick()
     slot(w)
@@ -661,6 +724,7 @@ describe('tick: publisher investigation', () => {
 
   it('reports finished findings but never replaces a preview Hanif already approved', async () => {
     const { w, finish } = world(wrong)
+    w.config.auto.finde = false
     await w.job().tick()
     during(w)
     finish(exclude)
@@ -725,12 +789,16 @@ describe('tick: preview alerts', () => {
     await w.job().tick()
     const saved = w.draft()
     expect(saved).toMatchObject({ state: 'skipped', notify: null, skipReason: 'Skipped: only 0 events qualified' })
-    saved.notify = { threadTs: null, text: 'Skipped: only 0 events qualified', failures: 1 }
+    saved.notify = { threadTs: null, text: 'Skipped: only 0 events qualified', failures: 3 }
+    const deliveryAlert = `draft/${saved.id}/slack`
+    w.openAlerts.set(deliveryAlert, 'ratelimited')
     writeFileSync(w.job().draftFile(saved.id), JSON.stringify(saved))
     w.at('2026-11-18', 18, 10)
     await w.job().tick()
     expect(w.draft().notify).toBeNull()
     expect(w.slackCalls).toEqual([])
+    expect(w.openAlerts.has(deliveryAlert)).toBe(false)
+    expect(w.recovery).not.toContainEqual(expect.objectContaining({ key: deliveryAlert }))
   })
 
   it.each(['{broken', 'null'])('quarantines a broken streak file (%s) without blocking a publish', async contents => {
@@ -1493,6 +1561,28 @@ describe('regenerate', () => {
     expect(w.alerts).toEqual([])
   })
 
+  it('recovers a lost handoff from an older revision and keeps its veto on a silent rebuild', async () => {
+    const w = new World()
+    w.config.auto.finde = true
+    const review = w.reviewer
+    w.reviewer = async () => { throw new Error('Review unavailable') }
+    const job = w.job()
+    job.s.slackShareTs = async () => { throw new Error('Slack response lost') }
+    await job.tick()
+    expect(w.draft().slack.ts).toBeNull()
+    expect(w.slackPosts).toHaveLength(1)
+    job.s.slackShareTs = async () => '1.0'
+    w.reviewer = review
+    const rebuilt = await job.regenerate(w.draft().id, [])
+    expect(rebuilt).toMatchObject({ revision: 2, slack: { revision: 1, ts: '1.0', channel: 'C0CG3EGKKP1' } })
+    expect(w.slackPosts.filter(post => !post.threadTs)).toHaveLength(1)
+    w.reject()
+    w.at('2026-11-19', 12)
+    await job.tick()
+    expect(w.ig.published).toEqual([])
+    expect(w.draft().state).toBe('skipped')
+  })
+
   it('alerts when the preview never reached Slack before the cutoff', async () => {
     const w = new World()
     const job = w.job()
@@ -1827,6 +1917,68 @@ async function threadsPreviewed() {
 }
 
 describe('Threads in the publisher tick', () => {
+  it('never accepts a ✅ on an Instagram-only preview for Threads', async () => {
+    const w = new World()
+    w.config.auto.finde = w.config.threads.enabled = w.config.threads.auto.finde = true
+    await w.job().tick()
+    w.config.auto.finde = w.config.threads.enabled = w.config.threads.auto.finde = false
+    await w.job().tick()
+    const instagramTs = w.draft().slack.ts
+    expect(w.slackPosts[0]?.text).not.toContain('Threads (')
+    expect(w.draft().threads?.threadTs).toBeUndefined()
+    w.approve()
+    w.config.threads.enabled = true
+    const services = w.services()
+    services.slackReactions = async ts => ts === instagramTs ? w.reactions : []
+    const job = new Job(services)
+    w.at('2026-11-19', 12)
+    await job.tick()
+    expect(w.threads.posts).toEqual([])
+    const threadsTs = w.draft().threads?.threadTs
+    expect(threadsTs).toBeTruthy()
+    expect(threadsTs).not.toBe(instagramTs)
+    expect(w.slackPosts.find(post => post.text.includes('Threads ('))).toBeDefined()
+    services.slackReactions = async ts => ts === threadsTs ? w.reactions : []
+    await job.tick()
+    expect(w.threads.posts).toHaveLength(1)
+  })
+
+  it.each(['Instagram', 'Threads'])('publishes automatic %s when the other destination cannot get a preview', async automatic => {
+    const w = new World()
+    const date = '2026-11-17'
+    w.config.threads.enabled = true
+    w.config.auto.hoy = automatic === 'Instagram'
+    w.config.threads.auto.hoy = automatic === 'Threads'
+    w.catalog = weekend().slice(0, 2).map(event => ({ ...event, startsAt: baInstant(date, 20).toISOString() }))
+    const job = w.job()
+    job.s.slackUploadFiles = async () => { throw new Error('Slack unavailable before upload') }
+    w.at(date, 11, 30)
+    await job.tick()
+    w.at(date, 17)
+    await job.tick()
+    expect(w.ig.published).toHaveLength(automatic === 'Instagram' ? 8 : 0)
+    expect(w.threads.posts).toHaveLength(automatic === 'Threads' ? 1 : 0)
+    expect(w.slackCalls).toEqual([])
+  })
+
+  it('persists and alerts an unthreaded Threads hold before the Instagram cutoff', async () => {
+    const w = new World()
+    const date = '2026-11-17'
+    w.config.threads.enabled = w.config.threads.auto.hoy = w.config.auto.hoy = true
+    w.catalog = weekend().slice(0, 2).map(event => ({ ...event, startsAt: baInstant(date, 20).toISOString() }))
+    w.at(date, 11)
+    const job = w.job()
+    await job.tick()
+    w.statuses.set(uuid(1), 'cancelled')
+    w.at(date, 11, 30)
+    await job.tick()
+    const draft = job.loadDraft(`hoy-${date}`)!
+    expect(draft.threads).toMatchObject({ state: 'held', hold: { id: uuid(1), title: 'Evento 1', why: 'cancelled' } })
+    expect(w.alerts).toContainEqual(expect.objectContaining({ key: `draft/hoy-${date}/threads`, text: expect.stringContaining('Evento 1 was cancelled') }))
+    expect(w.alerts[0]?.text).toContain('regenerate')
+    expect(w.threads.posts).toEqual([])
+    expect(w.slackCalls).toEqual([])
+  })
   it('appends the saved text to one preview and publishes both channels from that same later approval', async () => {
     const w = await threadsPreviewed()
     const { ts } = w.draft().slack
