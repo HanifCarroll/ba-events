@@ -136,7 +136,7 @@ The event cards have no description line, no handle, and no "baeventos.com" foot
 
 ## Slack preview message (in English, for Hanif)
 
-The message goes to #ba-eventos as a new top-level message, with every frame or slide attached in order:
+When a revision needs approval, the preview goes to #alerts by default as a new top-level message, with every frame or slide attached in order:
 
 ```
 Instagram draft: {Format name} for {dates}. It goes out {Weekday} at {HH:MM} once you react ✅. React ❌ to skip it.

@@ -3,7 +3,7 @@
 # One run is several short, fresh headless Pi sessions in the dedicated intake checkout, each following one phase
 # of prompt.md (the runbook's daily procedure): collect, then review batches while posts are pending and each batch
 # makes progress, then venues, then report. Phases share a per-day notes file; the report phase writes the Slack
-# report to a file, which goes to #ba-eventos unless it is exactly NOTHING TO REPORT. A model's stdout is never
+# exception report to a file, which goes to #alerts unless it is exactly NOTHING TO REPORT. A model's stdout is never
 # the report. Review sessions list the observations they leave pending in a per-run deferral file, and later
 # batches skip them. Every collect, review, and venues session writes a completion note to its own .done file.
 # A failed phase, a missing completion note, a failed pending count, or a missing report raises pro/ba-events-intake on the VPS's
@@ -24,7 +24,7 @@ export PATH="$HOME/.local/bin:$HOME/.local/share/mise/shims:/opt/homebrew/bin:/u
 checkout="${INTAKE_CHECKOUT:-$HOME/projects/ba-events-instagram-intake}"
 prompt="$checkout/scripts/instagram-intake-agent/prompt.md"
 state="${INTAKE_STATE:-$HOME/agents/ba-events-intake}"
-channel="C0CHBCSEV3R" # #ba-eventos
+channel="C0CG3EGKKP1" # #alerts, including when replaying old outbox items
 alert_key="pro/ba-events-intake"
 model="${INTAKE_MODEL:-openai/gpt-6.2-sol}"
 thinking="${INTAKE_THINKING:-high}"
@@ -201,7 +201,7 @@ print(hashlib.sha256("\n".join(items).encode()).hexdigest()[:16])' "$fixes") || 
   return 0
 }
 
-slack_post() { # slack_post <file>: post the file's text to #ba-eventos as the Chipa bot; returns send's status
+slack_post() { # slack_post <file>: post the file's text to #alerts as the Chipa bot; returns send's status
   if [ "${INTAKE_NO_POST:-}" = 1 ]; then echo "no-post: slack $(wc -c <"$1" | tr -d ' ') bytes" >>"$log"; return 0; fi
   send slack "$slack_cmd" "$(cat "$1")"
 }
@@ -345,7 +345,7 @@ else
     3) report_outcome="The run finished, but it couldn't save the report for retry, so it won't go out by itself." ;;
   esac
   if [ "$post_status" -ne 0 ]; then
-    vps_alert raise "⚠️ *BA Eventos intake ran, but its report didn't reach #ba-eventos*. {triage}
+    vps_alert raise "⚠️ *BA Eventos intake ran, but its report didn't reach #alerts*. {triage}
 $report_outcome
 ${failed:+Failed: $failed · }report $report on the Pro"
   fi

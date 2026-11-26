@@ -27,7 +27,8 @@ const CF_ACCOUNT = '38d9d25d890a220fb7cf6dd92f8a322a'
 const SLACK_API = process.env.BA_INSTAGRAM_SLACK_API ?? join(HOME, '.hermes/skills/productivity/slack-workspace/scripts/slack_api.py')
 const ALERT = process.env.BA_INSTAGRAM_ALERT ?? join(HOME, '.local/bin/alert')
 const HOME_NOTIFY = process.env.BA_INSTAGRAM_HOME_NOTIFY ?? join(HOME, 'projects/agent-home/bin/vps/home-notify')
-export const SLACK_CHANNEL = 'C0CHBCSEV3R'
+/** Previews already sent or handed off before the channel was saved. */
+export const LEGACY_SLACK_CHANNEL = 'C0CHBCSEV3R'
 
 export const sleep = (ms: number) => new Promise<void>(done => setTimeout(done, ms))
 
@@ -66,6 +67,7 @@ export interface Config {
   /** Hoy can use Business Suite when enabled. Off by default. */
   linkStickers: { hoy: boolean }
   threads: { enabled: boolean; auto: Record<ThreadsFormat, boolean> }
+  slack: { channel: string }
   /** R2 bucket and its public base URL (no trailing slash). Publishing is skipped until both are set. */
   r2: { bucket: string; publicBaseUrl: string } | null
   /** The Reel's music directory (tracks.json and the audio files), outside the repo. */
@@ -91,7 +93,8 @@ export function readConfig(path = CONFIG_FILE): Config {
     keyFile: typeof raw.review?.keyFile === 'string' && raw.review.keyFile.trim()
       ? raw.review.keyFile.trim().replace(/^~(?=\/)/, HOME) : DEFAULT_REVIEW.keyFile,
   }
-  return { auto, linkStickers: { hoy: raw.linkStickers?.hoy === true }, threads, r2, reel: { musicDir }, review }
+  const channel = (typeof raw.slack?.channel === 'string' && raw.slack.channel.trim()) || 'C0CG3EGKKP1'
+  return { auto, linkStickers: { hoy: raw.linkStickers?.hoy === true }, threads, slack: { channel }, r2, reel: { musicDir }, review }
 }
 
 // Lock: one tick or command at a time.
@@ -469,26 +472,26 @@ export async function slackUploadFiles(frames: string[], draftId: string): Promi
   return files
 }
 
-/** Share uploaded files in one new top-level message in #ba-eventos. */
-export const slackShareFiles = (files: Array<{ id: string; title: string }>, text: string) =>
-  slack('files.completeUploadExternal', { files: JSON.stringify(files), channel_id: SLACK_CHANNEL, initial_comment: text })
+/** Share uploaded files as one approval preview. */
+export const slackShareFiles = (files: Array<{ id: string; title: string }>, text: string, channel: string) =>
+  slack('files.completeUploadExternal', { files: JSON.stringify(files), channel_id: channel, initial_comment: text })
 
 /** The ts of the message a shared file landed in. Slack fills `shares` a moment after the upload completes. */
-export async function slackShareTs(fileId: string): Promise<string | null> {
+export async function slackShareTs(fileId: string, channel: string): Promise<string | null> {
   for (let attempt = 0; attempt < 10; attempt++) {
     const { file } = await slack('files.info', { file: fileId })
-    const ts = file?.shares?.public?.[SLACK_CHANNEL]?.[0]?.ts ?? file?.shares?.private?.[SLACK_CHANNEL]?.[0]?.ts
+    const ts = file?.shares?.public?.[channel]?.[0]?.ts ?? file?.shares?.private?.[channel]?.[0]?.ts
     if (ts) return ts
     await sleep(3_000)
   }
   return null
 }
 
-export const slackPost = (text: string, threadTs?: string) =>
-  slack('chat.postMessage', { channel: SLACK_CHANNEL, text, ...(threadTs ? { thread_ts: threadTs } : {}), unfurl_links: 'false' })
+export const slackPost = (text: string, threadTs: string, channel: string) =>
+  slack('chat.postMessage', { channel, text, thread_ts: threadTs, unfurl_links: 'false' })
 
-export async function slackReactions(ts: string) {
-  const { message } = await slack('reactions.get', { channel: SLACK_CHANNEL, timestamp: ts, full: 'true' })
+export async function slackReactions(ts: string, channel: string) {
+  const { message } = await slack('reactions.get', { channel, timestamp: ts, full: 'true' })
   return message?.reactions as Array<{ name: string; users?: string[] }> | undefined
 }
 

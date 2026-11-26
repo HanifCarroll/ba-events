@@ -383,7 +383,7 @@ export class TickFailures {
           stopped = true
           return `the ${label(item)} ${outcome}`
         }
-        if (!item.hasPreview && previewed) return `the ${name(item)} preview for ${dates(item)} is in #ba-eventos`
+        if (!item.hasPreview && previewed) return `the ${name(item)} preview for ${dates(item)} is in Slack`
         return `the ${label(item)} is moving again`
       })
       const verdict = stopped ? '⚠️ *Instagram publisher stopped retrying*' : '✅ *Instagram publisher recovered*'

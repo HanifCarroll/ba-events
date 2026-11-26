@@ -7,8 +7,10 @@ export interface ThreadsDraft {
   state: 'waiting' | 'publishing' | 'published' | 'skipped' | 'held' | 'failed'
   /** Frozen before the preview is sent: this is also the exact recovery key. */
   text: string | null
-  /** Auto mode shown in the original Slack preview; absent on older drafts means manual. */
+  /** Auto mode saved for the original revision; absent on older drafts means manual. */
   auto?: boolean
+  /** Revision that owns this attempt, even when it had no Slack preview. */
+  revision?: number
   containerId: string | null
   mediaId: string | null
   permalink: string | null
@@ -18,6 +20,7 @@ export interface ThreadsDraft {
   beforeIds?: string[]
   /** A preserved send keeps its original Slack thread when Instagram gets another revision. */
   threadTs?: string
+  threadChannel?: string
   publishedAt: string | null
   error: string | null
   failures: number
@@ -58,7 +61,7 @@ interface Services {
   enabled(): boolean
   auto(): boolean
   checkEvents(): Promise<void>
-  reply(text: string): Promise<unknown>
+  reply?(text: string): Promise<unknown>
   log(text: string): void
 }
 
@@ -190,7 +193,7 @@ export async function advanceThreads(draft: ThreadsDraft, window: ReturnType<typ
     }
   }
   if (draft.notify) {
-    try { await s.reply(draft.notify) } catch {
+    try { await s.reply?.(draft.notify) } catch {
       s.log('Threads: no se pudo enviar la respuesta de Slack; se reintenta en el próximo tick')
       return
     }

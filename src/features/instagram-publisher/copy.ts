@@ -89,7 +89,7 @@ export const heldEventReason = { cancelled: 'was cancelled', over: 'has already 
 export const heldText = (title: string, why: keyof typeof heldEventReason = 'cancelled') =>
   `Held: ${title} ${heldEventReason[why]}. Ask Hermes to regenerate it.`
 
-/** The too-few notice is a new top-level message: there is no preview to reply to. */
+/** Human-readable summary for the CLI dry run, not a Slack notification. */
 export function tooFewText(format: FormatKey, window: RunWindow, count: number): string {
   return `Instagram draft: ${FORMATS[format].slackName} for ${englishDates(window.from, window.to)}. ${skipText({ kind: 'too-few', count })}`
 }

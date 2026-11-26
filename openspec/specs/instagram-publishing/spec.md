@@ -1,7 +1,7 @@
 # Instagram Publishing Specification
 
 ## Purpose
-Define how the VPS job drafts the recurring @baeventos.app posts from the catalog, gets Hanif's approval in Slack, and publishes without ever posting twice. The words come from `src/features/instagram-publisher/copy.md`.
+Define how the VPS job drafts the recurring @baeventos.app posts from the catalog, requests Hanif's approval only when needed, and publishes without ever posting twice. The words come from `src/features/instagram-publisher/copy.md`.
 
 ## Requirements
 
@@ -18,7 +18,7 @@ A post MUST show only events from the Instagram intake that are scheduled, marke
 
 #### Scenario: Too few events qualify
 - **WHEN** fewer events qualify than the format's minimum (Hoy 2, Este finde 4, Gratis 5, Este finde Reel 4)
-- **THEN** the run is skipped and a new top-level message in #ba-eventos says "Skipped: only {n} events qualified"
+- **THEN** the job records the skip without posting a new Slack message; a rebuild may reply in the preceding revision's preview thread
 
 #### Scenario: A free event qualifies for Hoy or Este finde
 - **WHEN** at least one free event qualifies
@@ -82,12 +82,12 @@ The Reel MUST be one 1080 × 1920 H.264/AAC MP4 at 30 fps, drafted Thursday 18:0
 - **WHEN** HyperFrames' managed Chrome is missing
 - **THEN** the draft fails with an alert that names the install command
 
-### Requirement: Every draft is previewed in Slack before it is published
-Each draft MUST go to #ba-eventos as a new top-level message with every frame attached (for a Reel, the video, and a last line naming the track). Only Hanif's ✅ and ❌ reactions count; thread replies do not.
+### Requirement: Slack previews request approval only when needed
+While approval is open, a rendered draft MUST send one top-level Slack preview per revision if an enabled publication needs Hanif's ✅. This includes manual mode, a missing or failed review, and a review that blocks automatic publishing. The preview MUST attach every frame (for a Reel, the video, and a last line naming the track). It MUST use `slack.channel` from publisher config, defaulting to #alerts (`C0CG3EGKKP1`), and save that channel with the preview. Existing previews without a stored channel MUST keep using #ba-eventos (`C0CHBCSEV3R`). Only Hanif's ✅ and ❌ reactions on an existing preview count; thread replies do not. Routine outcomes MUST only reply under an existing preview. Failures continue through the alert path.
 
 #### Scenario: Hanif reacts ❌
 - **WHEN** Hanif's ❌ is on the preview before the post goes out
-- **THEN** the draft is skipped, even in auto mode, and the thread gets "Skipped: you reacted ❌"
+- **THEN** the draft is skipped, even if it later qualified for auto mode, and the thread gets "Skipped: you reacted ❌"
 
 #### Scenario: No ✅ by the cutoff
 - **WHEN** there is no ✅ by 17:00 for Hoy, Friday 18:00 for Este finde and the Reel, or Tuesday 20:00 for Gratis, and auto mode is off
@@ -118,17 +118,17 @@ Each draft MUST go to #ba-eventos as a new top-level message with every frame at
 - **THEN** it publishes at once
 
 #### Scenario: Auto mode
-- **WHEN** both the saved Instagram preview mode and the current config allow auto mode for the format
-- **THEN** the preview is still posted and the post can go out at its slot if the revision meets the review requirement and Hanif has not reacted ❌
-- **AND** if either setting is false or the preview predates saved modes, a ✅ is required
+- **WHEN** every eligible publication allows auto mode in both the saved revision and current config, and the revision meets the review requirement
+- **THEN** no new preview is sent and publishing does not need Slack or a reaction read unless a preview already exists
+- **AND** if either setting is false or the revision predates saved modes, a ✅ is required for that publication; if the live flag turns off while approval is still open, a previously silent draft sends a preview
 
-### Requirement: A new preview needs a revision-specific review for automatic publishing
+### Requirement: A new draft needs a revision-specific review for automatic publishing
 
-After rendering, the publisher MUST review the still frames (for a Reel, its cover and card stills), Instagram caption, and exact Threads text, if present. It MUST supply the selected catalog fields, Buenos Aires dates, and linked intake captions and source flyers when available. The reviewer MUST report material factual, scope, artwork, or rendering problems, not style preferences. It MUST return an `ok`, `wrong`, or `question` verdict for each event and identify any post-wide issue. A new preview MUST NOT auto-publish to either channel unless the post verdict is `ok` and every event is `ok` in the quick review or resolved as `ok` by the investigator for the exact revision, frames hash, and saved content. A preview already sent or handed to Slack before review was introduced keeps its earlier approval rules.
+After rendering, the publisher MUST review the still frames (for a Reel, its cover and card stills), Instagram caption, and exact Threads text, if present. It MUST supply the selected catalog fields, Buenos Aires dates, and linked intake captions and source flyers when available. The reviewer MUST report material factual, scope, artwork, or rendering problems, not style preferences. It MUST return an `ok`, `wrong`, or `question` verdict for each event and identify any post-wide issue. A new draft MUST NOT auto-publish to either channel unless the post verdict is `ok` and every event is `ok` in the quick review or resolved as `ok` by the investigator for the exact revision, frames hash, and saved content. A preview already sent or handed to Slack before review was introduced keeps its earlier approval rules.
 
 #### Scenario: The reviewer accepts every event and the post
 - **WHEN** the reviewer returns all `ok` for the saved revision
-- **THEN** the job saves the result, model, and timestamps, replies in the preview thread, and uses the normal auto rules without running that successful review again
+- **THEN** the job saves the result, model, and timestamps, uses the normal auto rules without running that successful review again, and reports the result in Slack only if a preview exists
 
 #### Scenario: The quick review flags events
 - **WHEN** a new review reports any event as `wrong` or `question` and Hanif has not reacted ✅ or ❌
@@ -221,7 +221,7 @@ The job MUST save each container and media id before the next step, check `conte
 
 #### Scenario: The post is published
 - **WHEN** publishing finishes
-- **THEN** the preview's thread gets "Posted: {permalink}"
+- **THEN** if a preview exists, its thread gets "Posted: {permalink}"; otherwise the outcome stays in the saved draft and log
 
 ### Requirement: Alerts report persistent failures and missed deadlines
 
@@ -247,9 +247,9 @@ The job MUST log every failed attempt, persist failure streaks across ticks, and
 - **WHEN** an open tick, publishing, or Slack reply alert is no longer failing because the job succeeded
 - **THEN** the job closes the alert with a one-line recovery message that names the outcome
 
-### Requirement: Eligible Instagram drafts share their Slack preview and approval with Threads
+### Requirement: Eligible drafts share any Slack preview and approval with Threads
 
-With Threads enabled, a Hoy, Este finde, or Gratis esta semana preview MUST append the exact Threads text in a quote block unless an earlier revision already dispatched Threads. The preview MUST distinguish manual approval from auto mode. Publishing without ✅ requires both the saved Threads preview mode and the current config to allow auto mode, and the revision must meet the review requirement. The Reel MUST NOT preview or publish to Threads. The same Slack message and only Hanif's reactions govern both posts; ❌ skips both, including in auto mode. Threads auto mode is separate per format.
+With Threads enabled, the draft MUST save the exact Threads text for Hoy, Este finde, or Gratis esta semana. If the job sends a preview for either publication, it MUST append that text in a quote block while Threads is still eligible in that revision and distinguish manual approval from auto mode. Publishing without ✅ requires both the saved Threads mode and the current config to allow auto mode, and the revision must meet the review requirement. The Reel MUST NOT preview or publish to Threads. If there is a Slack preview, its reactions govern both posts; ❌ skips both, including in auto mode. Threads auto mode is separate per format.
 
 #### Scenario: Publishing window
 - **WHEN** the job considers a new Threads write
@@ -269,11 +269,11 @@ With Threads enabled, a Hoy, Este finde, or Gratis esta semana preview MUST appe
 
 #### Scenario: The picks change or approval is withdrawn
 - **WHEN** a Threads write would begin
-- **THEN** the job re-reads reactions and the cutoff, and before the first write of each attempt checks every saved pick using Instagram's current catalog check. An event that would hold Instagram also holds Threads. With auto off, removing ✅ pauses further writes. A confirmed or unclear publish still gets reconciled without new writes.
+- **THEN** the job re-reads reactions if there is a preview, re-checks the cutoff, and before the first write of each attempt checks every saved pick using Instagram's current catalog check. An event that would hold Instagram also holds Threads. With auto off, removing ✅ pauses further writes. A confirmed or unclear publish still gets reconciled without new writes.
 
 #### Scenario: Threads is disabled
 - **WHEN** Threads is disabled or absent from config
-- **THEN** the job adds no Threads preview or outcome text, makes no Threads API calls, and does not backfill a preview sent without Threads text. The job re-reads the enabled flag just before creating or publishing a container. If disabled during the tick, it pauses new writes and keeps any saved container. An explicit `dry-run --threads` can still write the text locally.
+- **THEN** the job adds no Threads preview or outcome text, makes no Threads API calls, and does not backfill a revision prepared without Threads. The job re-reads the enabled flag just before creating or publishing a container. If disabled during the tick, it pauses new writes and keeps any saved container. An explicit `dry-run --threads` can still write the text locally.
 
 ### Requirement: Threads uses plain text from the saved picks
 
@@ -297,7 +297,7 @@ Threads MUST save its own state, retries, container ID, media ID, permalink, and
 
 #### Scenario: One channel fails
 - **WHEN** Instagram or Threads fails, or Slack cannot deliver an outcome reply
-- **THEN** the other channel keeps its own outcome and retry schedule, and pending Threads replies are retried in the original preview thread without republishing. A final Threads failure also raises `ba-events/instagram/draft/<id>/threads`. If the alert command fails, the alert remains pending for another tick.
+- **THEN** the other channel keeps its own outcome and retry schedule, and pending Threads replies are retried in the original preview thread without republishing; a revision with no preview posts no reply. A final Threads failure also raises `ba-events/instagram/draft/<id>/threads`. If the alert command fails, the alert remains pending for another tick.
 
 #### Scenario: Slack approval cannot be read
 - **WHEN** a Slack reaction read fails at or after the Threads slot
