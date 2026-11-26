@@ -6,14 +6,14 @@
 	import HomeAgendaCard from './HomeAgendaCard.svelte'
 	import InstallApp from '#shared/ui/InstallApp.svelte'
 
-	let { view, filter, url, onAsk, onMore, day, chat }: {
+	let { view, filter, url, onAsk, onMore, day, composer }: {
 		view: HomeViewPage
 		filter: HomeFilter | null
 		url: URL
-		onAsk: (event: HomeAgendaEvent) => void
+		onAsk?: (event: HomeAgendaEvent) => void
 		onMore: (href: string) => Promise<void>
 		day: string | undefined
-		chat: Snippet
+		composer?: Snippet
 	} = $props()
 	let loadingMore = false
 	let grid = $state<HTMLDivElement>()
@@ -89,10 +89,12 @@
 		{#each beforeChat as event, index (event.id)}
 			{@render card(event, index)}
 		{/each}
-		<div data-section="agenda-composer" class="agenda-composer col-span-full min-w-0 py-2">
-			{@render chat()}
-			<InstallApp hint />
-		</div>
+		{#if composer}
+			<div data-section="agenda-composer" class="agenda-composer col-span-full min-w-0 py-2">
+				{@render composer()}
+				<InstallApp hint />
+			</div>
+		{/if}
 		{#each afterChat as event, index (event.id)}
 			{@render card(event, chatAfter + index)}
 		{/each}

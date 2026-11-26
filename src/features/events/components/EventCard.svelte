@@ -12,7 +12,7 @@
 	import SaveEventButton from './SaveEventButton.svelte';
 	import EventArtwork from './EventArtwork.svelte';
 	import { Button } from '#shared/ui/button/index.ts';
-	import { formatPrice } from '#features/chat/lib/messages.ts';
+	import { formatPrice } from '../lib/format-price.ts';
 	import { formatEventCardTime, formatShortDate } from '#shared/lib/utils/formatting.ts';
 	import { track } from '#shared/lib/analytics.ts';
 	import { goto } from '$app/navigation';
