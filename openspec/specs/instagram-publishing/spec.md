@@ -156,11 +156,17 @@ After rendering, the publisher MUST review the still frames (for a Reel, its cov
 - **THEN** the job replies with one line per event if a preview exists or if the findings require one
 - **AND** all `ok` clears the event gate for that exact revision only; a `fixed` or `exclude` result without any `ask` rebuilds with cumulative exclusions and a fresh review, at most twice per draft per Buenos Aires day before the cutoff; if too few qualify it skips in the old thread
 - **AND** a confirmed error the investigator cannot correct is excluded and the evidence and requested correction go to Hermes without blocking the rebuild
-- **AND** an `ask`, including doubts after the investigation limit, requires ✅ and sends one Home push with the question and what was checked, even when Hermes also gets a fix request, unless Hanif already reacted or approval has closed
+- **AND** an `ask`, including doubts after the investigation limit, requires ✅, even when Hermes also gets a fix request
+
+#### Scenario: An unresolved review needs Hanif's decision
+- **WHEN** a current Slack preview has an unresolved review question, including a post-wide question or an investigator's `ask`, and Hanif has not reacted ✅ or ❌ and approval remains open
+- **THEN** the job sends the question and any investigation evidence to #alerts (`C0CG3EGKKP1`) regardless of `slack.channel`: it broadcasts the preview thread reply when the preview is already there, or posts a top-level message quoting the question and linking to the preview without replying in the other channel
+- **AND** for a preview in another channel, the job uses Slack's permalink when available and builds a link from the preview's channel and timestamp if the lookup fails
+- **AND** the job reserves one notice per draft before sending it and skips it if the older notification was already reserved. An explicit Slack refusal releases the reservation for a later tick; an unclear response keeps it
 
 #### Scenario: Investigation fails
 - **WHEN** the investigator cannot start, times out, or exits without a complete, valid, on-time result
-- **THEN** the revision requires ✅, and the infrastructure failure goes to Hermes, not to Hanif as a push question
+- **THEN** the revision requires ✅, and the infrastructure failure goes to Hermes and does not trigger a decision broadcast
 - **AND** before the time limit, the job does not infer a crash from a missing result without two consecutive unsuccessful unit checks
 
 #### Scenario: The investigator corrects the catalog

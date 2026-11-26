@@ -12,7 +12,7 @@ import type { RunWindow } from './formats.ts'
 import { LAYOUT_VERSION } from './html.ts'
 import type { Finding, InvestigationRequest } from './investigation.ts'
 import { Job, dryRun, type Draft, type Services } from './job.ts'
-import { DEFAULT_REVIEW, type Config } from './runtime.ts'
+import { DEFAULT_REVIEW, SlackRejected, type Config } from './runtime.ts'
 import { OK, type Reviewer, type Verdict } from './review.ts'
 import type { CatalogEvent } from './select.ts'
 import { StoryComposerError, type ComposeStory, type StickerFrame } from './story-stickers.ts'
@@ -77,9 +77,9 @@ class World {
   r2: string[] = []
   music = musicDir()
   config: Config = { auto: { hoy: false, finde: false, gratis: false, reel: false }, slack: { channel: 'C0CG3EGKKP1' }, linkStickers: { hoy: false }, threads: { enabled: false, auto: { hoy: false, finde: false, gratis: false } }, r2: { bucket: 'b', publicBaseUrl: 'https://ig.example' }, reel: { musicDir: this.music }, review: DEFAULT_REVIEW }
-  slackCalls: Array<{ method: string; channel?: string; text?: string; ts?: string }> = []
+  slackCalls: Array<{ method: string; channel?: string; text?: string; ts?: string; reply_broadcast?: true }> = []
   reviewPosts: Array<{ text: string; threadTs?: string }> = []
-  pushes: string[] = []
+  loseBroadcastResponse = false
   reviewCalls = 0
   investigator?: Services['investigator']
   verdict: (id: string) => Verdict = () => OK
@@ -147,13 +147,17 @@ class World {
       },
       review: (...args) => this.reviewer(...args),
       investigator: this.investigator,
-      reviewPush: async body => { this.pushes.push(body) },
-      slackPost: async (text, threadTs, channel) => {
-        this.slackCalls.push({ method: 'chat.postMessage', channel, text, ts: threadTs })
-        if (this.slackFails > 0 && text.startsWith(this.slackFailPrefix)) { this.slackFails--; throw new Error('Slack chat.postMessage failed: ratelimited') }
-        if (/^Revis(?:ado|ión):/.test(text)) { this.reviewPosts.push({ text, threadTs }); return { ts: 'review' } }
-        this.slackPosts.push({ text, threadTs })
+      slackPost: async (text: string, threadTs: string | null, channel: string, broadcast?: boolean) => {
+        this.slackCalls.push({ method: 'chat.postMessage', channel, text, ...(threadTs ? { ts: threadTs } : {}), ...(broadcast ? { reply_broadcast: true } : {}) })
+        if (broadcast && this.loseBroadcastResponse) throw new Error('Lost Slack response after posting')
+        if (this.slackFails > 0 && text.startsWith(this.slackFailPrefix)) { this.slackFails--; throw new SlackRejected('Slack chat.postMessage failed: ratelimited') }
+        if (/^Revis(?:ado|ión):/.test(text)) { this.reviewPosts.push({ text, threadTs: threadTs ?? undefined }); return { ts: 'review' } }
+        this.slackPosts.push({ text, threadTs: threadTs ?? undefined })
         return { ts: `${this.nextTs++}.0` }
+      },
+      slackPermalink: async (ts: string, channel: string) => {
+        this.slackCalls.push({ method: 'chat.getPermalink', ts, channel })
+        return `https://test-workspace.slack.com/archives/${channel}/p${ts.replace('.', '')}`
       },
       slackReactions: async (ts, channel) => {
         this.slackCalls.push({ method: 'reactions.get', channel, ts })
@@ -193,6 +197,7 @@ class World {
     try { return JSON.parse(readFileSync(join(this.dir, 'drafts', `${id}.json`), 'utf8')) } catch { return null }
   }
   replies() { return this.slackPosts.filter(post => post.threadTs).map(post => post.text) }
+  broadcasts() { return this.slackCalls.filter(call => call.reply_broadcast) }
 }
 
 async function previewed() {
@@ -205,7 +210,7 @@ async function previewed() {
 describe('tick: draft review', () => {
   const badId = uuid(1)
   const wrong: Verdict = { verdict: 'wrong', field: 'summary', reason: 'The Teatro físico flyer is for a performance, not dog training.', question: null }
-  const question: Verdict = { verdict: 'question', field: null, reason: null, question: 'Is 21:00 the show time or the doors time?' }
+  const question = { verdict: 'question', field: null, reason: null, question: 'Is 21:00 the show time or the doors time?' } satisfies Verdict
   const world = () => {
     const w = new World()
     w.config.auto.finde = true
@@ -230,31 +235,119 @@ describe('tick: draft review', () => {
     expect(w.slackCalls).toEqual([])
   })
 
-  it('shares a question in the configured channel, and uses that same thread after the config changes', async () => {
+  it.each([
+    { previewChannel: 'C_TEST_APPROVALS', loseResponse: false, failLookup: false },
+    { previewChannel: 'C0CHBCSEV3R', loseResponse: false, failLookup: true },
+    { previewChannel: 'C_TEST_APPROVALS', loseResponse: true, failLookup: false },
+  ])('posts one question in #alerts with the $previewChannel override still set (lost response: $loseResponse, permalink fails: $failLookup)', async ({ previewChannel, loseResponse, failLookup }) => {
     const w = world()
-    w.config.slack = { channel: 'C_TEST_APPROVALS' }
-    w.verdict = id => id === badId ? question : OK
+    const alertsChannel = w.config.slack.channel
+    w.config.slack.channel = previewChannel
+    const reviewer = w.reviewer
+    w.reviewer = async () => { throw new Error('Review unavailable') }
     await w.job().tick()
-    const { ts } = w.draft().slack
-    expect(w.draft().slack).toMatchObject({ channel: 'C_TEST_APPROVALS', ts: expect.any(String) })
-    expect(w.slackCalls.filter(call => call.method === 'files.completeUploadExternal')).toEqual([
-      expect.objectContaining({ channel: 'C_TEST_APPROVALS', text: expect.stringContaining('Instagram draft: Este finde') }),
-    ])
-    expect(w.pushes[0]).toContain('/archives/C_TEST_APPROVALS/')
-    w.config.slack.channel = 'C_TEST_MOVED'
+    const draft = w.draft()
+    expect(draft.slack).toMatchObject({ channel: previewChannel, ts: expect.any(String) })
+    if (previewChannel === 'C0CHBCSEV3R') {
+      delete draft.slack.channel
+      delete draft.slack.previews
+      writeFileSync(w.job().draftFile(draft.id), JSON.stringify(draft))
+    }
+    w.reviewer = async input => ({ ...(await reviewer(input)), post: question })
+    w.slackCalls = []
+    const job = w.job()
+    const lookup = job.s.slackPermalink
+    job.s.slackPermalink = async (...args) => {
+      const url = await lookup(...args)
+      if (failLookup) throw new Error('Slack could not find the permalink')
+      return url
+    }
+    const post = job.s.slackPost
+    job.s.slackPost = async (...args) => {
+      const response = await post(...args)
+      if (loseResponse && args[1] === null) throw new Error('Lost Slack response after posting')
+      return response
+    }
     slot(w)
+    await job.tick()
     await w.job().tick()
+    expect(w.config.slack.channel).toBe(previewChannel)
+    expect(w.slackCalls.filter(call => call.method === 'chat.getPermalink')).toEqual([
+      { method: 'chat.getPermalink', ts: draft.slack.ts, channel: previewChannel },
+    ])
+    const domain = failLookup ? 'app.slack.com' : 'test-workspace.slack.com'
+    expect(w.slackCalls.filter(call => call.method === 'chat.postMessage')).toEqual([{
+      method: 'chat.postMessage', channel: alertsChannel,
+      text: `<https://${domain}/archives/${previewChannel}/p10|Abrí la vista previa en Slack>\n\n> Revisión: hace falta tu decisión.\n> Respondé con ✅ o ❌ en la vista previa.\n> ${question.question}`,
+    }])
     expect(w.ig.published).toHaveLength(0)
     expect(w.threads.posts).toHaveLength(0)
     w.approve()
     await w.job().tick()
     expect(w.draft()).toMatchObject({ state: 'published', threads: { state: 'published' } })
-    const threadedCalls = w.slackCalls.filter(call => call.ts)
-    expect(threadedCalls).toEqual(expect.arrayContaining([
-      expect.objectContaining({ method: 'reactions.get' }),
-      expect.objectContaining({ method: 'chat.postMessage', text: expect.stringContaining('Posted:') }),
-    ]))
-    expect(threadedCalls.every(call => call.channel === 'C_TEST_APPROVALS' && call.ts === ts)).toBe(true)
+    const approvalReads = w.slackCalls.filter(call => call.method === 'reactions.get')
+    expect(approvalReads.length).toBeGreaterThan(0)
+    expect(approvalReads.every(call => call.channel === previewChannel && call.ts === draft.slack.ts)).toBe(true)
+  })
+
+  it('reserves the broadcast before sending and never repeats it after a lost response or rebuild', async () => {
+    const w = world()
+    w.verdict = id => id === badId ? question : OK
+    w.loseBroadcastResponse = true
+    const job = w.job()
+    const post = job.s.slackPost
+    const savedAtSend: Draft[] = []
+    job.s.slackPost = async (text, ts, channel, broadcast) => {
+      if (broadcast) savedAtSend.push(w.draft())
+      return post(text, ts, channel, broadcast)
+    }
+    await job.tick()
+    expect(savedAtSend).toEqual([expect.objectContaining({ decisionBroadcastAttempted: true })])
+    slot(w)
+    await w.job().tick()
+    expect(w.slackCalls.filter(call => call.method === 'chat.postMessage')).toEqual(w.broadcasts())
+    expect(w.broadcasts()).toHaveLength(1)
+    expect(w.draft().decisionBroadcastAttempted).toBe(true)
+    await w.job().regenerate(w.draft().id, [])
+    await w.job().tick()
+    expect(w.draft().revision).toBe(2)
+    expect(w.reviewPosts.at(-1)?.threadTs).toBe(w.draft().slack.ts)
+    expect(w.broadcasts()).toHaveLength(1)
+  })
+
+  it('releases a refused broadcast and retries once on the next tick', async () => {
+    const w = world()
+    w.verdict = id => id === badId ? question : OK
+    w.slackFails = 1
+    w.slackFailPrefix = 'Revisión:'
+    await w.job().tick()
+    expect(w.broadcasts()).toHaveLength(1)
+    expect(w.draft().decisionBroadcastAttempted).toBeUndefined()
+    expect(w.draft().review?.replied).toBeUndefined()
+    expect(w.reviewPosts).toEqual([])
+    await w.job().tick()
+    await w.job().tick()
+    expect(w.broadcasts()).toHaveLength(2)
+    expect(w.reviewPosts).toHaveLength(1)
+    expect(w.draft().decisionBroadcastAttempted).toBe(true)
+  })
+
+  it('waits for the current preview before broadcasting a question', async () => {
+    const w = await previewed()
+    const oldTs = w.draft().slack.ts
+    w.verdict = id => id === badId ? question : OK
+    const job = w.job()
+    const share = job.s.slackShareFiles
+    job.s.slackShareFiles = async () => { throw new SlackRejected('Slack refused the replacement preview') }
+    await expect(job.regenerate(w.draft().id, [])).rejects.toThrow('Slack refused the replacement preview')
+    await job.tick()
+    expect(w.draft().slack.ts).toBe(oldTs)
+    expect(w.broadcasts()).toEqual([])
+    job.s.slackShareFiles = share
+    await job.tick()
+    const { ts } = w.draft().slack
+    expect(ts).not.toBe(oldTs)
+    expect(w.broadcasts()).toEqual([expect.objectContaining({ ts })])
   })
 
   it('reads approval and posts replies in #ba-eventos for an older draft with no stored channel', async () => {
@@ -336,8 +429,7 @@ describe('tick: draft review', () => {
     expect(w.threads.posts).toHaveLength(0)
     if (outcome === 'question') {
       expect(w.reviewPosts[0]?.text).toContain(question.question)
-      expect(w.pushes).toHaveLength(1)
-      expect(w.pushes[0]).toContain('The publisher reads only the Slack reactions.')
+      expect(w.broadcasts()).toEqual([expect.objectContaining({ text: expect.stringContaining('Respondé con ✅ o ❌ en la vista previa.') })])
     }
     if (outcome === 'missing') {
       expect(w.alerts.filter(alert => alert.key.endsWith('/review'))).toHaveLength(1)
@@ -477,7 +569,7 @@ describe('tick: draft review', () => {
     expect(readFileSync(path, 'utf8')).toBe(before)
     expect(w.slackCalls).toEqual([])
     expect(w.alerts).toEqual([])
-    expect(w.pushes).toEqual([])
+    expect(w.broadcasts()).toEqual([])
   })
 })
 
@@ -650,7 +742,7 @@ describe('tick: publisher investigation', () => {
     expect(w.draft()).toMatchObject({ revision: 1, state: 'published', threads: { state: 'published' } })
     expect(w.threads.posts).toHaveLength(1)
     expect(w.reviewCalls).toBe(1)
-    expect(w.pushes).toHaveLength(0)
+    expect(w.broadcasts()).toEqual([])
   })
 
   it('keeps the verified 18 mundos performance after a catalog fix, rebuilds, and reviews the new card', async () => {
@@ -700,10 +792,10 @@ describe('tick: publisher investigation', () => {
     slot(w)
     await w.job().tick()
     expect(w.draft()).toMatchObject({ state: 'published', threads: { state: 'published' } })
-    expect(w.pushes).toHaveLength(0)
+    expect(w.broadcasts()).toEqual([])
   })
 
-  it.each([false, true])('asks in Slack and Home even with a separate Hermes fix (Hermes fix: %s)', async needsFix => {
+  it.each([false, true])('broadcasts one Slack question even with a separate Hermes fix (Hermes fix: %s)', async needsFix => {
     const { w, finish } = world()
     await w.job().tick()
     during(w)
@@ -712,14 +804,45 @@ describe('tick: publisher investigation', () => {
     await w.job().tick()
     slot(w)
     await w.job().tick()
-    expect(w.pushes).toEqual([expect.stringContaining(`${ask.question} Checked: ${ask.checked}`)])
-    expect(w.reviewPosts[0]?.text).toContain(ask.checked)
+    expect(w.broadcasts()).toEqual([{
+      method: 'chat.postMessage', channel: w.config.slack.channel, ts: w.draft().slack.ts, reply_broadcast: true,
+      text: `Revisión: investigación\n18 mundos — Montaje anual: ${ask.question} Checked: ${ask.checked}\nRespondé con ✅ o ❌ en la vista previa.`,
+    }])
+    expect(w.reviewPosts).toHaveLength(1)
     expect(w.alerts.some(alert => alert.key === `review-fix/${flaggedId}` && alert.text.includes(hermes))).toBe(needsFix)
     expect(w.draft().state).toBe('previewed')
     expect(w.threads.posts).toHaveLength(0)
     w.approve()
     await w.job().tick()
     expect(w.draft()).toMatchObject({ revision: 1, state: 'published', threads: { state: 'published' } })
+  })
+
+  it.each(['legacy notification', 'approval', 'rejection', 'cutoff'] as const)('does not broadcast finished findings after %s', async blocker => {
+    const { w, finish } = world()
+    w.config.auto.finde = false // Keep the preview visible while the investigator works.
+    await w.job().tick()
+    during(w)
+    finish(ask)
+    const draft = w.draft()
+    if (blocker === 'legacy notification') {
+      draft.review!.homeAttempted = true
+      writeFileSync(w.job().draftFile(draft.id), JSON.stringify(draft))
+    }
+    if (blocker === 'approval') w.approve()
+    if (blocker === 'rejection') w.reject()
+    if (blocker === 'cutoff') w.at('2026-11-20', 18)
+    await w.job().tick()
+    expect(w.reviewPosts.some(post => post.text.includes(ask.question))).toBe(true)
+    expect(w.broadcasts()).toEqual([])
+    if (blocker === 'legacy notification') {
+      await w.job().regenerate(draft.id, [])
+      during(w, 20)
+      await w.job().tick()
+      finish(ask)
+      await w.job().tick()
+      expect(w.draft()).toMatchObject({ revision: 2, decisionBroadcastAttempted: true })
+      expect(w.broadcasts()).toEqual([])
+    }
   })
 
   it('waits through intermittent unit probe failures and accepts completion during a probe', async () => {
@@ -767,7 +890,7 @@ describe('tick: publisher investigation', () => {
     expect(w.alerts.map(alert => alert.key)).toContain('investigator')
     slot(w)
     await w.job().tick()
-    expect(w.pushes).toHaveLength(0)
+    expect(w.broadcasts()).toEqual([])
     expect(w.draft().state).toBe('previewed')
     expect(w.threads.posts).toHaveLength(0)
   })
@@ -783,7 +906,7 @@ describe('tick: publisher investigation', () => {
     await w.job().tick()
     expect(runs).toHaveLength(2)
     expect(w.draft()).toMatchObject({ revision: 3, exclude: [flaggedId, uuid(2)], reviewRebuilds: { count: 2 } })
-    expect(w.pushes).toEqual([expect.stringContaining('Two revisions have already been investigated.')])
+    expect(w.broadcasts()).toEqual([expect.objectContaining({ text: expect.stringContaining('Two revisions have already been investigated.') })])
   })
 
   it.each([false, true])('honors a reaction while the investigation is running (rejected: %s)', async rejected => {
@@ -802,7 +925,7 @@ describe('tick: publisher investigation', () => {
     await w.job().tick()
     expect(w.draft()).toMatchObject({ revision: 1, state: rejected ? 'skipped' : 'published' })
     expect(w.threads.posts).toHaveLength(rejected ? 0 : 1)
-    expect(w.pushes).toHaveLength(0)
+    expect(w.broadcasts()).toEqual([])
   })
 
   it('reports finished findings but never replaces a preview Hanif already approved', async () => {
@@ -816,7 +939,7 @@ describe('tick: publisher investigation', () => {
     await w.job().tick()
     expect(w.draft()).toMatchObject({ revision: 1, state: 'published', exclude: [] })
     expect(w.reviewPosts).toEqual([{ threadTs: w.draft().slack.ts, text: expect.stringContaining(exclude.reason) }])
-    expect(w.pushes).toHaveLength(0)
+    expect(w.broadcasts()).toEqual([])
   })
 
   it('does not reuse an all-ok resolution after the outgoing copy changes', async () => {

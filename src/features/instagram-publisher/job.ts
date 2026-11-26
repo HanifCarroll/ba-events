@@ -55,6 +55,8 @@ export interface Draft {
   framesHash: string
   /** Missing only on previews that predate review. */
   review?: ReviewState
+  /** Reserved before sending a decision notice. Rebuilding does not clear it. */
+  decisionBroadcastAttempted?: boolean
   reviewHistory?: ReviewResult[]
   reviewRebuilds?: { day: string; count: number }
   pendingReviewFixes?: ReturnType<typeof alerts.reviewFix>[]
@@ -97,11 +99,11 @@ export interface Services {
   renderReel(window: RunWindow, events: PostEvent[], timing: ReelTiming, track: ReadyTrack, outDir: string, artwork: Artwork): Promise<string[]>
   review: Reviewer
   investigator?: { start: typeof startInvestigator; running: typeof investigatorRunning; stop?: typeof stopInvestigator }
-  reviewPush(body: string): Promise<void>
   slackUploadFiles(frames: string[], draftId: string): Promise<Array<{ id: string; title: string }>>
   slackShareFiles(files: Array<{ id: string; title: string }>, text: string, channel: string): Promise<unknown>
   slackShareTs(fileId: string, channel: string): Promise<string | null>
-  slackPost(text: string, threadTs: string, channel: string): Promise<unknown>
+  slackPost(text: string, threadTs: string | null, channel: string, broadcast?: boolean): Promise<unknown>
+  slackPermalink(ts: string, channel: string): Promise<string>
   slackReactions(ts: string, channel: string): Promise<Array<{ name: string; users?: string[] }> | undefined>
   r2Put(bucket: string, key: string, path: string): Promise<void>
   loadToken(now: Date): Promise<TokenCheck>
@@ -127,11 +129,11 @@ export const liveServices = (): Services => ({
   renderReel: (window, events, timing, track, outDir, artwork) => runtime.renderReel(window, events, timing, track, outDir, artwork),
   review: runtime.reviewDraft,
   investigator: { start: startInvestigator, running: investigatorRunning, stop: stopInvestigator },
-  reviewPush: runtime.reviewPush,
   slackUploadFiles: runtime.slackUploadFiles,
   slackShareFiles: runtime.slackShareFiles,
   slackShareTs: runtime.slackShareTs,
   slackPost: runtime.slackPost,
+  slackPermalink: runtime.slackPermalink,
   slackReactions: runtime.slackReactions,
   r2Put: runtime.r2Put,
   loadToken: now => runtime.loadToken(now),
@@ -161,7 +163,6 @@ class DecisionUnknown extends Error {}
 class DraftChanged extends Error {}
 
 const previewChannel = (draft: Draft) => draft.slack.channel ?? runtime.LEGACY_SLACK_CHANNEL
-const previewLink = (draft: Draft, ts: string) => `https://app.slack.com/archives/${previewChannel(draft)}/p${ts.replace('.', '')}`
 
 export class Job {
   private readonly reviewedThisTick = new Set<string>()
@@ -257,6 +258,7 @@ export class Job {
       id, format, from, to: built.window.to, revision, layout: LAYOUT_VERSION, state: 'previewing', exclude, events: built.events, caption: built.caption, track: built.track,
       frames: built.frames ?? [], framesHash: built.frames ? runtime.fileHash(built.frames) : '', slack: current?.slack ?? { fileIds: [], ts: null },
       review: { reelHoldMids: built.timing?.cards.slice(1).map(card => card.holdMid), unavailableAlert: current?.review?.unavailableAlert },
+      decisionBroadcastAttempted: current?.decisionBroadcastAttempted,
       reviewHistory: current?.reviewHistory, reviewRebuilds: current?.reviewRebuilds, pendingReviewFixes: current?.pendingReviewFixes,
       investigationCount: current?.investigationCount, catalogFixes: current?.catalogFixes, threadsHoldOpen: current?.threadsHoldOpen,
       approvedSeenAt: null, r2Uploaded: null, publish: null, publishFailures: 0, notify: null, skipReason: null, note: null, updatedAt: '', threads: current?.threads,
@@ -556,7 +558,6 @@ export class Job {
     if (!review) return
     const ts = draft.slack.ts
     const open = slot !== null
-    const instagramOpen = !SETTLED.includes(draft.state) && this.s.now() < window.deadline
     const pendingInvestigation = review.investigation && (!review.investigation.findings || (review.investigation.failure && !review.investigation.failureAlerted))
     if (!open && !pendingInvestigation && (!review.result || (review.replied && !review.unavailableAlert))) return
     if (!result) return
@@ -582,29 +583,11 @@ export class Job {
     const eventName = (id: string) => draft.events.find(event => event.id === id)!.title
     const questions = result.events.flatMap(event => event.question ? [`${eventName(event.id)}: ${event.question}`] : [])
     if (result.post.question) questions.push(result.post.question)
-    if (!state.replied) await this.reviewAction(draft, 'Slack reply', async () => {
-      const questionText = questions.length ? `\nRespondé con ✅ o ❌ en la vista previa.\n${questions.map(alerts.slackLiteral).join('\n')}` : ''
-      const message = allOk(result) ? 'Revisado: sin problemas.' : hasError
-        ? `Revisión: se detectó un error. Esta versión no se publicará automáticamente.${questionText}`
-        : `Revisión: hace falta tu decisión.${questionText}`
-      await this.s.slackPost(message, ts, previewChannel(draft))
-      state.replied = true
-      this.save(draft)
-    })
-    if (questions.length && this.hasCurrentPreview(draft) && !state.homeAttempted && ((instagramOpen && this.s.now() < window.cutoff)
-      || (threadWindow && this.s.now() < threadWindow.cutoff))) {
-      const decision = await reactions()
-      if (anyApproval(decision) || decision.rejected) return
-      // Home has no verified decision readback here. Reserve the push once; a lost response must not ping Hanif twice.
-      state.homeAttempted = true
-      this.save(draft)
-      const link = previewLink(draft, ts)
-      await this.reviewAction(draft, 'Home push', () => this.s.reviewPush([
-        draft.id, ...(hasError ? ['This version also has a confirmed issue and will not publish automatically.'] : []), ...questions,
-        '', 'Publicar: react ✅ on the Slack preview to approve this version. No publicar: react ❌ to skip both posts.',
-        `The publisher reads only the Slack reactions. Slack preview: ${link}`,
-      ].join('\n')))
-    }
+    const questionText = questions.length ? `\nRespondé con ✅ o ❌ en la vista previa.\n${questions.map(alerts.slackLiteral).join('\n')}` : ''
+    const message = allOk(result) ? 'Revisado: sin problemas.' : hasError
+      ? `Revisión: se detectó un error. Esta versión no se publicará automáticamente.${questionText}`
+      : `Revisión: hace falta tu decisión.${questionText}`
+    await this.postReviewReply(draft, ts, message, state, window, questions.length > 0)
   }
 
   private canRebuildAfterReview(draft: Draft, window: RunWindow) {
@@ -793,19 +776,17 @@ export class Job {
     const day = baLocal(this.s.now()).date
     const count = draft.reviewRebuilds?.day === day ? draft.reviewRebuilds.count : 0
     const canRebuild = !overridden && this.canRebuildAfterReview(draft, window)
-    const willRebuild = repair && canRebuild && !Object.values(findings).some(item => item.verdict === 'ask')
+    const hasAsk = Object.values(findings).some(item => item.verdict === 'ask')
+    const willRebuild = repair && canRebuild && !hasAsk
     if (!hadFindings && !willRebuild && !overridden && open && this.needsPreview(draft, window)) {
       await this.trySendPreview(draft, window, failures)
     }
     const ts = draft.slack.ts
-    const questions = overridden ? [] : request.events.flatMap(({ id, title }) => {
+    const repairQuestions = !overridden && repair && !canRebuild ? request.events.flatMap(({ id, title }) => {
       const item = findings[id]!
-      if (item.verdict === 'ask') return [{ text: `${title}: ${item.question} Checked: ${item.checked}`, push: !investigation.failure }]
-      if (repair && !canRebuild && item.verdict !== 'ok') return [{
-        text: `${title}: This preview still shows the old information and cannot be rebuilt automatically. Approve this version?`, push: true,
-      }]
-      return []
-    })
+      return item.verdict === 'fixed' || item.verdict === 'exclude'
+        ? [`${title}: This preview still shows the old information and cannot be rebuilt automatically. Approve this version?`] : []
+    }) : []
     const fieldLabel = { description_display_es: 'Spanish description', description_display_en: 'English description',
       description_summary_es: 'Spanish summary', description_summary_en: 'English summary', name: 'title', starts_at: 'start time',
       price: 'price', is_free: 'free admission', status: 'status' } as const
@@ -819,18 +800,13 @@ export class Job {
           }).join(', ')}.`
       return alerts.slackLiteral(`${title}: ${detail}`)
     })
-    if (result.post.question) {
-      lines.push(alerts.slackLiteral(result.post.question))
-      if (!overridden) questions.push({ text: result.post.question, push: true })
-    }
+    if (result.post.question) lines.push(alerts.slackLiteral(result.post.question))
     if (result.post.verdict === 'wrong') lines.push('The post also has a confirmed issue and cannot publish automatically.')
-    if (questions.length) lines.push('Respondé con ✅ o ❌ en la vista previa.')
-    if (ts && !investigation.replied) await this.reviewAction(draft, 'investigator Slack reply', async () => {
-      await this.s.slackPost(`Revisión: investigación\n${lines.join('\n')}`, ts, previewChannel(draft))
-      investigation.replied = true
-      state.replied = true
-      this.save(draft)
-    })
+    lines.push(...repairQuestions.map(alerts.slackLiteral))
+    const hasQuestion = Boolean(result.post.question || repairQuestions.length)
+    if (!overridden && (hasAsk || hasQuestion)) lines.push('Respondé con ✅ o ❌ en la vista previa.')
+    if (ts) await this.postReviewReply(draft, ts, `Revisión: investigación\n${lines.join('\n')}`, investigation, window,
+      !willRebuild && !overridden && ((hasAsk && !investigation.failure) || hasQuestion))
     if (willRebuild) {
       const latest = await reactions()
       if (!anyApproval(latest) && !latest.rejected && this.s.now() < window.cutoff) {
@@ -838,19 +814,59 @@ export class Job {
       }
       return
     }
-    const pushQuestions = questions.filter(question => question.push).map(question => question.text)
-    if (ts && this.hasCurrentPreview(draft) && pushQuestions.length && !state.homeAttempted && open
-      && (this.s.now() < window.cutoff || (threadWindow && this.s.now() < threadWindow.cutoff))) {
-      const latest = await reactions()
-      if (anyApproval(latest) || latest.rejected) return
-      state.homeAttempted = true
-      this.save(draft)
-      const link = previewLink(draft, ts)
-      await this.reviewAction(draft, 'Home push', () => this.s.reviewPush([
-        draft.id, ...pushQuestions, '', 'Publicar: react ✅ on the Slack preview to approve this version. No publicar: react ❌ to skip both posts.',
-        `The publisher reads only the Slack reactions. Slack preview: ${link}`,
-      ].join('\n')))
+  }
+
+  private async postReviewReply(draft: Draft, ts: string, text: string, reply: ReviewState | Investigation, window: RunWindow, needsDecision: boolean) {
+    const review = draft.review!
+    const channel = previewChannel(draft)
+    const approvalOpen = () => {
+      const now = this.s.now()
+      const threads = this.openThreadsWindow(draft)
+      return (!SETTLED.includes(draft.state) && now < window.cutoff) || Boolean(threads && now < threads.cutoff)
     }
+    const broadcast = channel === runtime.SLACK_ALERTS_CHANNEL
+    let notice = text
+    let sendNotice = false
+    if (needsDecision && !draft.decisionBroadcastAttempted && !review.homeAttempted && approvalOpen()
+      && this.previewThreads(draft).some(preview => preview.ts === ts && preview.channel === channel && preview.revision === draft.revision)) {
+      if (!broadcast) {
+        const permalink = await this.s.slackPermalink(ts, channel).catch(() => `https://app.slack.com/archives/${channel}/p${ts.replace('.', '')}`)
+        notice = `<${permalink}|Abrí la vista previa en Slack>\n\n${text.split('\n').map(line => `> ${line}`).join('\n')}`
+      }
+      // Read reactions after the permalink lookup so it can't leave the decision check stale.
+      const decision = await this.readDecision(draft)
+      sendNotice = !anyApproval(decision) && !decision.rejected && approvalOpen()
+    }
+    const markReplied = () => {
+      reply.replied = true
+      review.replied = true
+      this.save(draft)
+    }
+    if (!sendNotice) {
+      if (!reply.replied) await this.reviewAction(draft, 'Slack reply', async () => {
+        await this.s.slackPost(text, ts, channel)
+        markReplied()
+      })
+      return
+    }
+    const replyWasSent = reply.replied
+    const reviewWasSent = review.replied
+    // Reserve before sending. A lost response must not cause a second notice or thread reply.
+    draft.decisionBroadcastAttempted = true
+    markReplied()
+    await this.reviewAction(draft, 'Slack decision notice', async () => {
+      try {
+        await this.s.slackPost(notice, broadcast ? ts : null, runtime.SLACK_ALERTS_CHANNEL, broadcast)
+      } catch (error) {
+        if (error instanceof runtime.SlackRejected) {
+          delete draft.decisionBroadcastAttempted
+          reply.replied = replyWasSent
+          review.replied = reviewWasSent
+          this.save(draft)
+        }
+        throw error
+      }
+    })
   }
 
   private async reviewAction(draft: Draft, action: string, run: () => Promise<void>) {
@@ -1327,7 +1343,8 @@ export class Job {
     const unavailableAlert = old.review?.unavailableAlert
     const previousPreview = { fileIds: old.slack.ts ? old.slack.fileIds : [], ts: old.slack.ts, channel: old.slack.channel,
       revision: old.slack.revision ?? old.revision, previews: this.previewThreads(old) }
-    Object.assign(old, { reviewHistory, reviewRebuilds: reviewRebuilds ?? old.reviewRebuilds, review: { unavailableAlert },
+    const decisionBroadcastAttempted = old.decisionBroadcastAttempted || old.review?.homeAttempted || undefined
+    Object.assign(old, { decisionBroadcastAttempted, reviewHistory, reviewRebuilds: reviewRebuilds ?? old.reviewRebuilds, review: { unavailableAlert },
       revision, state: 'rebuilding', exclude, track: savedTrack, approvedSeenAt: null, slack: previousPreview, notify: null, r2Uploaded: null, threads, threadsHoldOpen })
     this.save(old)
     // Keep all earlier previews for the veto, and the most recent for replies.

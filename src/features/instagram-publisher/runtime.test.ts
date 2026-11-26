@@ -3,7 +3,7 @@ import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { runWindow } from './formats.ts'
-import { DEFAULT_REVIEW, alert, catalogSql, loadToken, mediaBin, readConfig, renderFrames, renderReel, reviewPush, toCatalogEvent, type Runner } from './runtime.ts'
+import { DEFAULT_REVIEW, alert, catalogSql, loadToken, mediaBin, readConfig, renderFrames, renderReel, slackPermalink, slackPost, toCatalogEvent, type Runner } from './runtime.ts'
 import { reelTiming } from './reel/project.ts'
 
 describe('publisher config', () => {
@@ -64,14 +64,28 @@ describe('alert command', () => {
   })
 })
 
-it('uses the Home options interface with Slack as the decision source', async () => {
-  const body = 'Is the show at 21:00? React on the Slack preview.'
-  const runner: Runner = async argv => {
-    expect(argv.slice(1)).toEqual(['--from', 'BA Eventos', 'A BA Eventos preview needs your decision',
-      '--options', 'Publicar', 'No publicar', '--body', body])
-    return { code: 0, out: '', err: '' }
+it.each([
+  { name: 'thread reply', threadTs: '1.0', broadcast: false, fields: { thread_ts: '1.0' } },
+  { name: 'thread broadcast', threadTs: '1.0', broadcast: true, fields: { thread_ts: '1.0', reply_broadcast: 'true' } },
+  { name: 'top-level notice', threadTs: null, broadcast: false, fields: {} },
+])('posts a Slack $name with only its required fields', async ({ threadTs, broadcast, fields }) => {
+  const text = 'Is the show at 21:00? React on the Slack preview.'
+  const call = async (method: string, payload: Record<string, string>) => {
+    expect(method).toBe('chat.postMessage')
+    expect(payload).toEqual({ channel: 'C_APPROVALS', text, unfurl_links: 'false', ...fields })
+    return { ts: '2.0' }
   }
-  await reviewPush(body, runner)
+  expect(await slackPost(text, threadTs, 'C_APPROVALS', broadcast, call)).toEqual({ ts: '2.0' })
+})
+
+it('looks up the preview permalink by channel and message timestamp', async () => {
+  const permalink = 'https://test-workspace.slack.com/archives/C_APPROVALS/p10'
+  const call = async (method: string, payload: Record<string, string>) => {
+    expect(method).toBe('chat.getPermalink')
+    expect(payload).toEqual({ channel: 'C_APPROVALS', message_ts: '1.0' })
+    return { permalink }
+  }
+  expect(await slackPermalink('1.0', 'C_APPROVALS', call)).toBe(permalink)
 })
 
 describe('catalog read', () => {

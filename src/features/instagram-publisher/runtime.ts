@@ -26,7 +26,7 @@ const CF_TOKEN_FILE = process.env.BA_D1_TOKEN_FILE ?? join(HOME, '.config/ba-eve
 const CF_ACCOUNT = '38d9d25d890a220fb7cf6dd92f8a322a'
 const SLACK_API = process.env.BA_INSTAGRAM_SLACK_API ?? join(HOME, '.hermes/skills/productivity/slack-workspace/scripts/slack_api.py')
 const ALERT = process.env.BA_INSTAGRAM_ALERT ?? join(HOME, '.local/bin/alert')
-const HOME_NOTIFY = process.env.BA_INSTAGRAM_HOME_NOTIFY ?? join(HOME, 'projects/agent-home/bin/vps/home-notify')
+export const SLACK_ALERTS_CHANNEL = 'C0CG3EGKKP1'
 /** Previews already sent or handed off before the channel was saved. */
 export const LEGACY_SLACK_CHANNEL = 'C0CHBCSEV3R'
 
@@ -93,7 +93,7 @@ export function readConfig(path = CONFIG_FILE): Config {
     keyFile: typeof raw.review?.keyFile === 'string' && raw.review.keyFile.trim()
       ? raw.review.keyFile.trim().replace(/^~(?=\/)/, HOME) : DEFAULT_REVIEW.keyFile,
   }
-  const channel = (typeof raw.slack?.channel === 'string' && raw.slack.channel.trim()) || 'C0CG3EGKKP1'
+  const channel = (typeof raw.slack?.channel === 'string' && raw.slack.channel.trim()) || SLACK_ALERTS_CHANNEL
   return { auto, linkStickers: { hoy: raw.linkStickers?.hoy === true }, threads, slack: { channel }, r2, reel: { musicDir }, review }
 }
 
@@ -434,12 +434,6 @@ export const reviewDraft: Reviewer = async input => {
   finally { rmSync(dir, { recursive: true, force: true }) }
 }
 
-export async function reviewPush(body: string, runner: Runner = run) {
-  const { code } = await runner([HOME_NOTIFY, '--from', 'BA Eventos', 'A BA Eventos preview needs your decision',
-    '--options', 'Publicar', 'No publicar', '--body', body], 20_000)
-  if (code !== 0) throw new Error('Could not send the Home review notification.')
-}
-
 // Slack, through Hermes' slack_api.py (it reads the bot token itself).
 
 /** Slack explicitly rejected the request. A lost response is not a rejection. */
@@ -495,8 +489,16 @@ export async function slackShareTs(fileId: string, channel: string): Promise<str
   return null
 }
 
-export const slackPost = (text: string, threadTs: string, channel: string) =>
-  slack('chat.postMessage', { channel, text, thread_ts: threadTs, unfurl_links: 'false' })
+export const slackPost = (text: string, threadTs: string | null, channel: string, broadcast = false, call: typeof slack = slack) =>
+  call('chat.postMessage', { channel, text, unfurl_links: 'false', ...(threadTs ? { thread_ts: threadTs } : {}),
+    ...(threadTs && broadcast ? { reply_broadcast: 'true' } : {}),
+  })
+
+export async function slackPermalink(ts: string, channel: string, call: typeof slack = slack): Promise<string> {
+  const { permalink } = await call('chat.getPermalink', { channel, message_ts: ts })
+  if (typeof permalink !== 'string' || !permalink) throw new Error('Slack chat.getPermalink returned no permalink')
+  return permalink
+}
 
 export async function slackReactions(ts: string, channel: string) {
   const { message } = await slack('reactions.get', { channel, timestamp: ts, full: 'true' })
