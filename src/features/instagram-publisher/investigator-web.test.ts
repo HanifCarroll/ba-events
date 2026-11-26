@@ -62,3 +62,23 @@ it('suggests researching a known URL when both search endpoints fail', async () 
   await expect(researchSearch('theater')).rejects.toThrow('Web search is unavailable right now; use research on a known URL instead.')
   expect(httpsRequest).toHaveBeenCalledTimes(2)
 })
+
+it.each([200, 202])('retries quoted searches once with plain keywords (final HTTP %s)', async status => {
+  respond(202)
+  respond(202)
+  respond(202)
+  respond(status, '<a class="result-link" href="https://venue.example/">Venue</a>')
+  const quoted = '"teatro"   “independiente”  Buenos Aires'
+  const results = researchSearch(quoted)
+  if (status === 200) await expect(results).resolves.toEqual([{ title: 'Venue', url: 'https://venue.example/' }])
+  else await expect(results).rejects.toThrow('Web search is unavailable right now; use research on a known URL instead.')
+
+  const original = new URLSearchParams({ q: quoted }).toString()
+  const keywords = 'q=teatro+independiente+Buenos+Aires'
+  expect(requests.map(({ url, method, body }) => [url, method, body])).toEqual([
+    ['https://html.duckduckgo.com/html/', 'POST', original],
+    [`https://lite.duckduckgo.com/lite/?${original}`, 'GET', undefined],
+    ['https://html.duckduckgo.com/html/', 'POST', keywords],
+    [`https://lite.duckduckgo.com/lite/?${keywords}`, 'GET', undefined],
+  ])
+})

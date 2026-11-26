@@ -63,22 +63,30 @@ export async function researchPage(url: string) {
   return { url: finalUrl, title: $('title').text().trim(), text: $('body').text().replace(/\s+/gu, ' ').trim().slice(0, 18_000), links }
 }
 
-export async function researchSearch(query: string) {
+async function searchPage(query: string) {
   const form = new URLSearchParams({ q: query }).toString()
-  let response: Awaited<ReturnType<typeof page>>
-  let selector: string
   try {
-    response = await page('https://html.duckduckgo.com/html/', form)
-    selector = 'a.result__a[href]'
+    return { ...await page('https://html.duckduckgo.com/html/', form), selector: 'a.result__a[href]' }
   } catch {
-    try { response = await page(`https://lite.duckduckgo.com/lite/?${form}`) }
-    catch { throw new InvestigatorToolError('Web search is unavailable right now; use research on a known URL instead.') }
-    selector = 'a.result-link[href]'
+    const response = await page(`https://lite.duckduckgo.com/lite/?${form}`).catch(() => null)
+    return response && { ...response, selector: 'a.result-link[href]' }
   }
-  const $ = load(response.html)
+}
+
+export async function researchSearch(query: string) {
+  let response = await searchPage(query)
+  if (!response) {
+    const unquoted = query.replace(/["“”„‟]/gu, '')
+    const keywords = unquoted.replace(/\s+/gu, ' ').trim()
+    if (unquoted !== query && keywords) response = await searchPage(keywords)
+  }
+  if (!response) throw new InvestigatorToolError('Web search is unavailable right now; use research on a known URL instead.')
+
+  const { html, url: baseUrl, selector } = response
+  const $ = load(html)
   return $(selector).map((_, el) => {
     try {
-      const link = new URL($(el).attr('href')!, response.url)
+      const link = new URL($(el).attr('href')!, baseUrl)
       const redirected = (link.hostname === 'duckduckgo.com' || link.hostname.endsWith('.duckduckgo.com')) && link.pathname === '/l/'
         ? link.searchParams.get('uddg') : null
       return { title: $(el).text().trim().slice(0, 250), url: publicResearchUrl(redirected ?? link.href).href }
