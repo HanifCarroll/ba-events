@@ -290,10 +290,16 @@ Each run SHALL request only posts newer than 2 hours before the latest successfu
 - **AND** an HTTP error response, redirect, or error reading or validating an HTTP response does not trigger the fallback
 - **AND** the authenticated Worker reads the URL from that observation's stored media list, refuses expired URLs and anything outside HTTPS subdomains of `fbcdn.net` or `cdninstagram.com`, follows no redirects, and uses the same image type, 10 MiB size bound, content hash, and private retention as direct uploads
 
+#### Scenario: The Apify credit check fails before a start request
+- **WHEN** Apify reports insufficient credit or the required account-limit read fails or returns invalid data
+- **THEN** collection records the refusal with a zero charge and completion time before reporting the original check failure, without sending a start request
+- **AND** the refusal does not use the calendar-month budget; a same-day retry may reserve the same day again under current policy and re-check credit
+- **AND** at most one caller may hold the renewed reservation for a paid start
+
 #### Scenario: The collection process stops after starting Apify
 - **WHEN** the collector resumes with a retained Apify run identity
 - **THEN** it resumes that run without starting another paid collection
-- **AND** a reservation without a known run identity stops for reconciliation
+- **AND** if a start may have been sent but no run identity was saved, the reservation still counts against the monthly cap and blocks another start until reconciliation
 - **AND** a successful collection reports the measured charge when supplied by Apify and the intake calendar month's measured ledger total, cap, and count of runs missing a measured charge; the summary separately reports an observed Apify account-wide cycle usage and limit when available; a failed reporting read does not undo collection and does not replace the required limit check before a paid start
 
 ### Requirement: Agent candidates have a shared publication boundary
