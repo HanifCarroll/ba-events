@@ -488,8 +488,10 @@ export async function slackShareTs(fileId: string, channel: string): Promise<str
   return null
 }
 
-export const slackPost = (text: string, threadTs: string, channel: string, broadcast = false, call: typeof slack = slack) =>
-  call('chat.postMessage', { channel, text, thread_ts: threadTs, unfurl_links: 'false', ...(broadcast ? { reply_broadcast: 'true' } : {}) })
+export const slackPost = (text: string, threadTs: string | null, channel: string, broadcast = false, call: typeof slack = slack) =>
+  call('chat.postMessage', { channel, text, unfurl_links: 'false', ...(threadTs ? { thread_ts: threadTs } : {}),
+    ...(threadTs && broadcast ? { reply_broadcast: 'true' } : {}),
+  })
 
 export async function slackReactions(ts: string, channel: string) {
   const { message } = await slack('reactions.get', { channel, timestamp: ts, full: 'true' })

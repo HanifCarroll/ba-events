@@ -160,8 +160,8 @@ After rendering, the publisher MUST review the still frames (for a Reel, its cov
 
 #### Scenario: An unresolved review needs Hanif's decision
 - **WHEN** a current Slack preview has an unresolved review question, including a post-wide question or an investigator's `ask`, and Hanif has not reacted ✅ or ❌ and approval remains open
-- **THEN** the job posts the question and any investigation evidence in the preview thread with `reply_broadcast` so it also appears in the preview's channel
-- **AND** the job reserves at most one broadcast per draft before sending it, never retries a reserved broadcast, and skips it if the older notification was already reserved
+- **THEN** the job sends the question and any investigation evidence to the configured alerts channel (#alerts by default): it broadcasts the preview thread reply when the preview is already there, or posts a top-level message quoting the question and linking to the preview without replying in the other channel
+- **AND** the job reserves one notice per draft before sending it and skips it if the older notification was already reserved. An explicit Slack refusal releases the reservation for a later tick; an unclear response keeps it
 
 #### Scenario: Investigation fails
 - **WHEN** the investigator cannot start, times out, or exits without a complete, valid, on-time result

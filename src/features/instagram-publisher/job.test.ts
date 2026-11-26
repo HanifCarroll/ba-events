@@ -147,12 +147,12 @@ class World {
       },
       review: (...args) => this.reviewer(...args),
       investigator: this.investigator,
-      slackPost: async (text: string, threadTs: string, channel: string, broadcast?: boolean) => {
-        this.slackCalls.push({ method: 'chat.postMessage', channel, text, ts: threadTs, ...(broadcast ? { reply_broadcast: true } : {}) })
+      slackPost: async (text: string, threadTs: string | null, channel: string, broadcast?: boolean) => {
+        this.slackCalls.push({ method: 'chat.postMessage', channel, text, ...(threadTs ? { ts: threadTs } : {}), ...(broadcast ? { reply_broadcast: true } : {}) })
         if (broadcast && this.loseBroadcastResponse) throw new Error('Lost Slack response after posting')
-        if (this.slackFails > 0 && text.startsWith(this.slackFailPrefix)) { this.slackFails--; throw new Error('Slack chat.postMessage failed: ratelimited') }
-        if (/^Revis(?:ado|ión):/.test(text)) { this.reviewPosts.push({ text, threadTs }); return { ts: 'review' } }
-        this.slackPosts.push({ text, threadTs })
+        if (this.slackFails > 0 && text.startsWith(this.slackFailPrefix)) { this.slackFails--; throw new SlackRejected('Slack chat.postMessage failed: ratelimited') }
+        if (/^Revis(?:ado|ión):/.test(text)) { this.reviewPosts.push({ text, threadTs: threadTs ?? undefined }); return { ts: 'review' } }
+        this.slackPosts.push({ text, threadTs: threadTs ?? undefined })
         return { ts: `${this.nextTs++}.0` }
       },
       slackReactions: async (ts, channel) => {
@@ -206,7 +206,7 @@ async function previewed() {
 describe('tick: draft review', () => {
   const badId = uuid(1)
   const wrong: Verdict = { verdict: 'wrong', field: 'summary', reason: 'The Teatro físico flyer is for a performance, not dog training.', question: null }
-  const question: Verdict = { verdict: 'question', field: null, reason: null, question: 'Is 21:00 the show time or the doors time?' }
+  const question = { verdict: 'question', field: null, reason: null, question: 'Is 21:00 the show time or the doors time?' } satisfies Verdict
   const world = () => {
     const w = new World()
     w.config.auto.finde = true
@@ -231,32 +231,49 @@ describe('tick: draft review', () => {
     expect(w.slackCalls).toEqual([])
   })
 
-  it('broadcasts a post-wide question in the configured channel, and uses that thread after the config changes', async () => {
+  it.each([
+    { previewChannel: 'C_TEST_APPROVALS', loseResponse: false },
+    { previewChannel: 'C0CHBCSEV3R', loseResponse: false },
+    { previewChannel: 'C_TEST_APPROVALS', loseResponse: true },
+  ])('posts one question in #alerts from $previewChannel (lost response: $loseResponse)', async ({ previewChannel, loseResponse }) => {
     const w = world()
-    w.config.slack = { channel: 'C_TEST_APPROVALS' }
+    const alertsChannel = w.config.slack.channel
+    w.config.slack.channel = previewChannel
     const reviewer = w.reviewer
+    w.reviewer = async () => { throw new Error('Review unavailable') }
+    await w.job().tick()
+    const draft = w.draft()
+    expect(draft.slack).toMatchObject({ channel: previewChannel, ts: expect.any(String) })
+    if (previewChannel === 'C0CHBCSEV3R') {
+      delete draft.slack.channel
+      delete draft.slack.previews
+      writeFileSync(w.job().draftFile(draft.id), JSON.stringify(draft))
+    }
+    w.config.slack.channel = alertsChannel
     w.reviewer = async input => ({ ...(await reviewer(input)), post: question })
-    await w.job().tick()
-    const { ts } = w.draft().slack
-    expect(w.draft().slack).toMatchObject({ channel: 'C_TEST_APPROVALS', ts: expect.any(String) })
-    expect(w.slackCalls.filter(call => call.method === 'files.completeUploadExternal')).toEqual([
-      expect.objectContaining({ channel: 'C_TEST_APPROVALS', text: expect.stringContaining('Instagram draft: Este finde') }),
-    ])
-    expect(w.broadcasts()).toEqual([expect.objectContaining({ channel: 'C_TEST_APPROVALS', ts, text: expect.stringContaining(question.question) })])
-    w.config.slack.channel = 'C_TEST_MOVED'
+    w.slackCalls = []
+    const job = w.job()
+    const post = job.s.slackPost
+    job.s.slackPost = async (...args) => {
+      const response = await post(...args)
+      if (loseResponse && args[1] === null) throw new Error('Lost Slack response after posting')
+      return response
+    }
     slot(w)
+    await job.tick()
     await w.job().tick()
+    expect(w.slackCalls.filter(call => call.method === 'chat.postMessage')).toEqual([{
+      method: 'chat.postMessage', channel: alertsChannel,
+      text: `<https://app.slack.com/archives/${previewChannel}/p10|Abrí la vista previa en Slack>\n\n> Revisión: hace falta tu decisión.\n> Respondé con ✅ o ❌ en la vista previa.\n> ${question.question}`,
+    }])
     expect(w.ig.published).toHaveLength(0)
     expect(w.threads.posts).toHaveLength(0)
     w.approve()
     await w.job().tick()
     expect(w.draft()).toMatchObject({ state: 'published', threads: { state: 'published' } })
-    const threadedCalls = w.slackCalls.filter(call => call.ts)
-    expect(threadedCalls).toEqual(expect.arrayContaining([
-      expect.objectContaining({ method: 'reactions.get' }),
-      expect.objectContaining({ method: 'chat.postMessage', text: expect.stringContaining('Posted:') }),
-    ]))
-    expect(threadedCalls.every(call => call.channel === 'C_TEST_APPROVALS' && call.ts === ts)).toBe(true)
+    const approvalReads = w.slackCalls.filter(call => call.method === 'reactions.get')
+    expect(approvalReads.length).toBeGreaterThan(0)
+    expect(approvalReads.every(call => call.channel === previewChannel && call.ts === draft.slack.ts)).toBe(true)
   })
 
   it('reserves the broadcast before sending and never repeats it after a lost response or rebuild', async () => {
@@ -276,11 +293,29 @@ describe('tick: draft review', () => {
     await w.job().tick()
     expect(w.slackCalls.filter(call => call.method === 'chat.postMessage')).toEqual(w.broadcasts())
     expect(w.broadcasts()).toHaveLength(1)
+    expect(w.draft().decisionBroadcastAttempted).toBe(true)
     await w.job().regenerate(w.draft().id, [])
     await w.job().tick()
     expect(w.draft().revision).toBe(2)
     expect(w.reviewPosts.at(-1)?.threadTs).toBe(w.draft().slack.ts)
     expect(w.broadcasts()).toHaveLength(1)
+  })
+
+  it('releases a refused broadcast and retries once on the next tick', async () => {
+    const w = world()
+    w.verdict = id => id === badId ? question : OK
+    w.slackFails = 1
+    w.slackFailPrefix = 'Revisión:'
+    await w.job().tick()
+    expect(w.broadcasts()).toHaveLength(1)
+    expect(w.draft().decisionBroadcastAttempted).toBeUndefined()
+    expect(w.draft().review?.replied).toBeUndefined()
+    expect(w.reviewPosts).toEqual([])
+    await w.job().tick()
+    await w.job().tick()
+    expect(w.broadcasts()).toHaveLength(2)
+    expect(w.reviewPosts).toHaveLength(1)
+    expect(w.draft().decisionBroadcastAttempted).toBe(true)
   })
 
   it('waits for the current preview before broadcasting a question', async () => {

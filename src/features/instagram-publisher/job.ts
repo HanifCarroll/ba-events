@@ -55,7 +55,7 @@ export interface Draft {
   framesHash: string
   /** Missing only on previews that predate review. */
   review?: ReviewState
-  /** Reserved before sending a decision broadcast. Rebuilding does not clear it. */
+  /** Reserved before sending a decision notice. Rebuilding does not clear it. */
   decisionBroadcastAttempted?: boolean
   reviewHistory?: ReviewResult[]
   reviewRebuilds?: { day: string; count: number }
@@ -102,7 +102,7 @@ export interface Services {
   slackUploadFiles(frames: string[], draftId: string): Promise<Array<{ id: string; title: string }>>
   slackShareFiles(files: Array<{ id: string; title: string }>, text: string, channel: string): Promise<unknown>
   slackShareTs(fileId: string, channel: string): Promise<string | null>
-  slackPost(text: string, threadTs: string, channel: string, broadcast?: boolean): Promise<unknown>
+  slackPost(text: string, threadTs: string | null, channel: string, broadcast?: boolean): Promise<unknown>
   slackReactions(ts: string, channel: string): Promise<Array<{ name: string; users?: string[] }> | undefined>
   r2Put(bucket: string, key: string, path: string): Promise<void>
   loadToken(now: Date): Promise<TokenCheck>
@@ -822,26 +822,44 @@ export class Job {
       const threads = this.openThreadsWindow(draft)
       return (!SETTLED.includes(draft.state) && now < window.cutoff) || Boolean(threads && now < threads.cutoff)
     }
-    let broadcast = false
+    let sendNotice = false
     if (needsDecision && !draft.decisionBroadcastAttempted && !review.homeAttempted && approvalOpen()
       && this.previewThreads(draft).some(preview => preview.ts === ts && preview.channel === channel && preview.revision === draft.revision)) {
       const decision = await this.readDecision(draft)
-      broadcast = !anyApproval(decision) && !decision.rejected && approvalOpen()
+      sendNotice = !anyApproval(decision) && !decision.rejected && approvalOpen()
     }
-    if (!broadcast && reply.replied) return
     const markReplied = () => {
       reply.replied = true
       review.replied = true
       this.save(draft)
     }
-    if (broadcast) {
-      // Reserve both before sending: a lost response must not cause a second broadcast or thread reply.
-      draft.decisionBroadcastAttempted = true
-      markReplied()
+    if (!sendNotice) {
+      if (!reply.replied) await this.reviewAction(draft, 'Slack reply', async () => {
+        await this.s.slackPost(text, ts, channel)
+        markReplied()
+      })
+      return
     }
-    await this.reviewAction(draft, broadcast ? 'Slack decision broadcast' : 'Slack reply', async () => {
-      await this.s.slackPost(text, ts, channel, broadcast)
-      if (!broadcast) markReplied()
+    const alertsChannel = this.s.config().slack.channel
+    const broadcast = channel === alertsChannel
+    const notice = broadcast ? text : `<https://app.slack.com/archives/${channel}/p${ts.replace('.', '')}|Abrí la vista previa en Slack>\n\n${text.split('\n').map(line => `> ${line}`).join('\n')}`
+    const replyWasSent = reply.replied
+    const reviewWasSent = review.replied
+    // Reserve before sending. A lost response must not cause a second notice or thread reply.
+    draft.decisionBroadcastAttempted = true
+    markReplied()
+    await this.reviewAction(draft, 'Slack decision notice', async () => {
+      try {
+        await this.s.slackPost(notice, broadcast ? ts : null, alertsChannel, broadcast)
+      } catch (error) {
+        if (error instanceof runtime.SlackRejected) {
+          delete draft.decisionBroadcastAttempted
+          reply.replied = replyWasSent
+          review.replied = reviewWasSent
+          this.save(draft)
+        }
+        throw error
+      }
     })
   }
 

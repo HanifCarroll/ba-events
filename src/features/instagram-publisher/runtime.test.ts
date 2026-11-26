@@ -64,16 +64,18 @@ describe('alert command', () => {
   })
 })
 
-it.each([undefined, true])('posts a reply in the preview thread (broadcast: %s)', async broadcast => {
+it.each([
+  { name: 'thread reply', threadTs: '1.0', broadcast: false, fields: { thread_ts: '1.0' } },
+  { name: 'thread broadcast', threadTs: '1.0', broadcast: true, fields: { thread_ts: '1.0', reply_broadcast: 'true' } },
+  { name: 'top-level notice', threadTs: null, broadcast: false, fields: {} },
+])('posts a Slack $name with only its required fields', async ({ threadTs, broadcast, fields }) => {
   const text = 'Is the show at 21:00? React on the Slack preview.'
   const call = async (method: string, payload: Record<string, string>) => {
     expect(method).toBe('chat.postMessage')
-    expect(payload).toEqual({ channel: 'C_APPROVALS', text, thread_ts: '1.0', unfurl_links: 'false',
-      ...(broadcast ? { reply_broadcast: 'true' } : {}),
-    })
+    expect(payload).toEqual({ channel: 'C_APPROVALS', text, unfurl_links: 'false', ...fields })
     return { ts: '2.0' }
   }
-  expect(await slackPost(text, '1.0', 'C_APPROVALS', broadcast, call)).toEqual({ ts: '2.0' })
+  expect(await slackPost(text, threadTs, 'C_APPROVALS', broadcast, call)).toEqual({ ts: '2.0' })
 })
 
 describe('catalog read', () => {
