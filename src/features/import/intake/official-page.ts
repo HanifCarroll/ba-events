@@ -3,7 +3,7 @@ import { load, type CheerioAPI } from 'cheerio/slim'
 import { es } from 'date-fns/locale'
 import { formatInTimeZone } from 'date-fns-tz'
 import { Effect } from 'effect'
-import { APPROXIMATE, ENTRY_LABEL, clockTokens, isApproximateClock } from './clock-evidence.ts'
+import { APPROXIMATE, ENTRY_LABEL, clockTokens, isApproximateClock, isApproximateDuration, isApproximateDurationTail, isEntryClock } from './clock-evidence.ts'
 import { normalizeTitle } from './planning.ts'
 import { isOfficialPage, validPublicUrl, type Evidence } from './schema.ts'
 import { TICKET_SELLERS } from '#shared/lib/ticket-sellers.ts'
@@ -388,12 +388,14 @@ const ENTRY_CLOCK = String.raw`(?<hour>[01]?\d|2[0-3])(?:[:.](?<minute>[0-5]\d))
 const ENTRY_LINE = new RegExp(String.raw`^${ENTRY_LABEL}${LABEL_GAP}(?:a las? )?${ENTRY_CLOCK}(?: *[.;|] +(?<tail>.+?))?\.?$`)
 const SHOW_SUBJECT = '(?:el (?:espectaculo|show|concierto)|la funcion)'
 const SHOW_VERB = '(?:comienza|empieza)'
-const SHOW_AFTER_DINNER = new RegExp(`^(?:servimos la cena y )?(?:luego|despues)(?: de la cena)? ${SHOW_VERB} ${SHOW_SUBJECT}$`)
+const SHOW_AFTER_DINNER = new RegExp(`^(?:(?:servimos la cena y )?(?:luego|despues)(?: de la cena)? ${SHOW_VERB} ${SHOW_SUBJECT}|${SHOW_SUBJECT} ${SHOW_VERB} despues de la cena)$`)
+const SHOW_LABEL = new RegExp(String.raw`\b(?:show|funcion|inicio(?: del (?:show|espectaculo|concierto)| de la funcion)?|${SHOW_VERB} ${SHOW_SUBJECT}|${SHOW_SUBJECT} ${SHOW_VERB})${LABEL_GAP}(?:a las? )?$`)
 const SHOW_CLOCK = String.raw`(?:[01]?\d|2[0-3])(?:[:.][0-5]\d)?(?: ?(?:horas|hs?))?`
-const APPROX_CLOCK = String.raw`(?:${APPROXIMATE} (?:(?:a )?las? )?${SHOW_CLOCK}|(?:a las? )?${SHOW_CLOCK},? (?:\(${APPROXIMATE}\)|${APPROXIMATE}))`
+const APPROX_CLOCK = String.raw`(?:${APPROXIMATE} (?:(?:a )?las? )?${SHOW_CLOCK}|(?:a las? )?${SHOW_CLOCK}[,.]? (?:\(${APPROXIMATE}\)|${APPROXIMATE}))`
 const APPROX_SHOW = new RegExp(`^(?:${APPROX_CLOCK},? ${SHOW_VERB} ${SHOW_SUBJECT}|${SHOW_SUBJECT} ${SHOW_VERB} ${APPROX_CLOCK}|(?:show|inicio|funcion)${LABEL_GAP}${APPROX_CLOCK})$`)
 const DOORS_LINE_REASON = 'must quote a complete entry line or one date followed by labeled doors and show times'
 const APPROX_START_REASON = 'states only an approximate start time; cite an exact start or leave it TBA'
+const EXPLICIT_START_REASON = 'needs an explicit show start because the page states a separate entry time'
 
 /** A standalone entry clause may be followed by an approximate show or a show with no clock, never another entry. */
 function standaloneEntryClock(excerpt: string): string | undefined {
@@ -461,7 +463,8 @@ function pairDateReason(text: string, date: string): string | null {
 }
 
 const citesTiming = (fields: readonly string[]) => fields.includes('date') || fields.includes('time') || fields.includes('doors_time')
-const citesOnlyDoors = (fields: readonly string[]) => fields.length === 1 && fields[0] === 'doors_time'
+const citesOnly = (fields: readonly string[], field: string) => fields.length === 1 && fields[0] === field
+const citesOnlyDoors = (fields: readonly string[]) => citesOnly(fields, 'doors_time')
 const doorsMismatch = (time: string) => `states doors open at ${time}; set the candidate's doors time to match`
 const doorsDateMismatch = (date: string) => `states doors open on ${date}; set the candidate's doors date to match`
 
@@ -500,6 +503,7 @@ export function excerptFactsReason(excerpt: string, fields: readonly string[], f
   const calendar = afterHourRanges.replace(CLOCK, (token, prefix: string, h: string, separator: string, m: string, period: string, unit: string, offset: number) => {
     // A bare number is a day, not a clock; an explicit unit or meridiem ("viernes 20 hs") still makes it a clock.
     if (separator !== ':' && !prefix && !period && !unit) return token
+    if (isApproximateDuration(afterHourRanges.slice(0, offset), afterHourRanges.slice(offset))) return ' '
     const hours = Number(h)
     const localHour = period && hours >= 1 && hours <= 12 ? hours % 12 + (period === 'p' ? 12 : 0) : period ? -1 : hours
     const betweenClocks = previousClockEnd === undefined ? null : afterHourRanges.slice(previousClockEnd, offset)
@@ -545,20 +549,44 @@ export function excerptFactsReason(excerpt: string, fields: readonly string[], f
   return null
 }
 
+const hasEntryClock = (line: string) => DOORS_WORD.test(line) && [...clockTokens(line, { allowEntryHour: true })]
+  .some(clock => isEntryClock(line.slice(0, clock.start), line.slice(clock.end)))
+
+function directlyLabelsShow(before: string): boolean {
+  const match = SHOW_LABEL.exec(before)
+  if (!match) return false
+  // A role label starts a clause or follows a date. "Fin del show" and titles ending in "show" don't count.
+  const prefix = before.slice(0, match.index).trim()
+  return !prefix || /[:|;.,–—-]$/.test(prefix) || PAIR_DATE.test(prefix)
+}
+
+function supportsSeparatePageTiming(excerpt: string, fields: readonly string[], facts: PageFacts): boolean {
+  if (!facts.time) return false
+  if (citesOnly(fields, 'date')) return !excerptFactsReason(excerpt, fields, { ...facts, time: null })
+  if (!citesOnly(fields, 'time')) return false
+  // A complete standalone show line cannot supply the date; planning still requires a separate citation for it.
+  const [clock] = clockTokens(excerpt, { allowIntroducedHour: true })
+  if (clock?.time !== facts.time || SHOW_LABEL.exec(excerpt.slice(0, clock.start))?.index !== 0) return false
+  const after = excerpt.slice(clock.end)
+  return /^ *\.?$/.test(after) || isApproximateDurationTail(after)
+}
+
 /** Check every occurrence, including cross-line excerpts, against the complete lines it touches. */
-function matchedTimingReason(visible: string, quoted: RegExp, fields: readonly string[], facts: PageFacts): string | null {
-  const lines = visible.split(/\r\n?|\n/).map(normalizePageText).filter(Boolean)
-  let first = 0, offset = 0
+function matchedTimingReason(lines: readonly string[], quoted: RegExp, fields: readonly string[], facts: PageFacts,
+  { needsShowLabel, standaloneShow }: { needsShowLabel: boolean; standaloneShow: boolean }): string | null {
+  let first = 0, offset = 0, missingShowLabel = false
   // Lookahead includes overlapping matches so an unmarked copy of a quote never masks a marked one.
   for (const { 1: text, index } of lines.join(' ').matchAll(new RegExp(`(?=(${quoted.source}))`, 'gu'))) {
     while (offset + lines[first].length <= index) offset += lines[first++].length + 1
     let last = first, end = offset + lines[first].length
     while (end < index + text.length) end += lines[++last].length + 1
     const context = lines.slice(first, last + 1).join(' ')
-    if (citesOnlyDoors(fields) && standaloneEntryClock(text) && (first !== last || text !== context)) {
-      return 'does not quote the complete visible entry line'
+    if (first !== last || text !== context) {
+      if (citesOnlyDoors(fields) && standaloneEntryClock(text)) return 'does not quote the complete visible entry line'
+      if (standaloneShow) return 'does not quote the complete visible show line'
     }
-    if (DOORS_WORD.test(context)) {
+    const hasDoorsWord = DOORS_WORD.test(context)
+    if (hasDoorsWord) {
       const reason = excerptFactsReason(context, fields, facts)
       if (reason) return reason
     } else {
@@ -566,18 +594,22 @@ function matchedTimingReason(visible: string, quoted: RegExp, fields: readonly s
       if (RUN_END_PREFIX.test(context.slice(0, index - offset))) return RUN_END
     }
     const start = index - offset, stop = start + text.length
+    let labeledStart = hasDoorsWord // The complete dated doors/show pair already verified above.
     for (const clock of clockTokens(context, { allowIntroducedHour: true })) {
       if (clock.start >= stop || clock.end <= start) continue
       if (clock.start < start || clock.end > stop) return CUT_CLOCK
-      if (fields.includes('time') && (!facts.time || clock.time === facts.time) &&
-        isApproximateClock(context.slice(0, clock.start), context.slice(clock.end))) return APPROX_START_REASON
+      if (!fields.includes('time') || facts.time && clock.time !== facts.time) continue
+      const before = context.slice(0, clock.start), after = context.slice(clock.end)
+      if (isApproximateClock(before, after)) return APPROX_START_REASON
+      if (needsShowLabel && directlyLabelsShow(before)) labeledStart = true
     }
+    if (needsShowLabel && !labeledStart) missingShowLabel = true
   }
-  return null
+  return missingShowLabel ? EXPLICIT_START_REASON : null
 }
 
 function pageReason({ visible, title, titleName, ogTitle, h1, h1WithoutRating, h1WithoutSite, selected, calendar, identityNeedsRender }: PageRead, quoted: RegExp, excerpt: string,
-  fields: readonly string[], facts: PageFacts, missing: string | null): string | null {
+  fields: readonly string[], facts: PageFacts, missing: string | null, separateTiming: boolean): string | null {
   if (calendar) {
     if (fields.some(field => field !== 'date' && field !== 'time')) return 'A calendar performance excerpt can only support date and time'
     const venueHost = facts.venueWebsite && hostOf(facts.venueWebsite)
@@ -588,17 +620,21 @@ function pageReason({ visible, title, titleName, ogTitle, h1, h1WithoutRating, h
     if (!match) return 'Official page calendar evidence must quote the matching performance line (YYYY-MM-DD HH:mm | Show title)'
     return facts.time === match.time ? null : `Official page calendar performance starts at ${match.time}; set the candidate's start time to match`
   }
-  if (missing) return `Official page excerpt ${missing}`
   const timingEvidence = citesTiming(fields)
+  const lines = timingEvidence ? visible.split(/\r\n?|\n/).map(normalizePageText).filter(Boolean) : []
+  const pageStatesEntry = lines.some(hasEntryClock)
+  if (missing && !(pageStatesEntry && separateTiming)) return `Official page excerpt ${missing}`
   if (selected === null && timingEvidence) return INVALID_FANZ_SELECTION
   const selectedLine = selected?.lines.some(line => quoted.test(normalizePageText(line)))
+  const needsShowLabel = pageStatesEntry && fields.includes('time')
   if (selected && (selectedLine || timingEvidence)) {
     if (selectedLine && fields.some(field => field !== 'date' && field !== 'time')) return 'The selected performance excerpt can only support date and time'
-    // Keep selected-performance checks; only the separate entry line may be outside the picker or card.
+    // A separate show line can establish the start, but it cannot replace validation of the selected occurrence.
     const separateEntry = citesOnlyDoors(fields) && standaloneEntryClock(excerpt)
-    if (!selected.confirmed || !selectedLine && (!separateEntry || !selected.lines.length)) return MISSING_PERFORMANCE
+    if (!selected.confirmed || !selectedLine && (!selected.lines.length || !separateEntry && !needsShowLabel)) return MISSING_PERFORMANCE
     if (selected.date !== facts.date) return `Official page excerpt does not state the selected performance date ${facts.date}`
-    if (fields.includes('time') && facts.time && (selected.time !== facts.time || !excerpt.includes(selected.time))) {
+    if (selectedLine && needsShowLabel) return `Official page excerpt ${EXPLICIT_START_REASON}`
+    if (selectedLine && fields.includes('time') && facts.time && (selected.time !== facts.time || !excerpt.includes(selected.time))) {
       return `Official page excerpt does not state the performance start time ${facts.time}`
     }
     const selectedName = normalizeTitle(facts.name)
@@ -608,7 +644,7 @@ function pageReason({ visible, title, titleName, ogTitle, h1, h1WithoutRating, h
     return MISSING_EXCERPT
   }
   if (timingEvidence) {
-    const reason = matchedTimingReason(visible, quoted, fields, facts)
+    const reason = matchedTimingReason(lines, quoted, fields, facts, { needsShowLabel, standaloneShow: separateTiming && citesOnly(fields, 'time') })
     if (reason) return `Official page excerpt ${reason}`
   }
   if (identityNeedsRender) return UNCONFIRMED_HEADING
@@ -637,13 +673,14 @@ export const verifyOfficialPagesEffect = (evidence: readonly Evidence[], facts: 
     const excerpt = normalizePageText(page.excerpt)
     if (excerpt.length < MIN_EXCERPT) { reasons[index] = `Official page excerpt is too short to verify: ${page.url}`; continue }
     const missing = excerptFactsReason(excerpt, page.fields, facts)
-    // Calendar titles can contain dates, clocks, and doors words; defer those citations until the page type is known.
-    if (missing && !CALENDAR_CITATION.test(excerpt)) {
+    // Calendar titles and separate date/show citations depend on the rest of the visible page.
+    const separateTiming = !!missing && supportsSeparatePageTiming(excerpt, page.fields, facts)
+    if (missing && !separateTiming && !CALENDAR_CITATION.test(excerpt)) {
       reasons[index] = `Official page excerpt ${missing}: ${page.url}`; continue
     }
     const quoted = excerptPattern(excerpt)
     const group = groups.get(page.url) ?? []
-    group.push({ index, quoted, check: value => pageReason(value, quoted, excerpt, page.fields, facts, missing) })
+    group.push({ index, quoted, check: value => pageReason(value, quoted, excerpt, page.fields, facts, missing, separateTiming) })
     groups.set(page.url, group)
   }
   for (const [url, group] of groups) {

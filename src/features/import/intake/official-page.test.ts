@@ -220,6 +220,7 @@ describe('official-page evidence', () => {
     ['Abrimos las puertas a las 21h', '21:00'],
     ['Ingreso 17h', '17:00'],
     ['Ingreso a las 20:30. Servimos la cena y luego comienza el espectáculo', '20:30'],
+    ['Ingreso a las 20:30. El espectáculo comienza después de la cena.', '20:30'],
     ['Ingreso a las 21. A las 21:45 aproximadamente comienza el espectáculo.', '21:00'],
     ['Apertura de puertas 20 hs', '20:00'],
     ['Puertas: 20:30', '20:30'],
@@ -243,6 +244,39 @@ describe('official-page evidence', () => {
     expect(await verify(['time'], { ...available, time: null })).toHaveLength(1)
     expect(await verify(['date', 'doors_time'])).toHaveLength(1)
     expect(await verify(['doors_time'], { ...available, doorsDate: '2026-11-24' })).toHaveLength(1)
+  })
+
+  it.each([
+    ['21:00', 'Abrimos las puertas a las 21h'],
+    ['22:00', 'Ingreso 21 h | Show: 22:30 (aprox.)'],
+    ['22:00', 'Horarios de la sala: ingreso a las 21 h. Consultar por mesa.'],
+    ['21:00', '21:00 (ingreso)'],
+  ])('rejects unlabeled %s on a page that states %s even without a doors citation', async (start, entry) => {
+    const name = 'Cuarteto Jacarandá'
+    const line = `Lunes 23 de noviembre: ${start}`
+    const at = { ...facts, name, time: start }
+    const read = readHtml(`<h1>${name}</h1><p>${line}</p><p>${entry}</p>`)
+    const verify = (fields: Parameters<typeof evidence>[2]) => Effect.runPromise(verifyOfficialPagesEffect([evidence(officialUrl, line, fields)], at, read))
+    expect(await verify(['time'])).toEqual([expect.stringContaining('explicit show start')])
+    expect(await verify(['date'])).toEqual([])
+  })
+
+  it.each(['21:00 (ingreso)', '21 hs - ingreso', '21h: apertura de puertas'])('does not let a shortened quote hide trailing %s', async timing => {
+    const line = `Lunes 23 de noviembre: ${timing}`
+    const quote = line.replace(/ *[(:-] *(?:ingreso|apertura de puertas).*$/, '')
+    const read = readHtml(`<h1>${facts.name}</h1><p>${line}</p>`)
+    expect(await Effect.runPromise(verifyOfficialPagesEffect([evidence(officialUrl, quote, ['time'])], facts, read))).toHaveLength(1)
+  })
+
+  it.each([
+    ['Show 21 hs. aprox.', '21:00', false],
+    ['Show 22hs (aprox. 90 minutos)', '22:00', true],
+    ['Show 22hs, aprox. 2 horas', '22:00', true],
+  ] as const)('distinguishes an approximate start and duration on a dated show line: %s', async (timing, time, exact) => {
+    const line = `Lunes 23 de noviembre: ${timing}`
+    const read = readHtml(`<h1>${facts.name}</h1><p>${line}</p><p>Ingreso 20h.</p>`)
+    const reasons = await Effect.runPromise(verifyOfficialPagesEffect([evidence(officialUrl, line, ['time'])], { ...facts, time }, read))
+    expect(reasons).toHaveLength(exact ? 0 : 1)
   })
 
   it('lets a separate exact show line support a known start', async () => {
@@ -1175,6 +1209,32 @@ describe('official-page evidence', () => {
     expect(await verify(html.replace(`<p>${entry}</p>`, `<p hidden>${entry}</p>`))).toEqual([
       `Official page evidence must be an excerpt of the page's visible text: ${CAMARIN_URL}`,
     ])
+  })
+
+  it.each([
+    ['21:00', 'Abrimos las puertas a las 21h'],
+    ['22:00', 'Ingreso 21 h | Show: 22:30 (aprox.)'],
+  ])('uses a Fanz picker only for the date when the page states separate doors: %s / %s', async (pickerTime, entry) => {
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-11-20T12:00:00Z'))
+    const url = 'https://teatro.example.org/event/42?eventDateId=17'
+    const name = 'Tardes de Acuarela'
+    const picker = `Empieza el sáb. 28 de nov 2026 a las ${pickerTime} - 23:15`
+    const show = 'El espectáculo comienza a las 23'
+    const pair = 'Sábado 28 de noviembre | Puerta 21 hs | Show 23 hs'
+    const fixture = (extra = '') => camarinPage('17', name, extra)
+      .replace(CAMARIN_EXCERPT, picker)
+      .replace('2026-11-29T01:00:00.000Z', pickerTime === '21:00' ? '2026-11-29T00:00:00.000Z' : '2026-11-29T01:00:00.000Z')
+    const verify = (time: string | null, citations: ReturnType<typeof evidence>[], extra = '') => Effect.runPromise(verifyOfficialPagesEffect(citations,
+      { ...facts, name, date: '2026-11-28', time, doorsTime: '21:00' }, readHtml(fixture()), camarinRender(fixture(`<p>${entry}</p>${extra}`))))
+    const calendar = evidence(url, picker, ['date'])
+    const doors = evidence(url, entry, ['doors_time'])
+    expect(await verify(null, [calendar, doors])).toEqual([])
+    expect(await verify(pickerTime, [calendar, doors, evidence(url, picker, ['time'])])).toEqual([expect.stringContaining('explicit show start')])
+    const showEvidence = evidence(url, show, ['time'])
+    expect(await verify('23:00', [calendar, doors, showEvidence], `<p>${show}</p>`)).toEqual([])
+    expect(await verify('23:00', [calendar, doors, showEvidence], `<p>${show}, solo si no llueve</p>`))
+      .toEqual([expect.stringContaining('complete visible show line')])
+    expect(await verify('23:00', [calendar, evidence(url, pair, ['time', 'doors_time'])], `<p>${pair}</p>`)).toEqual([])
   })
 
   it('does not accept Fanz JSON or a hidden date-picker line as visible evidence', async () => {

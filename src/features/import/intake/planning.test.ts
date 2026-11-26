@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { candidateError, decodeCandidate } from './schema.ts'
 import { candidateDoors, candidateStart, canonicalTicket, citesTicketDestination, decideMatch, ticketDestinationChanged,
-  validateEvidence, type Observation, type Media, type CatalogMatch } from './planning.ts'
+  separatelyCitedDoors, validateEvidence, type Observation, type Media, type CatalogMatch } from './planning.ts'
 import { allowedInstagramMedia, fetchInstagramImage, mediaUrls } from './collection.ts'
 
 const id = '10000000-0000-4000-8000-000000000001'
@@ -127,6 +127,13 @@ describe('Instagram candidate publication rules', () => {
       .toContain('Equal doors and start times need two separate clocks in the doors excerpt')
     const both = `${single}\nShow: 9 PM`
     expect(validateEvidence({ ...input, evidence: evidence(both) }, [{ ...post, caption: both }], [], now)).toEqual([])
+  })
+  it('does not count an official picker range as two roles when the plan keeps stored doors', () => {
+    const page = { kind: 'official_page' as const, url: 'https://teatro.example.org/obra', fields: ['time'] as const }
+    const picker = { ...page, excerpt: 'Empieza el lun. 23 de nov 2026 a las 21:00 - 21:00' }
+    expect(separatelyCitedDoors([picker], '21:00', [], true)).toBe(false)
+    const pair = { ...page, excerpt: 'Lunes 23 de noviembre | Puertas 21 hs | Show 21 hs' }
+    expect(separatelyCitedDoors([pair], '21:00', [], true)).toBe(true)
   })
   it('requires an explicit doors date before 06:00 even when only doors are known', () => {
     const excerpt = 'Synthetic Jazz, Puerta 00:30'

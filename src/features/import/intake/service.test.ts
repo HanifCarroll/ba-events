@@ -353,6 +353,24 @@ describe('intake failure and retry orchestration', () => {
     await expect(Effect.runPromise(commitPlanEffect(db, preview.id, publishers))).resolves.toEqual(receipt)
   })
 
+  it('refuses at commit when an official page now identifies its unlabeled start as doors', async () => {
+    const url = 'https://sala.example.org/show'
+    const excerpt = 'Empieza el lun. 23 de nov 2026 a las 21:00 - 23:30'
+    const ready = { ...plan, payload: { ...plan.payload, starts_at: '2026-11-24T00:00:00.000Z', venue_id: 'venue' },
+      evidence: [{ kind: 'official_page' as const, url, fields: ['date', 'time'] as const, excerpt }] }
+    const commit = vi.fn(() => Effect.succeed(receipt))
+    const store = commitStore(ready, {
+      venue: () => Effect.succeed({ id: 'venue', name: 'Sala Nube', neighborhood: 'Palermo', website: 'https://sala.example.org' }),
+      observationsByIds: () => Effect.succeed([]), commitPlan: commit,
+    })
+    const readPage = (url: string, sites: ReadonlySet<string>) => readOfficialPage(url, sites, async () => new Response(
+      `<h1>${ready.payload.name}</h1><p>${excerpt}</p><p>Abrimos las puertas a las 21h</p>`, { headers: { 'content-type': 'text/html' } }))
+    await expect(Effect.runPromise(commitPlanEffect(store, ready.id, { readPage,
+      embed: async () => { throw new Error('Unexpected embedding') }, presentation: async () => { throw new Error('Unexpected presentation') },
+    }))).rejects.toThrow('needs an explicit show start')
+    expect(commit).not.toHaveBeenCalled()
+  })
+
   it('overlaps publication preparation but waits for both results before writing', async () => {
     const unprepared = { ...plan, artwork_media_id: null, payload: { ...plan.payload, embedding: undefined, venue_id: 'venue' } }
     const calls: string[] = []

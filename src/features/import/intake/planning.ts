@@ -144,7 +144,9 @@ export const SAME_CLOCK_RETAINED_REASON = 'Equal retained doors and start times 
 export function separatelyCitedDoors(evidence: Candidate['evidence'], time: string, observations: readonly Observation[], doorsRetained = false): boolean {
   return evidence.some(item => {
     if (!item.fields.includes('doors_time') && !(doorsRetained && item.fields.includes('time'))) return false
-    if (isOfficialPage(item) || item.media_id) return citesClock(item.excerpt, time, undefined, 2, 'doors')
+    // A page's range end or a second unlabeled clock does not prove doors and the show are equal.
+    if (isOfficialPage(item)) return citesClock(item.excerpt, time, undefined, 1, 'entry') && citesClock(item.excerpt, time, undefined, 1, 'start')
+    if (item.media_id) return citesClock(item.excerpt, time, undefined, 2, 'doors')
     const post = observations.find(post => post.id === item.observation_id)
     return post && citesIntakeClock(item.excerpt, time, post.caption, requiresWholeCaptionExcerpt(item.fields), 2, 'doors')
   })
