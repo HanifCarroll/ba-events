@@ -3,7 +3,7 @@ import type { Candidate } from './schema.ts'
 import { isOfficialPage, validPublicUrl } from './schema.ts'
 import { citesCreditName, isExcludedCreditName } from '#shared/lib/event-credit-evidence.ts'
 import { TICKET_SELLERS } from '#shared/lib/ticket-sellers.ts'
-import { captionLabelsFlyerDoors, citesClock, citesDateAndClock } from './clock-evidence.ts'
+import { citesClock, citesDateAndClock, normalizeEvidenceText } from './clock-evidence.ts'
 
 export type Observation = {
   id: string; post_id: string; source_username: string; caption: string;
@@ -121,7 +121,7 @@ export function suppliedDetailFacts(candidate: Candidate): string[] {
     .filter(([, value]) => value !== undefined).map(([field]) => field)
 }
 
-const wholeLineFields: readonly string[] = ['organizer', 'performers', 'doors_time', 'offers_valid_from']
+const wholeLineFields: readonly string[] = ['organizer', 'performers', 'offers_valid_from']
 export const requiresWholeCaptionExcerpt = (fields: readonly string[]) => fields.some(field => wholeLineFields.includes(field))
 
 const captionLines = (text: string) => text.trim().split(/\r?\n/u).map(line => line.trim())
@@ -133,10 +133,9 @@ export function isWholeCaptionExcerpt(caption: string, excerpt: string): boolean
 
 export const SAME_CLOCK_REASON = 'Equal doors and start times need two separate clocks in the doors excerpt'
 
-export function citesIntakeClock(excerpt: string, time: string, caption: string | undefined, wholeLines: boolean, count = 1,
-  role?: 'start' | 'doors'): boolean {
-  if (caption !== undefined && wholeLines) return citesClock(captionLines(excerpt).join('\n'), time, captionLines(caption).join('\n'), count, role)
-  return citesClock(excerpt, time, caption, count, role)
+export function citesIntakeClock(excerpt: string, time: string, caption: string | undefined, wholeLines: boolean, count = 1): boolean {
+  if (caption !== undefined && wholeLines) return citesClock(captionLines(excerpt).join('\n'), time, captionLines(caption).join('\n'), count)
+  return citesClock(excerpt, time, caption, count)
 }
 
 export const SAME_CLOCK_RETAINED_REASON = 'Equal retained doors and start times need two separate clocks in one excerpt'
@@ -144,11 +143,10 @@ export const SAME_CLOCK_RETAINED_REASON = 'Equal retained doors and start times 
 export function separatelyCitedDoors(evidence: Candidate['evidence'], time: string, observations: readonly Observation[], doorsRetained = false): boolean {
   return evidence.some(item => {
     if (!item.fields.includes('doors_time') && !(doorsRetained && item.fields.includes('time'))) return false
-    // A page's range end or a second unlabeled clock does not prove doors and the show are equal.
-    if (isOfficialPage(item)) return citesClock(item.excerpt, time, undefined, 1, 'entry') && citesClock(item.excerpt, time, undefined, 1, 'start')
-    if (item.media_id) return citesClock(item.excerpt, time, undefined, 2, 'doors')
+    if (isOfficialPage(item)) return citesClock(normalizeEvidenceText(item.excerpt), time, undefined, 2)
+    if (item.media_id) return citesClock(item.excerpt, time, undefined, 2)
     const post = observations.find(post => post.id === item.observation_id)
-    return post && citesIntakeClock(item.excerpt, time, post.caption, requiresWholeCaptionExcerpt(item.fields), 2, 'doors')
+    return post && citesIntakeClock(item.excerpt, time, post.caption, requiresWholeCaptionExcerpt(item.fields), 2)
   })
 }
 
@@ -188,17 +186,13 @@ export function validateEvidence(candidate: Candidate, observations: Observation
     if (evidence.media_id) {
       if (!media.some(item => item.id === evidence.media_id && item.observation_id === post.id)) reasons.push('Flyer evidence is not attached to this observation')
     } else if (wholeLines) {
-      if (!isWholeCaptionExcerpt(post.caption, evidence.excerpt)) reasons.push('Credit, doors, and sale-opening caption evidence must quote complete lines')
+      if (!isWholeCaptionExcerpt(post.caption, evidence.excerpt)) reasons.push('Credit and sale-opening caption evidence must quote complete lines')
     } else if (!post.caption.includes(evidence.excerpt)) reasons.push('Caption evidence must be an exact excerpt')
     const caption = evidence.media_id ? undefined : post.caption
     if (candidate.time && evidence.fields.includes('time')) {
-      if (evidence.media_id && captionLabelsFlyerDoors(post.caption)) {
-        reasons.push('The caption identifies flyer times as doors, not the show start')
-      } else if (!citesIntakeClock(evidence.excerpt, candidate.time, caption, wholeLines, 1, 'start')) {
-        reasons.push('Start time must appear in the cited excerpt')
-      }
+      if (!citesIntakeClock(evidence.excerpt, candidate.time, caption, wholeLines)) reasons.push('Start time must appear in the cited excerpt')
     }
-    if (doorTime && evidence.fields.includes('doors_time') && !citesIntakeClock(evidence.excerpt, doorTime, caption, wholeLines, 1, 'doors')) {
+    if (doorTime && evidence.fields.includes('doors_time') && !citesIntakeClock(evidence.excerpt, doorTime, caption, wholeLines)) {
       reasons.push('Door time must appear in the cited excerpt')
     }
     for (const field of evidence.fields) supported.add(field)
