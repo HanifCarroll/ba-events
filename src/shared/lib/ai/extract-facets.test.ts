@@ -100,6 +100,20 @@ describe('extractEventFacets', () => {
     )
   })
 
+  it.each([
+    { organizer: { name: 'Colectivo Nube', excerpt: 'x'.repeat(601) } },
+    { organizer: { name: 'Colectivo Nube' } },
+    { performers: Array.from({ length: 31 }, () => ({ name: 'Trío Sol', excerpt: 'Actúa Trío Sol.' })) },
+  ])('retains concert and music facets when model credit validation fails', async fields => {
+    generateObjectMock.mockImplementation(async ({ schema }) => ({ object: schema.parse({
+      eventType: ['concert'], activities: ['live-music'], ...fields,
+    }) }))
+    const facets = await extractEventFacets({ name: 'Jazz', description_es: 'Actúa Trío Sol.' })
+    expect(facets).toMatchObject({ eventType: ['concert'], activities: ['live-music'] })
+    expect(facets).not.toHaveProperty('organizer')
+    expect(facets).not.toHaveProperty('performers')
+  })
+
   it('returns the literal empty object {} when generateObject fails', async () => {
     generateObjectMock.mockRejectedValue(new Error('boom'))
 

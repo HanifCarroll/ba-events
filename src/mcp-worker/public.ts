@@ -38,6 +38,7 @@ export type PublicEvent = {
   description: string | null
   startsAt: string
   endsAt: string | null
+  doorsAt?: string
   isAllDay: boolean
   timeTba: boolean
   categories: string[]
@@ -80,6 +81,7 @@ export function toPublicEvent(event: PublicEventRecord): PublicEvent {
     description: publicDescription(event),
     startsAt: event.starts_at,
     endsAt: event.ends_at,
+    ...(event.doors_at ? { doorsAt: event.doors_at } : {}),
     isAllDay: event.is_all_day,
     timeTba: event.time_tba,
     categories: event.categories,
@@ -100,7 +102,7 @@ export function publicOutput(events: PublicEventRecord[], error?: string, note?:
 export const publicOutputSchema = z.object({
   events: z.array(z.object({
     id: z.string().uuid(), url: z.string().url(), name: z.string().max(500), description: z.string().max(2_000).nullable(),
-    startsAt: z.string(), endsAt: z.string().nullable(), isAllDay: z.boolean(), timeTba: z.boolean(),
+    startsAt: z.string(), endsAt: z.string().nullable(), doorsAt: z.string().optional(), isAllDay: z.boolean(), timeTba: z.boolean(),
     categories: z.array(z.string()), price: z.number().nullable(), isFree: z.boolean(), minAge: z.number().nullable(),
     imageUrl: z.string().url().nullable(), sourceUrl: z.string().url().nullable(), ticketUrl: z.string().url().nullable(),
     venue: z.object({ name: z.string().nullable(), neighborhood: z.string().nullable(), address: z.string().nullable().optional() }),

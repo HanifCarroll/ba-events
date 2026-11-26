@@ -5,6 +5,7 @@
  * data the detail page renders. From Cloudflare Workers, luma.com HTML and the
  * `/url` lookup answer 429; `/event/get` does not.
  */
+import type { EventCredit } from '#shared/lib/types.ts'
 import { fetchLumaJson } from './http.ts'
 import { lumaLocation } from './location.ts'
 
@@ -14,6 +15,7 @@ const BREAKS = new Set(['hard_break', 'hardBreak'])
 
 export interface LumaEventDetail {
   description: string | null
+  organizer?: EventCredit
   venue: { name: string; address: string | null; latitude: number | null; longitude: number | null } | null
   /** true: guests-only, the address comes after registration, and `venue` is null. false: public address. null: can't tell. */
   location_hidden: boolean | null
@@ -48,8 +50,21 @@ export function parseLumaEventDetail(body: unknown): LumaEventDetail | null {
   const description = (typeof event.description === 'string' && event.description)
     || (mirror?.content ? prosemirrorText(mirror.content) : '') || null
   const { hidden, venue } = lumaLocation(event.geo_address_info, event.coordinate)
+  let organizer: EventCredit | undefined
+  if (Array.isArray(data.hosts)) {
+    for (const host of data.hosts) {
+      const name = typeof host?.name === 'string' && host.name.trim()
+      if (!name) continue
+      const { api_id: id, username } = host
+      const profile = typeof id === 'string' && /^usr-[a-z0-9]+$/i.test(id) ? id
+        : typeof username === 'string' && /^[a-z0-9_]{3,15}$/i.test(username) ? username : null
+      organizer = { name, ...(profile ? { url: `https://luma.com/user/${profile}` } : {}) }
+      break // The catalog has a single organizer slot; keep the first named host in source order.
+    }
+  }
   return {
     description,
+    ...(organizer ? { organizer } : {}),
     venue: venue && { name: venue.name, address: venue.address, latitude: venue.latitude, longitude: venue.longitude },
     location_hidden: hidden,
   }

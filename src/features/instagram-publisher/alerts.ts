@@ -10,6 +10,7 @@ import type { Draft, Services } from './job.ts'
 import type { Verdict } from './review.ts'
 import { writeJson } from './runtime.ts'
 import type { StickerFailure } from './story-stickers.ts'
+import { isThreadsFormat, threadsWindow } from './threads-copy.ts'
 
 const HOUR_MS = 60 * 60_000
 export const ALERT_FAILURES = 3
@@ -189,17 +190,21 @@ export function publishSkipped(draft: Draft, reason: Exclude<SkipReason, { kind:
   return `⚠️ *The ${label(draft)} wasn't posted*: ${why}. No action needed.`
 }
 
-export function heldAlert(draft: Draft, event: NonNullable<PublishStop['stale']>, now: Date) {
+export function heldAlert(draft: Draft, event: NonNullable<PublishStop['stale']>, now: Date, destination: 'Instagram' | 'Threads' = 'Instagram') {
   const hasUploads = draft.publish?.units.some(unit => unit.containerId || unit.childIds?.some(Boolean))
+  const rebuildBlocked = draft.publish || draft.storyShare || draft.state === 'publishing' || draft.state === 'published'
   const cutoff = runWindow(draft.format, draft.from).cutoff
+  const threadsCutoff = destination === 'Threads' && isThreadsFormat(draft.format) ? threadsWindow(draft.format, draft.from).cutoff : null
+  const rebuildBy = threadsCutoff && threadsCutoff < cutoff ? threadsCutoff : cutoff
+  const item = destination === 'Threads' ? `${name(draft)} post on Threads` : label(draft)
   return [
-    `⚠️ *The ${label(draft)} is on hold*: ${event.title.replace(/\s+/g, ' ')} ${heldEventReason[event.why]}. ${TRIAGE}`,
-    hasUploads ? "Nothing was posted, but Instagram already holds its uploads, so it can't be rebuilt automatically."
-      : draft.publish ? "Nothing was posted, but publishing already started, so it can't be rebuilt automatically."
-      : now >= cutoff ? "Nothing went out on Instagram. It's too late to approve a new preview."
-      : `Nothing went out on Instagram. To post it, Hermes rebuilds it without that event and you approve the new preview by ${when(cutoff, now)}.`,
-    codes(`\`${event.id} ${event.detail}\``, draft.id, draft.publish ? `${CLI} status`
-      : now < cutoff ? `${CLI} regenerate ${draft.id} --exclude ${event.id}` : undefined),
+    `⚠️ *The ${item} is on hold*: ${event.title.replace(/\s+/g, ' ')} ${heldEventReason[event.why]}. ${TRIAGE}`,
+    `Nothing went out on ${destination}. ${hasUploads ? "Instagram already holds uploads, so the draft can't be rebuilt automatically."
+      : rebuildBlocked ? "Instagram publishing already started, so the draft can't be rebuilt automatically."
+      : now >= rebuildBy ? "It's too late to rebuild for this publication."
+      : `Hermes can rebuild without that event before ${when(rebuildBy, now)}. The new revision requests approval only if it needs it.`}`,
+    codes(`\`${event.id} ${event.detail}\``, draft.id, rebuildBlocked ? `${CLI} status`
+      : now < rebuildBy ? `${CLI} regenerate ${draft.id} --exclude ${event.id}` : undefined),
   ].join('\n')
 }
 
@@ -383,7 +388,7 @@ export class TickFailures {
           stopped = true
           return `the ${label(item)} ${outcome}`
         }
-        if (!item.hasPreview && previewed) return `the ${name(item)} preview for ${dates(item)} is in #ba-eventos`
+        if (!item.hasPreview && previewed) return `the ${name(item)} preview for ${dates(item)} is in Slack`
         return `the ${label(item)} is moving again`
       })
       const verdict = stopped ? '⚠️ *Instagram publisher stopped retrying*' : '✅ *Instagram publisher recovered*'

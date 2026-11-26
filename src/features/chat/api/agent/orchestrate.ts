@@ -251,6 +251,7 @@ function publicEvent(event: ChatEventPayload, ref: string, venueRef?: string): R
     ...fallback,
     starts_at: localDateTime(event.starts_at, event.time_tba),
     ends_at: event.time_tba ? null : localDateTime(event.ends_at),
+    ...(event.doors_at ? { doors_at: localDateTime(event.doors_at) } : {}),
     is_all_day: event.is_all_day,
     time_tba: event.time_tba,
     categories: event.categories,

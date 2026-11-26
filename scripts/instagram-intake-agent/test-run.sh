@@ -120,6 +120,7 @@ check "exit 0" [ "$rc" -eq 0 ]
 check "collect, 3 reviews, venues, report" [ "$(phases)" = "collect review review review venues report " ]
 check "backlog cleared" [ ! -s "$t/pending" ]
 check "report posted, not stdout" posted
+check "new report goes to #alerts" grep -Eq 'slack_api.py.*<<< \{"channel": "C0CG3EGKKP1",' "$t/ssh-calls"
 check "posted text is the report file" grep -q 'Run went fine' "$t/ssh-calls"
 check "alert resolved" resolved
 check "no alert raised" eval '! grep -q "alert raise" "$t/ssh-calls"'
@@ -292,8 +293,8 @@ check "queued report is the report file" eval 'grep -l "^slack$" "$t"/state/outb
 rm -f "$t/vps-down"; : >"$t/pending"; echo sentinel >"$t/scenario"
 go
 check "second run exits 0" [ "$rc" -eq 0 ]
-check "queued report delivered first, marked delayed with its run" eval 'head -1 "$t/ssh-calls" | grep -q "slack_api.py.*Delayed: this is from the BA Eventos intake run of $(TZ=America/Argentina/Buenos_Aires date +%F).*Run went fine"'
-check "queued alert keeps its headline on line one" eval 'grep "^~/.local/bin/alert raise pro/ba-events-intake " "$t/ssh-calls" | grep -q "<<< ⚠️ .*its report didn.t reach #ba-eventos.*{triage}$"'
+check "queued report delivered first to #alerts, marked delayed with its run" eval 'head -1 "$t/ssh-calls" | grep -q "slack_api.py.*C0CG3EGKKP1.*Delayed: this is from the BA Eventos intake run of $(TZ=America/Argentina/Buenos_Aires date +%F).*Run went fine"'
+check "queued alert keeps its headline on line one" eval 'grep "^~/.local/bin/alert raise pro/ba-events-intake " "$t/ssh-calls" | grep -q "<<< ⚠️ .*its report didn.t reach #alerts.*{triage}$"'
 check "queued message names the next attempt, not a refusal" grep -Fxq 'The run finished. It saved the report to send at the next 09:00 run.' "$t/ssh-calls"
 check "delay notice stays on the last line" grep -Eq '^report .* on the Pro · Delayed from the .* intake run\.$' "$t/ssh-calls"
 check "clean run clears the replayed alert" eval '[ "$(grep -c "alert resolve pro/ba-events-intake <<<" "$t/ssh-calls")" -eq 1 ] && grep -q "alert resolve pro/ba-events-intake <<<" "$t/ssh-calls"'
@@ -306,15 +307,15 @@ HOME="$t" INTAKE_CHECKOUT="$t/checkout" INTAKE_STATE="$t/state" INTAKE_POST_BACK
 check "exit 0" [ "$rc" -eq 0 ]
 check "old message still queued, and this run's messages queued behind it" eval '[ "$(ls "$t/state/outbox" | head -1)" = 20261116T120000Z-0001 ] && [ "$(ls "$t/state/outbox" | grep -c .)" -eq 3 ]'
 rm -f "$t/vps-down"; go
-check "delivered later with its own run date" eval 'head -1 "$t/ssh-calls" | grep -q "run of 2026-11-16.*Old report"'
+check "pre-cutover report goes to #alerts with its own run date" eval 'head -1 "$t/ssh-calls" | grep -q "C0CG3EGKKP1.*run of 2026-11-16.*Old report"'
 rm -rf "$t"
 
 echo "# a refused report is not retried or queued, and still fails the run"
 setup 10 report
 sed -i.bak 's/echo .{"ok": true, "ts": "1.2"}./echo "{\"ok\": false, \"error\": \"channel_not_found\"}"/' "$t/.local/bin/ssh"
 go
-check "exit 1 with the post alert" eval '[ "$rc" -eq 1 ] && alerted "report didn.t reach #ba-eventos"'
-check "undelivered-report headline" alerted '⚠️ \*BA Eventos intake ran, but its report didn.t reach #ba-eventos\*\. {triage}$'
+check "exit 1 with the post alert" eval '[ "$rc" -eq 1 ] && alerted "report didn.t reach #alerts"'
+check "undelivered-report headline" alerted '⚠️ \*BA Eventos intake ran, but its report didn.t reach #alerts\*\. {triage}$'
 check "refusal does not promise retry" grep -Fxq "The run finished, but Slack refused the report, so it won't go out by itself." "$t/ssh-calls"
 check "nothing left to send; the refusal is kept in refused/" eval '[ -z "$(ls "$t/state/outbox" | grep -v "^refused$")" ] && [ "$(ls "$t/state/outbox/refused" | grep -c .)" -eq 1 ]'
 rm -rf "$t"

@@ -136,7 +136,7 @@ The event cards have no description line, no handle, and no "baeventos.com" foot
 
 ## Slack preview message (in English, for Hanif)
 
-The message goes to #ba-eventos as a new top-level message, with every frame or slide attached in order:
+When a revision needs approval, the preview goes to #alerts by default as a new top-level message, with every frame or slide attached in order:
 
 ```
 Instagram draft: {Format name} for {dates}. It goes out {Weekday} at {HH:MM} once you react ✅. React ❌ to skip it.
@@ -198,6 +198,8 @@ Slack preview, appended after the existing preview text:
 Threads (se publica con el mismo ✅, {HH:MM}):
 {the exact Threads text, as a quote block}
 ```
+
+When Instagram already has its own preview, say `This preview only asks about Threads. Use the earlier preview to approve Instagram.` Use `Threads (se publica con un ✅ en este mensaje, {HH:MM}):` instead of `el mismo ✅`. A ❌ on either preview still stops the draft.
 
 With auto mode on, use this heading instead: `Threads (se publica solo a las {HH:MM} salvo que reacciones ❌):`.
 

@@ -17,8 +17,9 @@ import type { EventInsert } from '#shared/lib/types.ts'
 import { importTry, ImportOperationError } from '../core/effect-utils.ts'
 import { mostSimilarVenue, similarIntakeVenues } from '../core/venue-similarity-d1.ts'
 import { pickVenue, venueNameKey } from '../core/venue-identity.ts'
-import { baDate, searchInputsChanged, type Media } from './planning.ts'
-import type { Source } from './schema.ts'
+import { baDate, baTime, citesIntakeClock, citesTicketDestination, hasOfficialTicketEvidence, isWholeCaptionExcerpt, requiresWholeCaptionExcerpt,
+  retainedIntakeDoors, SAME_CLOCK_REASON, SAME_CLOCK_RETAINED_REASON, searchInputsChanged, separatelyCitedDoors, ticketDestinationChanged, type Media } from './planning.ts'
+import { isOfficialPage, type Source } from './schema.ts'
 import type { IntakePlanRow, IntakePolicy, IntakeStore, Reservation, VenueRow } from './store.ts'
 
 type Row = Record<string, unknown>
@@ -29,6 +30,7 @@ export const SITE_ORIGIN = 'https://baeventos.com'
 
 const HOUR = 3_600_000
 const DAY = 24 * HOUR
+const RELEASED_RUN = "state = 'failed' AND charged_usd IS 0 AND apify_run_id IS NULL AND dataset_id IS NULL AND completed_at IS NOT NULL"
 const now = () => new Date().toISOString()
 const iso = (value: unknown) => value === null || value === undefined ? null : new Date(value as string).toISOString()
 const failure = (operation: string, message: string) => new ImportOperationError({ operation, message })
@@ -43,7 +45,7 @@ const d1 = <A>(operation: string, run: () => Promise<A>) => importTry(operation,
 
 const BOOLEANS = ['enabled', 'publishing_enabled', 'collection_enabled', 'is_all_day', 'is_free', 'location_hidden', 'location_tba',
   'description_unavailable', 'time_tba']
-const JSON_COLUMNS = ['input', 'media_urls', 'payload', 'evidence', 'reasons', 'receipt', 'categories', 'facets', 'enrichment_provenance', 'fields']
+const JSON_COLUMNS = ['input', 'media_urls', 'payload', 'evidence', 'reasons', 'receipt', 'categories', 'facets', 'performers', 'enrichment_provenance', 'fields']
 /** Decodes integer booleans and JSON text from D1 rows. */
 export function decodeRow<T = Row>(row: Row): T {
   const out: Row = { ...row }
@@ -129,14 +131,9 @@ export function d1Intake({ db, evidence, artwork, vectors }: IntakeBindings, sit
       if (!policy.collection_enabled) throw new Error('Instagram collection is not enabled')
       const at = new Date()
       const day = baDate(at.toISOString())
-      const existing = () => first<Reservation>(db.prepare('SELECT * FROM intake_runs WHERE local_date = ?').bind(day))
-      const found = await existing()
+      const active = `SELECT * FROM intake_runs WHERE local_date = ? AND NOT (${RELEASED_RUN})`
+      const found = await first<Reservation>(db.prepare(active).bind(day))
       if (found) return { ...found, fresh: false }
-      const month = day.slice(0, 7)
-      const used = (await db.prepare('SELECT COALESCE(SUM(COALESCE(charged_usd, reserved_usd)), 0) AS used FROM intake_runs WHERE substr(local_date, 1, 7) = ?')
-        .bind(month).first<{ used: number }>())!.used
-      // shortcut: float sums, not Postgres numeric; at cents-sized charges the 1e-9 slack only matters exactly at the cap.
-      if (used + policy.run_cap_usd > policy.monthly_cap_usd + 1e-9) throw new Error('Monthly collection budget exhausted')
       const handles = (await db.prepare('SELECT username FROM instagram_sources WHERE enabled = 1 ORDER BY username').all<{ username: string }>())
         .results.map(row => row.username)
       if (handles.length < 1 || handles.length > policy.max_sources) throw new Error('Source watchlist exceeds policy or is empty')
@@ -146,22 +143,30 @@ export function d1Intake({ db, evidence, artwork, vectors }: IntakeBindings, sit
       const input = { username: handles, resultsLimit: policy.posts_per_source,
         onlyPostsNewerThan: new Date(since).toISOString().replace(/\.\d{3}Z$/, 'Z'),
         skipPinnedPosts: false, dataDetailLevel: policy.data_detail_level, includeMusicData: false }
-      try {
-        await db.batch([
-          batchAssert(db, 'Instagram collection is not enabled', '(SELECT collection_enabled FROM intake_policy WHERE id = 1) = 1'),
-          batchAssert(db, 'Monthly collection budget exhausted',
-            '(SELECT COALESCE(SUM(COALESCE(charged_usd, reserved_usd)), 0) FROM intake_runs WHERE substr(local_date, 1, 7) = ?) + ? <= ? + 1e-9',
-            month, policy.run_cap_usd, policy.monthly_cap_usd),
-          db.prepare('INSERT INTO intake_runs (id, local_date, reserved_usd, input) VALUES (?, ?, ?, ?)')
-            .bind(crypto.randomUUID(), day, policy.run_cap_usd, JSON.stringify(input)),
-        ])
-      } catch (error) {
-        // Another caller reserved today first (local_date is unique): resume that run, as the advisory lock did.
-        const raced = await existing()
-        if (raced) return { ...raced, fresh: false }
-        throw error
-      }
-      return { ...(await existing())!, fresh: true, actor_build: policy.actor_build }
+      const [,, claimed, existing] = await db.batch<Row>([
+        batchAssert(db, 'Instagram collection is not enabled', '(SELECT collection_enabled FROM intake_policy WHERE id = 1) = 1'),
+        // Another caller may already have claimed today. It uses budget only once. The slack handles float rounding at the cap.
+        batchAssert(db, 'Monthly collection budget exhausted', `EXISTS (${active}) OR
+          (SELECT COALESCE(SUM(COALESCE(charged_usd, reserved_usd)), 0) FROM intake_runs WHERE substr(local_date, 1, 7) = ?) + ? <= ? + 1e-9`,
+          day, day.slice(0, 7), policy.run_cap_usd, policy.monthly_cap_usd),
+        // Advance the timestamp even within the same millisecond so a stale release cannot affect a newer attempt.
+        db.prepare(`INSERT INTO intake_runs (id, local_date, reserved_usd, input) VALUES (?, ?, ?, ?)
+          ON CONFLICT (local_date) DO UPDATE SET state = 'reserved', reserved_usd = excluded.reserved_usd,
+            charged_usd = NULL, completed_at = NULL, input = excluded.input,
+            created_at = max(excluded.created_at, strftime('%Y-%m-%dT%H:%M:%fZ', intake_runs.created_at, '+0.001 seconds'))
+          WHERE ${RELEASED_RUN} RETURNING *`).bind(crypto.randomUUID(), day, policy.run_cap_usd, JSON.stringify(input)),
+        db.prepare(active).bind(day),
+      ])
+      // Only the caller that inserted or renewed the row may send a paid start request.
+      if (claimed.results[0]) return { ...decodeRow<Reservation>(claimed.results[0]), fresh: true, actor_build: policy.actor_build }
+      return { ...decodeRow<Reservation>(existing.results[0]), fresh: false }
+    }),
+
+    releaseCollection: (id, reservedAt) => d1('intake.release', async () => {
+      const result = await db.prepare(`UPDATE intake_runs SET state = 'failed', charged_usd = 0, completed_at = max(?, created_at)
+        WHERE id = ? AND created_at = ? AND state = 'reserved' AND apify_run_id IS NULL AND dataset_id IS NULL
+          AND charged_usd IS NULL AND completed_at IS NULL`).bind(now(), id, reservedAt).run()
+      if (!result.meta.changes) throw new Error('Collection reservation is no longer eligible for release')
     }),
 
     updateRun: (id, patch) => d1(`intake.${patch.state}`, async () => {
@@ -352,28 +357,65 @@ export function d1Intake({ db, evidence, artwork, vectors }: IntakeBindings, sit
           throw new Error('A matching event appeared after preview')
         }
       }
-      const evidenceRows = (await db.prepare(`SELECT json_extract(x.value, '$.fields') AS fields, o.observed_at, s.authority FROM json_each(?) x
-        JOIN intake_observations o ON o.id = json_extract(x.value, '$.observation_id')
+      const evidenceRows = (await db.prepare(`SELECT json_extract(x.value, '$.fields') AS fields, o.observed_at, s.authority,
+          json_extract(x.value, '$.excerpt') AS excerpt, o.caption, json_extract(x.value, '$.media_id') AS media_id,
+          EXISTS (SELECT 1 FROM intake_media m WHERE m.id = json_extract(x.value, '$.media_id') AND m.observation_id = o.id) AS retained_media
+        FROM json_each(?) x JOIN intake_observations o ON o.id = json_extract(x.value, '$.observation_id')
         JOIN instagram_sources s ON s.username = o.source_username`).bind(JSON.stringify(plan.evidence))
-        .all<{ fields: string | null; observed_at: string; authority: string }>()).results
+        .all<{ fields: string | null; observed_at: string; authority: string; excerpt: string | null; caption: string;
+          media_id: string | null; retained_media: number }>()).results
       if (!evidenceRows.length) throw new Error('Retained evidence is required')
+      const fields = (row: typeof evidenceRows[number]) => JSON.parse(row.fields ?? '[]') as string[]
+      const quotesTicket = (row: typeof evidenceRows[number], ticket: string | null | undefined) =>
+        Boolean(ticket && row.excerpt && (!row.media_id || row.retained_media) &&
+          citesTicketDestination(row.excerpt, ticket, row.media_id ? undefined : row.caption))
+      // Official pages are fetched and verified by commitPlanEffect before the catalog write.
+      if (plan.action === 'create' && e.ticket_url && !hasOfficialTicketEvidence(plan.evidence, e.ticket_url) &&
+        !evidenceRows.some(row => fields(row).includes('ticket') && quotesTicket(row, e.ticket_url))) {
+        throw new Error('Ticket evidence must quote the complete destination URL')
+      }
       const level = Math.max(...evidenceRows.map(row => row.authority === 'curator' ? 1 : 2))
       const observed = evidenceRows.map(row => row.observed_at).sort().at(-1)!
       const previous = plan.action === 'create' ? null : await first(db.prepare('SELECT * FROM events WHERE id = ?').bind(plan.event_id))
       if (plan.action !== 'create' && !previous) throw new Error('Catalog changed after preview')
+      const oldStart = typeof previous?.starts_at === 'string' ? previous.starts_at : undefined
+      const moved = oldStart !== undefined && Date.parse(oldStart) !== Date.parse(startsAt)
+      const sameDay = oldStart !== undefined && baDate(oldStart) === baDate(startsAt)
+      const retainedDoors = retainedIntakeDoors(previous?.doors_at, sameDay, startsAt, e.time_tba)
+      const startChanged = !e.time_tba && (moved || Boolean(previous?.time_tba))
+      const doors = e.doors_at ?? (startChanged ? retainedDoors : null)
+      if (plan.action !== 'link' && doors && !e.time_tba) {
+        const time = baTime(doors), doorsRetained = !e.doors_at
+        if (time === baTime(startsAt) && !separatelyCitedDoors(plan.evidence.filter(isOfficialPage), time, [], doorsRetained) &&
+          !evidenceRows.some(row => {
+            const citedFields = fields(row), wholeLines = requiresWholeCaptionExcerpt(citedFields)
+            return row.excerpt && (citedFields.includes('doors_time') || doorsRetained && citedFields.includes('time')) &&
+              (row.media_id ? row.retained_media : wholeLines ? isWholeCaptionExcerpt(row.caption, row.excerpt) : row.caption.includes(row.excerpt)) &&
+              citesIntakeClock(row.excerpt, time, row.media_id ? undefined : row.caption, wholeLines, 2)
+          })) {
+          throw new Error(doorsRetained ? SAME_CLOCK_RETAINED_REASON : SAME_CLOCK_REASON)
+        }
+      }
+      const changedTicket = ticketDestinationChanged(previous?.ticket_url, e.ticket_url)
       if (plan.action === 'update' && previous) {
         const protection = await db.prepare('SELECT authority, observed_at FROM event_intake_protection WHERE event_id = ?').bind(plan.event_id)
           .first<{ authority: number; observed_at: string }>()
         if (level < 2 || protection && (level < protection.authority || observed < protection.observed_at)) {
           throw new Error('Correction needs current organizer or venue evidence')
         }
-        const moved = Date.parse(previous.starts_at as string) !== Date.parse(startsAt)
-        const changed = { status: previous.status !== (e.status ?? 'scheduled'), date: moved, time: moved && !e.time_tba,
+        if (sameDay && !previous.time_tba && e.time_tba) throw new Error('Cannot replace a known start with time TBA on the same date')
+        if (e.doors_at && !e.time_tba && Date.parse(e.doors_at) > Date.parse(startsAt)) throw new Error('Doors cannot follow the known start time')
+        const changed = { status: previous.status !== (e.status ?? 'scheduled'), date: moved, time: startChanged,
+          ticket: changedTicket || (e.offers_valid_from !== undefined && e.offers_valid_from !== previous.offers_valid_from),
           venue: (previous.venue_id ?? null) !== (e.venue_id ?? null),
-          price: (previous.price ?? null) !== (e.price ?? null) || !!previous.is_free !== !!e.is_free }
+          price: (previous.price ?? null) !== (e.price ?? null) || !!previous.is_free !== !!e.is_free,
+          organizer: e.organizer_name !== undefined, performers: e.performers !== undefined,
+          offers_valid_from: e.offers_valid_from !== undefined, doors_time: e.doors_at !== undefined }
+        const ticket = e.ticket_url ?? (typeof previous.ticket_url === 'string' ? previous.ticket_url : null)
         for (const [fact, needsEvidence] of Object.entries(changed)) {
           if (needsEvidence && !evidenceRows.some(row => (row.authority === 'venue' || row.authority === 'organizer') &&
-            (JSON.parse(row.fields ?? '[]') as string[]).includes(fact) && (!protection || row.observed_at >= protection.observed_at))) {
+            fields(row).includes(fact) && (!protection || row.observed_at >= protection.observed_at) &&
+            (fact !== 'ticket' || quotesTicket(row, ticket)))) {
             throw new Error(`Correction field lacks current direct evidence: ${fact}`)
           }
         }
@@ -381,29 +423,41 @@ export function d1Intake({ db, evidence, artwork, vectors }: IntakeBindings, sit
       const needsEmbedding = plan.action === 'create' || plan.action === 'update' && previous && searchInputsChanged(previous, e)
       if (needsEmbedding && (!e.embedding || e.search_document == null)) throw new Error('Search preparation is required')
 
+      const performers = e.performers ?? previous?.performers
+      const replacedTicket = !!previous?.ticket_url && changedTicket
+      const details = [e.organizer_name ?? previous?.organizer_name ?? null,
+        e.organizer_url ?? (e.organizer_name === undefined || e.organizer_name === previous?.organizer_name ? previous?.organizer_url ?? null : null),
+        performers ? JSON.stringify(performers) : null, e.offers_valid_from ?? (replacedTicket ? null : previous?.offers_valid_from ?? null),
+        e.doors_at ?? retainedDoors] as const
+      const protects = [...PROTECTED_FIELDS,
+        ...(e.organizer_name !== undefined ? ['organizer_name', 'organizer_url'] : []),
+        ...(e.performers !== undefined ? ['performers'] : []),
+        ...(e.offers_valid_from !== undefined ? ['offers_valid_from'] : []),
+        ...(e.doors_at !== undefined ? ['doors_at'] : [])]
       const writes = []
       if (plan.action === 'create') {
         writes.push(db.prepare(`INSERT INTO events (id, name, starts_at, ends_at, time_tba, venue_id, description_es, description_en,
             description_display_es, description_display_en, description_summary_es, description_summary_en, categories, price, is_free,
             image_url, image_width, image_height, link, ticket_url, source, external_id, status, search_document, embedding_version,
-            enrichment_status, description_unavailable)
-          VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'instagram', ?, ?, ?, ?, ?, ?)`).bind(
+            enrichment_status, description_unavailable, organizer_name, organizer_url, performers, offers_valid_from, doors_at)
+          VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'instagram', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(
           plan.event_id, e.name, startsAt, bit(e.time_tba) ?? 0, e.venue_id ?? null, e.description_es ?? null, e.description_en ?? null,
           e.description_display_es ?? null, e.description_display_en ?? null, e.description_summary_es ?? null, e.description_summary_en ?? null,
           JSON.stringify(e.categories ?? []), e.price ?? null, bit(e.is_free) ?? 0, e.image_url ?? null, e.image_width ?? null, e.image_height ?? null,
           e.link ?? null, e.ticket_url ?? null, plan.candidate_id, e.status ?? 'scheduled', e.search_document ?? null, e.embedding_version ?? 1,
-          e.enrichment_status ?? 'pending', bit(e.description_unavailable) ?? 0))
+          e.enrichment_status ?? 'pending', bit(e.description_unavailable) ?? 0, ...details))
       } else if (plan.action === 'update') {
         writes.push(db.prepare(`UPDATE events SET name = ?, starts_at = ?, ends_at = ?, time_tba = ?, venue_id = ?, description_es = ?,
             description_en = ?, description_display_es = ?, description_display_en = ?, description_summary_es = ?, description_summary_en = ?,
             categories = ?, price = ?, is_free = ?, image_url = COALESCE(?, image_url), image_width = ?, image_height = ?,
             ticket_url = COALESCE(?, ticket_url), status = ?, search_document = ?, embedding_version = ?, enrichment_status = ?,
-            description_unavailable = ?
-          WHERE id = ?`).bind(e.name, startsAt, iso(e.ends_at), bit(e.time_tba) ?? 0, e.venue_id ?? null, e.description_es ?? null,
+            description_unavailable = ?, organizer_name = ?, organizer_url = ?, performers = ?, offers_valid_from = ?, doors_at = ?
+          WHERE id = ?`).bind(e.name, startsAt, !moved && typeof previous?.ends_at === 'string' ? iso(previous.ends_at) : null,
+          bit(e.time_tba) ?? 0, e.venue_id ?? null, e.description_es ?? null,
           e.description_en ?? null, e.description_display_es ?? null, e.description_display_en ?? null, e.description_summary_es ?? null,
           e.description_summary_en ?? null, JSON.stringify(e.categories ?? []), e.price ?? null, bit(e.is_free) ?? 0, e.image_url ?? null,
           e.image_width ?? null, e.image_height ?? null, e.ticket_url ?? null, e.status ?? 'scheduled', e.search_document ?? null,
-          e.embedding_version ?? 1, e.enrichment_status ?? 'pending', bit(e.description_unavailable) ?? 0, plan.event_id))
+          e.embedding_version ?? 1, e.enrichment_status ?? 'pending', bit(e.description_unavailable) ?? 0, ...details, plan.event_id))
       }
       writes.push(db.prepare(`INSERT INTO event_source_evidence (event_id, candidate_id, observation_id, revision)
         SELECT ?, ?, json_extract(value, '$.observation_id'), ? FROM json_each(?) WHERE json_extract(value, '$.observation_id') IS NOT NULL
@@ -415,8 +469,10 @@ export function d1Intake({ db, evidence, artwork, vectors }: IntakeBindings, sit
           writes.push(db.prepare('INSERT INTO vector_sync (event_id) VALUES (?) ON CONFLICT (event_id) DO NOTHING').bind(plan.event_id))
         }
         writes.push(db.prepare(`INSERT INTO event_intake_protection (event_id, fields, plan_id, authority, observed_at) VALUES (?, ?, ?, ?, ?)
-          ON CONFLICT (event_id) DO UPDATE SET fields = excluded.fields, plan_id = excluded.plan_id, authority = excluded.authority,
-            observed_at = excluded.observed_at`).bind(plan.event_id, JSON.stringify(PROTECTED_FIELDS), plan.id, level, observed))
+          ON CONFLICT (event_id) DO UPDATE SET fields = (SELECT json_group_array(value) FROM (
+              SELECT value FROM json_each(event_intake_protection.fields) UNION SELECT value FROM json_each(excluded.fields)
+            )), plan_id = excluded.plan_id, authority = excluded.authority,
+            observed_at = excluded.observed_at`).bind(plan.event_id, JSON.stringify(protects), plan.id, level, observed))
       }
       const receipt = { plan_id: plan.id, candidate_id: plan.candidate_id, revision: plan.revision, action: plan.action, event_id: plan.event_id,
         committed_at: at, previous_event: plan.action === 'update' ? previous : null }

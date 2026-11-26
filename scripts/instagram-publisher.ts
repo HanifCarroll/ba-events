@@ -1,6 +1,6 @@
 /**
  * BA Eventos Instagram publisher (VPS). Drafts the Hoy, Este finde, Gratis, and Este finde Reel posts from the catalog, previews them
- * in Slack #ba-eventos, and publishes approved drafts. See docs/instagram-publisher.md.
+ * in Slack when approval is needed, and publishes approved drafts. See docs/instagram-publisher.md.
  *
  *   tick                                             do whatever is due (the systemd timer runs this every 10 minutes)
  *   dry-run <hoy|finde|gratis|reel> --date <YYYY-MM-DD> --out <dir> [--track <id>] [--threads]  render a draft without publishing

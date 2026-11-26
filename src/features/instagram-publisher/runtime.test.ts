@@ -7,6 +7,18 @@ import { DEFAULT_REVIEW, alert, catalogSql, loadToken, mediaBin, readConfig, ren
 import { reelTiming } from './reel/project.ts'
 
 describe('publisher config', () => {
+  it('defaults approval previews to #alerts and honors a configured channel', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ig-config-'))
+    try {
+      const path = join(dir, 'publisher.json')
+      expect(readConfig(path).slack.channel).toBe('C0CG3EGKKP1')
+      writeFileSync(path, JSON.stringify({ slack: { channel: ' C_APPROVALS ' } }))
+      expect(readConfig(path).slack.channel).toBe('C_APPROVALS')
+      writeFileSync(path, JSON.stringify({ slack: { channel: ' ' } }))
+      expect(readConfig(path).slack.channel).toBe('C0CG3EGKKP1')
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+
   it.each([
     { bucket: '', publicBaseUrl: 'https://media.example.com' },
     { bucket: ' \t ', publicBaseUrl: 'https://media.example.com' },

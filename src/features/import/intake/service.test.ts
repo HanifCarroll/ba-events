@@ -1,7 +1,12 @@
-import { describe, expect, it } from 'vitest'
+import type { D1Database } from '@cloudflare/workers-types'
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Effect } from 'effect'
+import { freshD1 } from '../../../../tests/support/d1.ts'
+import { fakeR2 } from '../../../../tests/support/r2.ts'
+import { fakeVectorize } from '../../../../tests/support/vectorize.ts'
+import { d1Intake } from './store-d1.ts'
 import { collectInstagramEffect, type ApifyRequest } from './collection.ts'
-import { commitPlanEffect, readEvidenceEffect, previewCandidateEffect } from './service.ts'
+import { commitPlanEffect, readEvidenceEffect, previewCandidateEffect, submitCandidateEffect } from './service.ts'
 import { readOfficialPage } from './official-page.ts'
 import { decodeCandidate } from './schema.ts'
 import { ImportOperationError } from '../core/effect-utils.ts'
@@ -26,10 +31,171 @@ function collectionStore(reservation: Partial<Reservation>, overrides: Partial<C
     policy: Effect.succeed({ collection_enabled: true, publishing_enabled: false, max_sources: 10,
       posts_per_source: 20, run_cap_usd: 2, monthly_cap_usd: 10, actor_build: '0.0.679', data_detail_level: 'basic' }),
     reserveCollection: Effect.succeed({ id: 'run', fresh: false, apify_run_id: null, reserved_usd: 1.5,
-      input: { username: ['a'], resultsLimit: 20 }, ...reservation }),
+      created_at: '2026-11-26T12:00:00.000Z', input: { username: ['a'], resultsLimit: 20 }, ...reservation }),
     updateRun: () => Effect.void, ...overrides,
   } as unknown as CollectionStore
 }
+
+describe('Instagram collection budget on D1', () => {
+  let db: D1Database
+  let dispose: () => Promise<void>
+  let store: CollectionStore
+  beforeAll(async () => {
+    ({ db, dispose } = await freshD1())
+    await db.batch([
+      db.prepare('UPDATE intake_policy SET collection_enabled = 1, run_cap_usd = 1.5, monthly_cap_usd = 1.5'),
+      db.prepare("INSERT INTO instagram_sources (username, authority, enabled, qualification) VALUES ('synthetic_venue', 'venue', 1, 'Synthetic')"),
+    ])
+    store = d1Intake({ db, evidence: fakeR2(), artwork: fakeR2(), vectors: fakeVectorize().index })
+  }, 60_000)
+  beforeEach(async () => { await db.prepare('DELETE FROM intake_runs').run() })
+  afterAll(async () => { await dispose?.() })
+
+  const usedBudget = () => db.prepare('SELECT COALESCE(SUM(COALESCE(charged_usd, reserved_usd)), 0) AS used FROM intake_runs').first('used')
+  const limits = (maxMonthlyUsageUsd: number) => ({ data: { limits: { maxMonthlyUsageUsd }, current: { monthlyUsageUsd: 17.6 } } })
+
+  it('leaves the monthly budget unchanged when Apify refuses credit', async () => {
+    const calls: string[] = []
+    const api: ApifyRequest = async (method, path) => { calls.push(`${method} ${path}`); return limits(19) }
+    const before = await usedBudget()
+    await expect(Effect.runPromise(collectInstagramEffect(store, api))).rejects.toThrow('Apify monthly usage limit reached; no run started')
+    expect(calls).toEqual(['GET users/me/limits'])
+    expect(await usedBudget()).toBe(before)
+    expect(await db.prepare('SELECT * FROM intake_runs').first()).toMatchObject({
+      state: 'failed', charged_usd: 0, apify_run_id: null, completed_at: expect.any(String),
+    })
+  })
+
+  it.each([
+    ['unavailable', async () => { throw new Error('Limits read unavailable') }, 'Limits read unavailable'],
+    ['null limit', async () => ({ data: { limits: { maxMonthlyUsageUsd: null }, current: { monthlyUsageUsd: 3 } } }), 'Could not verify the Apify monthly usage limit'],
+    ['non-finite limit', async () => limits(Infinity), 'Could not verify the Apify monthly usage limit'],
+  ] as const)('releases the reservation when the Apify limits read gives %s', async (_name, read, message) => {
+    const calls: string[] = []
+    const api: ApifyRequest = async (method, path) => { calls.push(`${method} ${path}`); return read() }
+    await expect(Effect.runPromise(collectInstagramEffect(store, api))).rejects.toThrow(message)
+    expect(calls).toEqual(['GET users/me/limits'])
+    expect(await usedBudget()).toBe(0)
+    expect(await db.prepare('SELECT state, completed_at FROM intake_runs').first()).toEqual({
+      state: 'failed', completed_at: expect.any(String),
+    })
+  })
+
+  it('reuses a released day to check raised credit and starts only one paid run', async () => {
+    let limit = 19
+    const calls: string[] = []
+    const api: ApifyRequest = async (method, path) => {
+      calls.push(`${method} ${path}`)
+      return path === 'users/me/limits' ? limits(limit)
+        : { data: { id: 'new-run', status: 'RUNNING', defaultDatasetId: 'dataset' } }
+    }
+    const collect = () => Effect.runPromise(collectInstagramEffect(store, api))
+    await expect(collect()).rejects.toThrow('Apify monthly usage limit reached; no run started')
+    const id = await db.prepare('SELECT id FROM intake_runs').first('id')
+    expect(id).toEqual(expect.any(String))
+    limit = 24
+    expect(await collect()).toEqual({ state: 'running', run_id: 'new-run' })
+    expect(await collect()).toEqual({ state: 'running', run_id: 'new-run' })
+    expect(calls).toEqual(['GET users/me/limits', 'GET users/me/limits', 'POST actors/apify~instagram-post-scraper/runs',
+      'GET actor-runs/new-run', 'GET actor-runs/new-run'])
+    expect((await db.prepare('SELECT id, state, apify_run_id, charged_usd, completed_at FROM intake_runs').all()).results).toEqual([
+      { id, state: 'started', apify_run_id: 'new-run', charged_usd: null, completed_at: null },
+    ])
+    expect(await usedBudget()).toBe(1.5)
+  })
+
+  it.each([
+    ['missing run identity', async () => ({ data: { status: 'RUNNING' } }), 'Unknown Apify start result; reconcile the reserved run before retrying'],
+    ['lost response', async () => { throw new Error('Apify start connection lost') }, 'Apify start connection lost'],
+  ] as const)('keeps the reservation and blocks a retry after a POST with %s', async (_name, start, message) => {
+    const calls: string[] = []
+    const api: ApifyRequest = async (method, path) => {
+      calls.push(`${method} ${path}`)
+      return path === 'users/me/limits' ? limits(24) : start()
+    }
+    const collect = () => Effect.runPromise(collectInstagramEffect(store, api))
+    await expect(collect()).rejects.toThrow(message)
+    await expect(collect()).rejects.toThrow('A previous run has an unknown start outcome; do not start another paid run')
+    expect(calls).toEqual(['GET users/me/limits', 'POST actors/apify~instagram-post-scraper/runs'])
+    expect(await usedBudget()).toBe(1.5)
+    expect(await db.prepare('SELECT state, apify_run_id, charged_usd, completed_at FROM intake_runs').first()).toEqual({
+      state: 'reserved', apify_run_id: null, charged_usd: null, completed_at: null,
+    })
+  })
+})
+
+describe('page-level doors on D1', () => {
+  let db: D1Database
+  let dispose: () => Promise<void>
+  let store: IntakeStore
+  const venue = { id: '20000000-0000-4000-8000-000000000001', name: 'Sala Nube', website: 'https://sala-nube.example.org' }
+  const runId = '10000000-0000-4000-8000-000000000001'
+  const now = new Date('2026-11-20T12:00:00Z')
+  const date = '2026-11-23'
+  const dateLine = 'Empieza el lun. 23 de nov 2026 a las 18:00 - 20:00'
+  beforeAll(async () => {
+    ({ db, dispose } = await freshD1())
+    await db.batch([
+      db.prepare('UPDATE intake_policy SET publishing_enabled = 1'),
+      db.prepare("INSERT INTO instagram_sources (username, authority, enabled, qualification) VALUES ('sala_nube', 'venue', 1, 'Synthetic')"),
+      db.prepare(`INSERT INTO intake_runs (id, local_date, state, reserved_usd, charged_usd, input) VALUES (?, '2026-11-20', 'succeeded', 0.01, 0, '{}')`).bind(runId),
+      db.prepare("INSERT INTO venues (id, name, website, neighborhood) VALUES (?, ?, ?, 'Palermo')").bind(venue.id, venue.name, venue.website),
+    ])
+    store = d1Intake({ db, evidence: fakeR2(), artwork: fakeR2(), vectors: fakeVectorize().index })
+  }, 60_000)
+  afterAll(async () => { await dispose?.() })
+
+  it.each([
+    { name: 'Trío Nube', excerpt: 'Abrimos las puertas a las 21h', time: '21:00', dateSource: 'page', doorsAt: '2026-11-24T00:00:00.000Z' },
+    { name: 'Marea de Papel', excerpt: 'Ingreso 17h', time: '17:00', dateSource: 'post', doorsAt: '2026-11-23T20:00:00.000Z' },
+    { name: 'Canciones de Sal', excerpt: 'Ingreso a las 20:30. Servimos la cena y luego comienza el espectáculo', time: '20:30', dateSource: 'page', doorsAt: '2026-11-23T23:30:00.000Z' },
+    { name: 'Varieté Prisma', excerpt: 'Ingreso a las 21. A las 21:45 aproximadamente comienza el espectáculo.', time: '21:00', dateSource: 'page', doorsAt: '2026-11-24T00:00:00.000Z' },
+    { name: 'Cuarteto Tinta', excerpt: 'Apertura de sala 21 hs', time: '21:00', dateSource: 'post', doorsAt: '2026-11-24T00:00:00.000Z' },
+    { name: 'Orquesta Humedal', excerpt: 'Puertas: 20:30', time: '20:30', dateSource: 'none', doorsAt: undefined },
+  ])('previews page-level doors for $name, date source: $dateSource', async ({ name, excerpt, time, dateSource, doorsAt }) => {
+    const url = `${venue.website}/show`
+    const caption = `${name} en ${venue.name}${dateSource === 'post' ? ' el lunes 23 de noviembre' : ''}`
+    const id = crypto.randomUUID()
+    const post = await Effect.runPromise(store.upsertObservation({ run_id: runId, post_id: id, source_username: 'sala_nube',
+      post_url: `https://www.instagram.com/p/${id}/`, caption, published_at: null, content_hash: id.replaceAll('-', '').repeat(2), media_urls: [] }))
+    const candidate = {
+      id, expected_revision: 0, intent: 'create', target_event_id: null, name, date, time: null, doors_time: time,
+      venue_name: venue.name, venue_id: venue.id, description_es: null, description_en: null, categories: ['music'], status: 'scheduled',
+      price_kind: 'unknown', price_ars: null, price_note: null, ticket_url: null, artwork_media_id: null, artwork_note: 'Fixture without a flyer',
+      issues: [], notes: '', evidence: [
+        { observation_id: post.id, fields: ['name', 'venue', ...(dateSource === 'post' ? ['date'] : [])], excerpt: caption, media_id: null },
+        ...(dateSource === 'page' ? [{ kind: 'official_page', url, fields: ['date'], excerpt: dateLine }] : []),
+        { kind: 'official_page', url, fields: ['doors_time'], excerpt },
+      ],
+    }
+    await Effect.runPromise(submitCandidateEffect(store, candidate))
+    let entryLine = excerpt
+    const readPage = (url: string, sites: ReadonlySet<string>) => readOfficialPage(url, sites, async () => new Response(
+      `<h1>${name}</h1>${dateSource === 'page' ? `<p>${dateLine}</p>` : ''}<p>${entryLine}</p>`, { headers: { 'content-type': 'text/html' } }))
+    const preview = await Effect.runPromise(previewCandidateEffect(store, id, now, readPage))
+    if (!doorsAt) {
+      expect(preview).toMatchObject({ action: 'held', reasons: ['Missing evidence for date'], payload: { time_tba: true } })
+      expect(preview.payload.doors_at).toBeUndefined()
+      return
+    }
+    expect(preview).toMatchObject({ action: 'create', reasons: [], payload: { starts_at: '2026-11-23T03:00:00.000Z', time_tba: true, doors_at: doorsAt } })
+    const publishers = {
+      readPage, embed: async () => ({ embedding: Array(1536).fill(0.1), searchDocument: name }),
+      presentation: async () => ({ description_display_es: null, description_display_en: null, description_summary_es: null, description_summary_en: null }),
+    }
+    if (dateSource === 'post') {
+      entryLine = 'Ingreso 18h'
+      const embed = vi.fn(publishers.embed)
+      await expect(Effect.runPromise(commitPlanEffect(store, preview.id, { ...publishers, embed })))
+        .rejects.toThrow("must be an excerpt of the page's visible text")
+      expect(embed).not.toHaveBeenCalled()
+      entryLine = excerpt
+    }
+    await Effect.runPromise(commitPlanEffect(store, preview.id, publishers))
+    expect(await db.prepare('SELECT starts_at, time_tba, doors_at FROM events WHERE id = ?').bind(preview.event_id).first())
+      .toEqual({ starts_at: '2026-11-23T03:00:00.000Z', time_tba: 1, doors_at: doorsAt })
+  })
+})
 
 describe('intake failure and retry orchestration', () => {
   it('loads media alongside observations and does not block the dependent source read on media', async () => {
@@ -150,6 +316,44 @@ describe('intake failure and retry orchestration', () => {
     }))).rejects.toThrow("calendar evidence must be on the selected venue's stored website")
   })
 
+  it('plans separate doors and start timestamps from an official page and rechecks the doors at commit', async () => {
+    const venue = { id: '20000000-0000-4000-8000-000000000001', name: 'Sala Sintética', neighborhood: 'Palermo', website: 'https://sala.example.org' }
+    const post = { id: '30000000-0000-4000-8000-000000000001', post_id: 'post-1', source_username: 'synthetic',
+      caption: 'Synthetic Jazz en Sala Sintética', media_urls: [] }
+    const excerpt = 'Lunes 23 de noviembre - Puerta 21 hs - Show 22 hs'
+    const candidate = decodeCandidate({ id: '10000000-0000-4000-8000-000000000003', expected_revision: 1, intent: 'create', target_event_id: null,
+      name: 'Synthetic Jazz', date: '2026-11-23', time: '22:00', doors_time: '21:00', venue_name: venue.name, venue_id: venue.id,
+      description_es: null, description_en: null, categories: ['music'], status: 'scheduled', price_kind: 'unknown',
+      price_ars: null, price_note: null, ticket_url: null, artwork_media_id: null, artwork_note: 'No flyer on this post', issues: [], notes: '',
+      evidence: [{ observation_id: post.id, fields: ['name', 'venue'], excerpt: post.caption, media_id: null },
+        { kind: 'official_page', url: `${venue.website}/obra`, fields: ['date', 'time', 'doors_time'], excerpt }],
+    })
+    let line = excerpt
+    const readPage = (url: string, sites: ReadonlySet<string>) => readOfficialPage(url, sites, async () => new Response(
+      `<h1>Synthetic Jazz</h1><p>${line}</p>`, { headers: { 'content-type': 'text/html' } }))
+    let saved = plan
+    const db = commitStore(plan, {
+      candidate: () => Effect.succeed({ revision: 1, payload: candidate, id: candidate.id }),
+      venue: () => Effect.succeed(venue),
+      observationsByIds: () => Effect.succeed([post]), mediaForObservations: () => Effect.succeed([]),
+      sourceAuthorities: () => Effect.succeed([{ username: 'synthetic', authority: 'venue' }]),
+      latestObservation: () => Effect.succeed({ id: post.id, content_hash: 'synthetic' }),
+      linkedEventIds: () => Effect.succeed([]), eventsBetween: () => Effect.succeed([]),
+      insertPlan: row => Effect.sync(() => saved = { ...row, id: 'plan', receipt: null, payload: { ...row.payload, embedding: Array(1536).fill(0.1) } }),
+      plan: () => Effect.sync(() => saved),
+    })
+    const preview = await Effect.runPromise(previewCandidateEffect(db, candidate.id, new Date('2026-10-25'), readPage))
+    expect(preview).toMatchObject({ action: 'create', reasons: [], payload: {
+      starts_at: '2026-11-24T01:00:00.000Z', doors_at: '2026-11-24T00:00:00.000Z', time_tba: false,
+    } })
+    const publishers = { readPage, embed: async () => { throw new Error('Unexpected embedding') },
+      presentation: async () => { throw new Error('Unexpected presentation') } }
+    line = excerpt.replace('Puerta 21', 'Puerta 20')
+    await expect(Effect.runPromise(commitPlanEffect(db, preview.id, publishers))).rejects.toThrow("must be an excerpt of the page's visible text")
+    line = excerpt
+    await expect(Effect.runPromise(commitPlanEffect(db, preview.id, publishers))).resolves.toEqual(receipt)
+  })
+
   it('overlaps publication preparation but waits for both results before writing', async () => {
     const unprepared = { ...plan, artwork_media_id: null, payload: { ...plan.payload, embedding: undefined, venue_id: 'venue' } }
     const calls: string[] = []
@@ -208,65 +412,6 @@ describe('intake failure and retry orchestration', () => {
       presentation: async () => ({ description_display_es: null, description_display_en: null, description_summary_es: null, description_summary_en: null }),
     }
     expect(await Effect.runPromise(commitPlanEffect(db, 'plan', publishers))).toEqual(receipt)
-  })
-  it('never starts a second paid run after an uncertain start', async () => {
-    const db = collectionStore({})
-    const api: ApifyRequest = async () => { throw new Error('No API call is allowed') }
-    await expect(Effect.runPromise(collectInstagramEffect(db, api))).rejects.toThrow('unknown start outcome')
-  })
-  it('starts a fresh paid run only within the Apify monthly usage limit', async () => {
-    const reservation = { fresh: true, id: 'run', reserved_usd: 1.5, actor_build: '0.0.679', input: { username: ['a'], resultsLimit: 20 }, apify_run_id: null }
-    const calls: string[] = []
-    const limited: ApifyRequest = async (method, path) => {
-      calls.push(`${method} ${path}`)
-      if (path === 'users/me/limits') return { data: { limits: { maxMonthlyUsageUsd: 19 }, current: { monthlyUsageUsd: 17.6 } } }
-      throw new Error(`Unexpected ${method} ${path}`)
-    }
-    const refused = collectionStore(reservation)
-    await expect(Effect.runPromise(collectInstagramEffect(refused, limited))).rejects.toThrow('usage limit reached')
-    expect(calls).toEqual(['GET users/me/limits'])
-
-    const raised: ApifyRequest = async (method, path) => {
-      calls.push(`${method} ${path}`)
-      if (path === 'users/me/limits') return { data: { limits: { maxMonthlyUsageUsd: 24 }, current: { monthlyUsageUsd: 17.6 } } }
-      if (method === 'POST') return { data: { id: 'new-run', status: 'RUNNING', defaultDatasetId: 'dataset' } }
-      return { data: { id: 'new-run', status: 'RUNNING', defaultDatasetId: 'dataset' } }
-    }
-    const allowed = collectionStore(reservation)
-    expect(await Effect.runPromise(collectInstagramEffect(allowed, raised))).toEqual({ state: 'running', run_id: 'new-run' })
-    expect(calls).toContain('POST actors/apify~instagram-post-scraper/runs')
-  })
-  it.each([null, Infinity])('refuses a paid run when Apify reports %s as the monthly usage limit', async (limit) => {
-    const reservation = { fresh: true, id: 'run', reserved_usd: 1.5, actor_build: '0.0.679', input: { username: ['a'], resultsLimit: 20 }, apify_run_id: null }
-    const db = collectionStore(reservation)
-    const calls: string[] = []
-    const api: ApifyRequest = async (method, path) => {
-      calls.push(`${method} ${path}`)
-      if (method === 'GET' && path === 'users/me/limits') return { data: { limits: { maxMonthlyUsageUsd: limit }, current: { monthlyUsageUsd: 3 } } }
-      throw new Error(`Unexpected ${method} ${path}`)
-    }
-    await expect(Effect.runPromise(collectInstagramEffect(db, api))).rejects.toThrow('Could not verify the Apify monthly usage limit')
-    expect(calls).toEqual(['GET users/me/limits'])
-  })
-  it('requires reconciliation when Apify starts a run but returns no valid run identity', async () => {
-    const calls: string[] = []
-    const writes: string[] = []
-    const db = collectionStore({ fresh: true }, {
-      updateRun: (_, patch) => Effect.sync(() => { writes.push(patch.state) }),
-    })
-    const api: ApifyRequest = async (method, path) => {
-      calls.push(`${method} ${path}`)
-      if (path === 'users/me/limits') {
-        return { data: { limits: { maxMonthlyUsageUsd: 19 }, current: { monthlyUsageUsd: 3 } } }
-      }
-      return { data: { status: 'RUNNING' } }
-    }
-    await expect(Effect.runPromise(collectInstagramEffect(db, api))).rejects.toMatchObject({
-      _tag: 'ImportOperationError', operation: 'instagram.collection',
-      message: 'Unknown Apify start result; reconcile the reserved run before retrying',
-    })
-    expect(calls).toEqual(['GET users/me/limits', 'POST actors/apify~instagram-post-scraper/runs'])
-    expect(writes).toEqual([])
   })
   it('returns the collection summary when the image retry fails after the run is marked succeeded', async () => {
     const calls: string[] = []

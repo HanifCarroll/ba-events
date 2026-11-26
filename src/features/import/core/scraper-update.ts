@@ -6,7 +6,7 @@ export type ScraperUpdateKind = 'unchanged' | 'mutable-only' | 'search-input/sta
 const mutableFields = [
   'starts_at', 'ends_at', 'is_all_day', 'time_tba', 'venue_id', 'min_age',
   'image_url', 'image_width', 'image_height', 'link', 'ticket_url', 'status',
-  'location_hidden', 'location_tba', 'description_unavailable',
+  'location_hidden', 'location_tba', 'description_unavailable', 'organizer_name', 'organizer_url',
 ] as const
 
 type MutableField = (typeof mutableFields)[number]
@@ -32,6 +32,7 @@ export function getChangedMutableFields(
     if (next === undefined || (field === 'venue_id' && next === null) || equal(field, next, existing[field])) continue
     Object.assign(changes, { [field]: next })
   }
+  if (changes.organizer_name && incoming.organizer_url === undefined && existing.organizer_url) changes.organizer_url = null
   return changes
 }
 
