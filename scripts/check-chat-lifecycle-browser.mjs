@@ -18,7 +18,6 @@ const stubs = {
   export const chatState={getGuestConversation:getGuestConversationWithMessages,addMessage:async()=>({id:'legacy'}),generateTitle:async()=>({title:'Title'}),registerStartNewChatHandler(fn){window.startNew=fn;return()=>{}},getConversationScrollPosition:()=>null,saveConversationScrollPosition:()=>{}};`,
   input: '<script>let {onSend,disabled,onStop,canStop}=$props();let value=$state("")</script><form onsubmit={e=>{e.preventDefault();void onSend(value);value=""}}><input aria-label="Message" bind:value disabled={disabled}/>{#if canStop}<button type="button" onclick={onStop}>Stop response</button>{:else}<button disabled={disabled}>Send</button>{/if}</form>',
   message: '<script>let {message}=$props()</script><div data-message-id={message.id}><p data-role={message.role}>{message.content}</p>{#if message.responseFeedback}<span data-feedback-response={message.responseFeedback.responseId}></span>{/if}{#each message.events??[] as event}<article data-event-id={event.id}>{event.name}</article>{/each}{#if message.recommendationNextStep}<p data-next-step>{message.recommendationNextStep}</p>{/if}</div>',
-  prompts: '<script>let {onSelectPrompt}=$props()</script><button onclick={()=>onSelectPrompt(window.dogfoodPrompt??"First question")}>Start</button>',
 }
 await Bun.write(`${temp}/Harness.svelte`, `<script>
 import {tick} from 'svelte';
@@ -32,7 +31,9 @@ window.getStored=getGuestConversationWithMessages;
 window.completeElsewhere=async(turnId,canonical)=>{const claimId=crypto.randomUUID();await claimGuestTurn(turnId,claimId,true);await completeGuestTurn(turnId,claimId,{canonical,executionTrace:[]})};
 window.seed=async(id)=>{await bootstrapGuestTurn({conversationId:id,turnId:crypto.randomUUID(),userClientMessageId:crypto.randomUUID(),assistantClientMessageId:crypto.randomUUID(),content:'Existing question'})};
 window.routeId=()=>conversationId;
-</script><ChatContainer {conversationId} {preloadedConversation} {pendingTurns} showLanding={true} onConversationChange={async id=>{conversationId=id;sessionStorage.setItem('browser-conversation',id);await tick()}}/>`)
+</script>
+{#snippet landing(onSelectPrompt)}<button onclick={()=>onSelectPrompt(window.dogfoodPrompt??"First question",{happeningSoonEventIds:[]})}>Start</button>{/snippet}
+<ChatContainer {conversationId} {preloadedConversation} {pendingTurns} {landing} onConversationChange={async id=>{conversationId=id;sessionStorage.setItem('browser-conversation',id);await tick()}}/>`)
 await Bun.write(`${temp}/entry.ts`, `import {mount} from 'svelte';import Harness from './Harness.svelte';window.analytics=[];window.toasts=[];mount(Harness,{target:document.body});`)
 const output = await Bun.build({
   entrypoints:[`${temp}/entry.ts`], target:'browser', conditions:['browser','svelte'], minify:false,
@@ -43,11 +44,11 @@ const output = await Bun.build({
     build.onResolve({filter:/^#paraglide\/runtime\.js$/},()=>({path:'locale',namespace:'stub'}))
     build.onResolve({filter:/^#shared\/lib\/analytics\.ts$/},()=>({path:'analytics',namespace:'stub'}))
     build.onResolve({filter:/^svelte-sonner$/},()=>({path:'toast',namespace:'stub'}))
-    build.onResolve({filter:/^\.\/(ChatInput|ChatMessage|SuggestedPrompts)\.svelte$/},args=>({path:args.path.includes('ChatInput')?'input':args.path.includes('ChatMessage')?'message':'prompts',namespace:'stub'}))
+    build.onResolve({filter:/^\.\/(ChatInput|ChatMessage)\.svelte$/},args=>({path:args.path.includes('ChatInput')?'input':'message',namespace:'stub'}))
     build.onResolve({filter:/^(svelte(?:\/.*)?|ai|@ai-sdk\/svelte|dexie)$/},args=>({path:args.path==="@ai-sdk/svelte"?root+"/node_modules/@ai-sdk/svelte/dist/index.js":args.path==="svelte"?root+"/node_modules/svelte/src/index-client.js":args.path==="svelte/reactivity"?root+"/node_modules/svelte/src/reactivity/index-client.js":args.path==="svelte/store"?root+"/node_modules/svelte/src/store/index-client.js":Bun.resolveSync(args.path,root)}))
     build.onLoad({filter:/.*/,namespace:'stub'},args=>{
       const text=stubs[args.path];
-      const contents=['input','message','prompts'].includes(args.path)?compile(text,{filename:`${temp}/${args.path}.svelte`,generate:'client',runes:true}).js.code:args.path==='auth'?compileModule(text,{filename:`${temp}/auth.svelte.js`,generate:'client'}).js.code:text;
+      const contents=['input','message'].includes(args.path)?compile(text,{filename:`${temp}/${args.path}.svelte`,generate:'client',runes:true}).js.code:args.path==='auth'?compileModule(text,{filename:`${temp}/auth.svelte.js`,generate:'client'}).js.code:text;
       return {contents,loader:'js',resolveDir:root};
     })
     build.onLoad({filter:/\.svelte$/},async args=>({contents:compile(await Bun.file(args.path).text(),{filename:args.path,generate:'client',runes:args.path.includes('/node_modules/')?undefined:true}).js.code,loader:'js',resolveDir:dirname(args.path)}))

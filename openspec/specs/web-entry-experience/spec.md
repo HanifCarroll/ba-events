@@ -208,7 +208,7 @@ The PWA installation prompt and pull-to-refresh gesture SHALL each have explicit
 - **AND** repeated releases during refresh do not start concurrent refreshes
 
 ## Verification
-- Implementation: `messages/en.json`, `messages/es.json`, `src/features/chat/components/SuggestedPrompts.svelte`, `src/shared/ui/MainLayout.svelte`, `src/features/events/components/EventArtwork.svelte`, `src/routes/mcp/+page.svelte`, `src/shared/lib/utils/formatting.ts`
+- Implementation: `messages/en.json`, `messages/es.json`, `src/routes/(chat)/HomePage.svelte`, `src/features/events/components/HomeAgenda.svelte`, `src/shared/ui/MainLayout.svelte`, `src/features/events/components/EventArtwork.svelte`, `src/routes/mcp/+page.svelte`, `src/shared/lib/utils/formatting.ts`
 - Browser checks: render the real components in English and Spanish at desktop and mobile widths; verify homepage alignment at 320, 390, and 1440 CSS pixels, both session states, the second-visit install hint, and its dismissal. Verify app header alignment, menu keyboard access, navigation icon geometry, wrapped labels, Telegram link attributes, and Claude and ChatGPT setup instructions. Verify the phone list, desktop grid, centered composer, and pagination.
 - Install hint persistence: `src/shared/lib/pwa/install-hint.test.ts`.
 - Static check: `bun run paraglide:compile && bun run check`

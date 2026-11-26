@@ -1,6 +1,6 @@
 <script lang="ts">
-	import type { HomeAgendaPage } from '#features/events/lib/home-feed.ts'
-	import { untrack } from 'svelte'
+	import { untrack, type Snippet } from 'svelte'
+	import type { LandingPromptHandler, LandingPromptHints } from '#features/chat/lib/landing-prompt.ts'
 	import { useMachine } from '@xstate/svelte'
 	import { createAsyncLogic } from 'xstate'
 	import { guestConversationMachine, type GuestConversationRead } from '#features/chat/lib/guest-conversation.machine.ts'
@@ -48,7 +48,6 @@
 	import { getFallbackConversationTitle } from '#features/chat/lib/title.ts'
 	import MessageList from './MessageList.svelte'
 	import ChatInput from './ChatInput.svelte'
-	import SuggestedPrompts from './SuggestedPrompts.svelte'
 	import {
 		CHAT_CONTRACT_VERSION,
 		type ChatEventPayload,
@@ -67,7 +66,6 @@
 	let {
 		conversationId = null as string | null,
 		onConversationChange = undefined as ((id: string) => Promise<void>) | undefined,
-		homeAgenda = null,
 		preloadedConversation = null as ConversationWithMessages | null,
 		pendingTurns = [] as Array<{
 			id: string
@@ -76,11 +74,10 @@
 			user_client_message_id: string
 			assistant_client_message_id: string
 		}>,
-		showLanding = true
+		landing
 	}: {
 		conversationId?: string | null
 		onConversationChange?: (id: string) => Promise<void>
-		homeAgenda?: HomeAgendaPage | null
 		preloadedConversation?: ConversationWithMessages | null
 		pendingTurns?: Array<{
 			id: string
@@ -89,7 +86,7 @@
 			user_client_message_id: string
 			assistant_client_message_id: string
 		}>
-		showLanding?: boolean
+		landing?: Snippet<[LandingPromptHandler]>
 	} = $props()
 
 
@@ -323,9 +320,7 @@
 
 	async function handleSendMessage(
 		content: string,
-		options?: {
-			eventId?: string
-			happeningSoonEventIds?: string[]
+		options?: Partial<LandingPromptHints> & {
 			conversationId?: string
 			userClientMessageId?: string
 			assistantClientMessageId?: string
@@ -740,7 +735,7 @@
 	})
 
 	const isHome = $derived(
-		showLanding && !conversationId && !hasMessages && requestPhase === 'idle'
+		!!landing && !conversationId && !hasMessages && requestPhase === 'idle'
 	)
 
 	const showConversationLoading = $derived(
@@ -834,11 +829,8 @@
 				loadingLabel={loadingLabel}
 				onSuggestionSelect={handleSendMessage}
 			/>
-		{:else if showLanding}
-			<SuggestedPrompts
-				onSelectPrompt={handleSendMessage}
-				{homeAgenda}
-			/>
+		{:else if landing}
+			{@render landing(handleSendMessage)}
 		{/if}
 	</div>
 

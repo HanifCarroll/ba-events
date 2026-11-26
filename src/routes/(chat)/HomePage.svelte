@@ -4,6 +4,7 @@
 	import { toast } from 'svelte-sonner'
 	import { getLocale } from '#paraglide/runtime.js'
 	import { useSpeech } from '#features/chat/lib/speech.svelte.ts'
+	import type { LandingPromptHandler } from '#features/chat/lib/landing-prompt.ts'
 	import { parseHomeFilter, type HomeAgendaPage, type HomeAgendaEvent, type HomeViewPage } from '#features/events/lib/home-feed.ts'
 	import HomeAgenda from '#features/events/components/HomeAgenda.svelte'
 	import HomeFlyerCollage from '#features/events/components/HomeFlyerCollage.svelte'
@@ -26,7 +27,7 @@
 		onSelectPrompt,
 		homeAgenda = null
 	}: {
-		onSelectPrompt: (prompt: string, options: { eventId?: string; happeningSoonEventIds: string[] }) => void
+		onSelectPrompt: LandingPromptHandler
 		homeAgenda?: HomeAgendaPage | null
 	} = $props()
 
@@ -255,7 +256,7 @@
 		</div>
 	</header>
 
-	<HomeAgenda {view} {filter} {url} day={homeAgenda?.day} chat={chatBlock} onAsk={askAbout} onMore={revealAgendaPage} />
+	<HomeAgenda {view} {filter} {url} day={homeAgenda?.day} composer={chatBlock} onAsk={askAbout} onMore={revealAgendaPage} />
 
 	{#snippet chatBlock()}
 	<section data-section="chat" class="rounded-2xl border border-[#3b3b42] bg-[#19191d] px-3 py-5 text-center sm:p-8" aria-labelledby="home-chat-heading">

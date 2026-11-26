@@ -4,7 +4,7 @@
 	import { Heart } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
 	import { useAuthContext } from '#features/auth/hooks/auth-context.svelte.ts';
-	import { isEventSaved, saveEvent, unsaveEvent } from '#features/chat/lib/saved.ts';
+	import { isEventSaved, saveEvent, unsaveEvent } from '#features/events/lib/saved.ts';
 	import { track } from '#shared/lib/analytics.ts';
 	import { Button } from '#shared/ui/button/index.ts';
 	import {

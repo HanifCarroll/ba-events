@@ -21,7 +21,7 @@ const config: StorybookConfig = {
 				{ find: '$app/env', replacement: mock('app-env.ts') },
 				...[
 					['src/features/auth/hooks/auth-context.svelte.ts', '#features/auth/hooks/auth-context.svelte.ts', 'auth.svelte.ts'],
-					['src/features/chat/lib/saved.ts', '#features/chat/lib/saved.ts', 'saved.ts'],
+					['src/features/events/lib/saved.ts', '#features/events/lib/saved.ts', 'saved.ts'],
 					['src/shared/lib/analytics.ts', '#shared/lib/analytics.ts', 'analytics.ts'],
 					['src/features/chat/lib/speech-recognition.ts', '#features/chat/lib/speech-recognition.ts', 'speech.ts']
 				].flatMap(([path, specifier, replacement]) => [
