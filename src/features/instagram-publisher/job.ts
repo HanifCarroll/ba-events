@@ -103,6 +103,7 @@ export interface Services {
   slackShareFiles(files: Array<{ id: string; title: string }>, text: string, channel: string): Promise<unknown>
   slackShareTs(fileId: string, channel: string): Promise<string | null>
   slackPost(text: string, threadTs: string | null, channel: string, broadcast?: boolean): Promise<unknown>
+  slackPermalink(ts: string, channel: string): Promise<string>
   slackReactions(ts: string, channel: string): Promise<Array<{ name: string; users?: string[] }> | undefined>
   r2Put(bucket: string, key: string, path: string): Promise<void>
   loadToken(now: Date): Promise<TokenCheck>
@@ -132,6 +133,7 @@ export const liveServices = (): Services => ({
   slackShareFiles: runtime.slackShareFiles,
   slackShareTs: runtime.slackShareTs,
   slackPost: runtime.slackPost,
+  slackPermalink: runtime.slackPermalink,
   slackReactions: runtime.slackReactions,
   r2Put: runtime.r2Put,
   loadToken: now => runtime.loadToken(now),
@@ -822,9 +824,16 @@ export class Job {
       const threads = this.openThreadsWindow(draft)
       return (!SETTLED.includes(draft.state) && now < window.cutoff) || Boolean(threads && now < threads.cutoff)
     }
+    const broadcast = channel === runtime.SLACK_ALERTS_CHANNEL
+    let notice = text
     let sendNotice = false
     if (needsDecision && !draft.decisionBroadcastAttempted && !review.homeAttempted && approvalOpen()
       && this.previewThreads(draft).some(preview => preview.ts === ts && preview.channel === channel && preview.revision === draft.revision)) {
+      if (!broadcast) {
+        const permalink = await this.s.slackPermalink(ts, channel).catch(() => `https://app.slack.com/archives/${channel}/p${ts.replace('.', '')}`)
+        notice = `<${permalink}|Abrí la vista previa en Slack>\n\n${text.split('\n').map(line => `> ${line}`).join('\n')}`
+      }
+      // Read reactions after the permalink lookup so it can't leave the decision check stale.
       const decision = await this.readDecision(draft)
       sendNotice = !anyApproval(decision) && !decision.rejected && approvalOpen()
     }
@@ -840,9 +849,6 @@ export class Job {
       })
       return
     }
-    const alertsChannel = this.s.config().slack.channel
-    const broadcast = channel === alertsChannel
-    const notice = broadcast ? text : `<https://app.slack.com/archives/${channel}/p${ts.replace('.', '')}|Abrí la vista previa en Slack>\n\n${text.split('\n').map(line => `> ${line}`).join('\n')}`
     const replyWasSent = reply.replied
     const reviewWasSent = review.replied
     // Reserve before sending. A lost response must not cause a second notice or thread reply.
@@ -850,7 +856,7 @@ export class Job {
     markReplied()
     await this.reviewAction(draft, 'Slack decision notice', async () => {
       try {
-        await this.s.slackPost(notice, broadcast ? ts : null, alertsChannel, broadcast)
+        await this.s.slackPost(notice, broadcast ? ts : null, runtime.SLACK_ALERTS_CHANNEL, broadcast)
       } catch (error) {
         if (error instanceof runtime.SlackRejected) {
           delete draft.decisionBroadcastAttempted

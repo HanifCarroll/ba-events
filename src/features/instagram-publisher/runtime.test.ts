@@ -3,7 +3,7 @@ import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { runWindow } from './formats.ts'
-import { DEFAULT_REVIEW, alert, catalogSql, loadToken, mediaBin, readConfig, renderFrames, renderReel, slackPost, toCatalogEvent, type Runner } from './runtime.ts'
+import { DEFAULT_REVIEW, alert, catalogSql, loadToken, mediaBin, readConfig, renderFrames, renderReel, slackPermalink, slackPost, toCatalogEvent, type Runner } from './runtime.ts'
 import { reelTiming } from './reel/project.ts'
 
 describe('publisher config', () => {
@@ -76,6 +76,16 @@ it.each([
     return { ts: '2.0' }
   }
   expect(await slackPost(text, threadTs, 'C_APPROVALS', broadcast, call)).toEqual({ ts: '2.0' })
+})
+
+it('looks up the preview permalink by channel and message timestamp', async () => {
+  const permalink = 'https://test-workspace.slack.com/archives/C_APPROVALS/p10'
+  const call = async (method: string, payload: Record<string, string>) => {
+    expect(method).toBe('chat.getPermalink')
+    expect(payload).toEqual({ channel: 'C_APPROVALS', message_ts: '1.0' })
+    return { permalink }
+  }
+  expect(await slackPermalink('1.0', 'C_APPROVALS', call)).toBe(permalink)
 })
 
 describe('catalog read', () => {

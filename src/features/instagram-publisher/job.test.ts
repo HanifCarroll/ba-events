@@ -155,6 +155,10 @@ class World {
         this.slackPosts.push({ text, threadTs: threadTs ?? undefined })
         return { ts: `${this.nextTs++}.0` }
       },
+      slackPermalink: async (ts: string, channel: string) => {
+        this.slackCalls.push({ method: 'chat.getPermalink', ts, channel })
+        return `https://test-workspace.slack.com/archives/${channel}/p${ts.replace('.', '')}`
+      },
       slackReactions: async (ts, channel) => {
         this.slackCalls.push({ method: 'reactions.get', channel, ts })
         return ts === this.reel()?.slack.ts ? this.reelReactions : this.reactions
@@ -232,10 +236,10 @@ describe('tick: draft review', () => {
   })
 
   it.each([
-    { previewChannel: 'C_TEST_APPROVALS', loseResponse: false },
-    { previewChannel: 'C0CHBCSEV3R', loseResponse: false },
-    { previewChannel: 'C_TEST_APPROVALS', loseResponse: true },
-  ])('posts one question in #alerts from $previewChannel (lost response: $loseResponse)', async ({ previewChannel, loseResponse }) => {
+    { previewChannel: 'C_TEST_APPROVALS', loseResponse: false, failLookup: false },
+    { previewChannel: 'C0CHBCSEV3R', loseResponse: false, failLookup: true },
+    { previewChannel: 'C_TEST_APPROVALS', loseResponse: true, failLookup: false },
+  ])('posts one question in #alerts with the $previewChannel override still set (lost response: $loseResponse, permalink fails: $failLookup)', async ({ previewChannel, loseResponse, failLookup }) => {
     const w = world()
     const alertsChannel = w.config.slack.channel
     w.config.slack.channel = previewChannel
@@ -249,10 +253,15 @@ describe('tick: draft review', () => {
       delete draft.slack.previews
       writeFileSync(w.job().draftFile(draft.id), JSON.stringify(draft))
     }
-    w.config.slack.channel = alertsChannel
     w.reviewer = async input => ({ ...(await reviewer(input)), post: question })
     w.slackCalls = []
     const job = w.job()
+    const lookup = job.s.slackPermalink
+    job.s.slackPermalink = async (...args) => {
+      const url = await lookup(...args)
+      if (failLookup) throw new Error('Slack could not find the permalink')
+      return url
+    }
     const post = job.s.slackPost
     job.s.slackPost = async (...args) => {
       const response = await post(...args)
@@ -262,9 +271,14 @@ describe('tick: draft review', () => {
     slot(w)
     await job.tick()
     await w.job().tick()
+    expect(w.config.slack.channel).toBe(previewChannel)
+    expect(w.slackCalls.filter(call => call.method === 'chat.getPermalink')).toEqual([
+      { method: 'chat.getPermalink', ts: draft.slack.ts, channel: previewChannel },
+    ])
+    const domain = failLookup ? 'app.slack.com' : 'test-workspace.slack.com'
     expect(w.slackCalls.filter(call => call.method === 'chat.postMessage')).toEqual([{
       method: 'chat.postMessage', channel: alertsChannel,
-      text: `<https://app.slack.com/archives/${previewChannel}/p10|Abrí la vista previa en Slack>\n\n> Revisión: hace falta tu decisión.\n> Respondé con ✅ o ❌ en la vista previa.\n> ${question.question}`,
+      text: `<https://${domain}/archives/${previewChannel}/p10|Abrí la vista previa en Slack>\n\n> Revisión: hace falta tu decisión.\n> Respondé con ✅ o ❌ en la vista previa.\n> ${question.question}`,
     }])
     expect(w.ig.published).toHaveLength(0)
     expect(w.threads.posts).toHaveLength(0)
