@@ -1,12 +1,12 @@
 import type { D1Database } from '@cloudflare/workers-types'
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Effect } from 'effect'
 import { freshD1 } from '../../../../tests/support/d1.ts'
 import { fakeR2 } from '../../../../tests/support/r2.ts'
 import { fakeVectorize } from '../../../../tests/support/vectorize.ts'
 import { d1Intake } from './store-d1.ts'
 import { collectInstagramEffect, type ApifyRequest } from './collection.ts'
-import { commitPlanEffect, readEvidenceEffect, previewCandidateEffect } from './service.ts'
+import { commitPlanEffect, readEvidenceEffect, previewCandidateEffect, submitCandidateEffect } from './service.ts'
 import { readOfficialPage } from './official-page.ts'
 import { decodeCandidate } from './schema.ts'
 import { ImportOperationError } from '../core/effect-utils.ts'
@@ -121,6 +121,78 @@ describe('Instagram collection budget on D1', () => {
     expect(await db.prepare('SELECT state, apify_run_id, charged_usd, completed_at FROM intake_runs').first()).toEqual({
       state: 'reserved', apify_run_id: null, charged_usd: null, completed_at: null,
     })
+  })
+})
+
+describe('page-level doors on D1', () => {
+  let db: D1Database
+  let dispose: () => Promise<void>
+  let store: IntakeStore
+  const venue = { id: '20000000-0000-4000-8000-000000000001', name: 'Sala Nube', website: 'https://sala-nube.example.org' }
+  const runId = '10000000-0000-4000-8000-000000000001'
+  const now = new Date('2026-11-20T12:00:00Z')
+  const date = '2026-11-23'
+  const dateLine = 'Empieza el lun. 23 de nov 2026 a las 18:00 - 20:00'
+  beforeAll(async () => {
+    ({ db, dispose } = await freshD1())
+    await db.batch([
+      db.prepare('UPDATE intake_policy SET publishing_enabled = 1'),
+      db.prepare("INSERT INTO instagram_sources (username, authority, enabled, qualification) VALUES ('sala_nube', 'venue', 1, 'Synthetic')"),
+      db.prepare(`INSERT INTO intake_runs (id, local_date, state, reserved_usd, charged_usd, input) VALUES (?, '2026-11-20', 'succeeded', 0.01, 0, '{}')`).bind(runId),
+      db.prepare("INSERT INTO venues (id, name, website, neighborhood) VALUES (?, ?, ?, 'Palermo')").bind(venue.id, venue.name, venue.website),
+    ])
+    store = d1Intake({ db, evidence: fakeR2(), artwork: fakeR2(), vectors: fakeVectorize().index })
+  }, 60_000)
+  afterAll(async () => { await dispose?.() })
+
+  it.each([
+    { name: 'Trío Nube', excerpt: 'Abrimos las puertas a las 21h', time: '21:00', dateSource: 'page', doorsAt: '2026-11-24T00:00:00.000Z' },
+    { name: 'Marea de Papel', excerpt: 'Ingreso 17h', time: '17:00', dateSource: 'post', doorsAt: '2026-11-23T20:00:00.000Z' },
+    { name: 'Canciones de Sal', excerpt: 'Ingreso a las 20:30. Servimos la cena y luego comienza el espectáculo', time: '20:30', dateSource: 'page', doorsAt: '2026-11-23T23:30:00.000Z' },
+    { name: 'Varieté Prisma', excerpt: 'Ingreso a las 21. A las 21:45 aproximadamente comienza el espectáculo.', time: '21:00', dateSource: 'page', doorsAt: '2026-11-24T00:00:00.000Z' },
+    { name: 'Cuarteto Tinta', excerpt: 'Puertas: 20:30', time: '20:30', dateSource: 'none', doorsAt: undefined },
+  ])('previews page-level doors for $name, date source: $dateSource', async ({ name, excerpt, time, dateSource, doorsAt }) => {
+    const url = `${venue.website}/show`
+    const caption = `${name} en ${venue.name}${dateSource === 'post' ? ' el lunes 23 de noviembre' : ''}`
+    const id = crypto.randomUUID()
+    const post = await Effect.runPromise(store.upsertObservation({ run_id: runId, post_id: id, source_username: 'sala_nube',
+      post_url: `https://www.instagram.com/p/${id}/`, caption, published_at: null, content_hash: id.replaceAll('-', '').repeat(2), media_urls: [] }))
+    const candidate = {
+      id, expected_revision: 0, intent: 'create', target_event_id: null, name, date, time: null, doors_time: time,
+      venue_name: venue.name, venue_id: venue.id, description_es: null, description_en: null, categories: ['music'], status: 'scheduled',
+      price_kind: 'unknown', price_ars: null, price_note: null, ticket_url: null, artwork_media_id: null, artwork_note: 'Fixture without a flyer',
+      issues: [], notes: '', evidence: [
+        { observation_id: post.id, fields: ['name', 'venue', ...(dateSource === 'post' ? ['date'] : [])], excerpt: caption, media_id: null },
+        ...(dateSource === 'page' ? [{ kind: 'official_page', url, fields: ['date'], excerpt: dateLine }] : []),
+        { kind: 'official_page', url, fields: ['doors_time'], excerpt },
+      ],
+    }
+    await Effect.runPromise(submitCandidateEffect(store, candidate))
+    let entryLine = excerpt
+    const readPage = (url: string, sites: ReadonlySet<string>) => readOfficialPage(url, sites, async () => new Response(
+      `<h1>${name}</h1>${dateSource === 'page' ? `<p>${dateLine}</p>` : ''}<p>${entryLine}</p>`, { headers: { 'content-type': 'text/html' } }))
+    const preview = await Effect.runPromise(previewCandidateEffect(store, id, now, readPage))
+    if (!doorsAt) {
+      expect(preview).toMatchObject({ action: 'held', reasons: ['Missing evidence for date'], payload: { time_tba: true } })
+      expect(preview.payload.doors_at).toBeUndefined()
+      return
+    }
+    expect(preview).toMatchObject({ action: 'create', reasons: [], payload: { starts_at: '2026-11-23T03:00:00.000Z', time_tba: true, doors_at: doorsAt } })
+    const publishers = {
+      readPage, embed: async () => ({ embedding: Array(1536).fill(0.1), searchDocument: name }),
+      presentation: async () => ({ description_display_es: null, description_display_en: null, description_summary_es: null, description_summary_en: null }),
+    }
+    if (dateSource === 'post') {
+      entryLine = 'Ingreso 18h'
+      const embed = vi.fn(publishers.embed)
+      await expect(Effect.runPromise(commitPlanEffect(store, preview.id, { ...publishers, embed })))
+        .rejects.toThrow("must be an excerpt of the page's visible text")
+      expect(embed).not.toHaveBeenCalled()
+      entryLine = excerpt
+    }
+    await Effect.runPromise(commitPlanEffect(store, preview.id, publishers))
+    expect(await db.prepare('SELECT starts_at, time_tba, doors_at FROM events WHERE id = ?').bind(preview.event_id).first())
+      .toEqual({ starts_at: '2026-11-23T03:00:00.000Z', time_tba: 1, doors_at: doorsAt })
   })
 })
 

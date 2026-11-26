@@ -71,6 +71,28 @@ describe('Instagram candidate publication rules', () => {
     expect(validateEvidence(input, posts, [], now)).toEqual([])
     expect(validateEvidence({ ...input, doors_time: '09:30' }, posts, [], now)).toContain('Door time must appear in the cited excerpt')
   })
+  it('accepts a bare hour explicitly introduced in a doors caption, but not as a start', () => {
+    const excerpt = 'Ingreso a las 21. A las 21:45 aproximadamente comienza el espectáculo.'
+    const evidence = [{ ...candidate().evidence[0], fields: ['name', 'date', 'venue', 'doors_time'] as const, excerpt }]
+    const posts = [{ ...post, caption: excerpt }]
+    const input = { ...candidate(), time: null, doors_time: '21:00', evidence }
+    expect(validateEvidence(input, posts, [], now)).toEqual([])
+    const start = (time: string, excerpt: string) => validateEvidence({ ...input, time,
+      evidence: [...evidence, { ...candidate().evidence[0], fields: ['time'], excerpt }] }, posts, [], now)
+    expect(start('21:00', 'Ingreso a las 21')).toContain('Start time must appear in the cited excerpt')
+    expect(start('21:45', 'A las 21:45')).toContain('Start time must appear in the cited excerpt')
+  })
+  it('uses the retained flyer clock as doors when its caption identifies flyer times as entry', () => {
+    const caption = `${post.caption}\nLos horarios de los flyers son de ingreso.`
+    const posts = [{ ...post, caption }]
+    const flyer: Media = { id: eventId, observation_id: observationId, object_key: 'synthetic.jpg', sha256: 'a'.repeat(64), content_type: 'image/jpeg' }
+    const flyerClock = { ...candidate().evidence[0], excerpt: '21:00', media_id: flyer.id }
+    const base = { ...candidate().evidence[0], fields: ['name', 'date', 'venue'] as const, excerpt: caption }
+    expect(validateEvidence({ ...candidate(), time: null, doors_time: '21:00',
+      evidence: [base, { ...flyerClock, fields: ['doors_time'] }] }, posts, [flyer], now)).toEqual([])
+    expect(validateEvidence({ ...candidate(), evidence: [base, { ...flyerClock, fields: ['time'] }] }, posts, [flyer], now))
+      .toContain('The caption identifies flyer times as doors, not the show start')
+  })
   it.each(['20.11', '20.11 noviembre', '20.11.2026 hs'])('does not read a dotted date as a clock: %s', excerpt => {
     const evidence = [{ ...candidate().evidence[0], fields: ['name', 'date', 'venue', 'doors_time'] as const, excerpt }]
     expect(validateEvidence({ ...candidate(), time: null, doors_time: '20:11', evidence }, [{ ...post, caption: excerpt }], [], now))

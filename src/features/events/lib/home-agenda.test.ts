@@ -55,6 +55,7 @@ describe('homepage agenda views', () => {
 
   it('labels doors rather than a made-up start or Time TBA on chat and saved cards', () => {
     const event = { starts_at: monday.start, doors_at: '2026-11-24T02:59:00.000Z', time_tba: true }
+    expect(formatEventCardTime({ ...event, doors_at: '2026-11-24T00:00:00.000Z' }, 'es')).toBe('Puerta 21:00')
     expect(formatEventCardTime(event, 'es')).toBe('Puerta 23:59')
     expect(formatEventCardTime(event, 'en')).toBe('Doors 11:59 PM')
     expect(formatEventCardTime({ ...event, starts_at: '2026-11-24T03:30:00.000Z', time_tba: false }, 'en')).toMatch(/^12:30 AM · Doors 11:59 PM · Mon/i)
