@@ -405,13 +405,19 @@ const EXPLICIT_DAY_PREFIX = new RegExp(String.raw`\b(?:dia|${WEEKDAYS})[.,:]? (?
 const DAY_ONLY = new RegExp(String.raw`\b(?:el|dia|${WEEKDAYS}|${MONTHS.join('|')})[.,:]? (\d{1,2})\b(?![./-]\d)`, 'g')
 const JOINED_DAYS = /\b\d{1,2}\b *(?:[,–—-]|y\b|o\b|al\b) *#|# *(?:[,–—-]|\by\b|\bo\b|\bal\b) *\d{1,2}\b(?! [a-z])/
 
+const SEATING_AREA = 'platea|campo|palco|pullman|paraiso|tribuna|balcon|patio'
+const SEATING_DETAIL = 'general|preferencial|vip|alt[oa]|baj[oa]|central|lateral|izquierd[ao]|derech[ao]|delanter[oa]|traser[oa]|norte|sur|este|oeste'
+// Match the entire trailing label. Free text after a seating word can still qualify the show time.
+const TICKET_SECTOR = `(?:sector (?:${SEATING_AREA}|${SEATING_DETAIL})|(?:${SEATING_AREA}))(?: (?:${SEATING_DETAIL}))*`
+const DOORS_DISPLAY_SUFFIX = new RegExp(` *(?:[|•] *(?:comprar entradas|entradas)|[.|-] *${TICKET_SECTOR})$`)
+
 /** Strip separated display text, not text that can state or qualify a time. */
 function doorsTimingText(excerpt: string, name: string): string {
   const title = normalizePageText(name)
   const prefixEnd = title && excerpt.startsWith(title) && !/\d/.test(title) && !DOORS_WORD.test(title)
     ? /^ *[|•] */.exec(excerpt.slice(title.length))?.[0] : undefined
   const timing = prefixEnd ? excerpt.slice(title.length + prefixEnd.length) : excerpt
-  return timing.replace(/ *[|•] *(?:comprar entradas|entradas)$/, '')
+  return timing.replace(DOORS_DISPLAY_SUFFIX, '')
 }
 
 /** Doors mentions use one complete shape; never infer clock roles from nearby words. */

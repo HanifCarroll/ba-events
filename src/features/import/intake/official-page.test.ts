@@ -299,20 +299,61 @@ describe('official-page evidence', () => {
     }
   })
 
-  it.each([
-    // The sandbox cannot fetch Konex. The core is from issue #100; the surrounding text is synthetic.
-    ['Dancing Mood', 'Jueves 17 de diciembre - Puerta 20 hs | Show 20:30 hs', '2026-12-17', '20:00', '20:30'],
-    ['Trío Lunar', 'Vier. 8 de enero - Apertura: 19:00 / Inicio: 19:45', '2027-01-08', '19:00', '19:45'],
-  ])('accepts the doors/show pair for %s with separated display text', async (name, pair, date, doorsTime, time) => {
+  it('accepts the doors/show pair with separated title and ticket prompt', async () => {
+    const name = 'Trío Lunar'
+    const candidate = { ...facts, name, date: '2027-01-08', doorsTime: '19:00', time: '19:45' }
+    const pair = 'Vier. 8 de enero - Apertura: 19:00 / Inicio: 19:45'
     const line = `${name} | ${pair} | Comprar entradas`
     const verify = (excerpt: string, visible: string, fields?: Parameters<typeof evidence>[2]) => Effect.runPromise(verifyOfficialPagesEffect(
-      [evidence(officialUrl, excerpt, fields)], { ...facts, name, date, doorsTime, time }, readHtml(`<h1>${name}</h1>`),
+      [evidence(officialUrl, excerpt, fields)], candidate, readHtml(`<h1>${name}</h1>`),
       async () => renderedPageRead(officialUrl, { url: officialUrl, title: name, headings: [name], hasH1: true, ogTitle: null, siteName: null,
         visible: `${name}\n\n${visible}`, challenge: false, fanzJson: '', fanzLinks: [], singleDate: '' })))
     expect(await verify(line, line, ['date', 'time', 'doors_time'])).toEqual([])
     expect(await verify(pair, line)).toEqual([])
     for (const qualifier of [' | Ingreso 18 hs', ' | Sujeto a confirmación', ' | 21:00', ' | Preventa']) {
       expect(await verify(pair, line + qualifier)).toEqual([`Official page excerpt mentions a doors time; cite a line that states the show's start: ${officialUrl}`])
+    }
+  })
+
+  it('verifies the live Konex doors/show line with and without its ticket sector', async () => {
+    const url = 'https://entradas.cckonex.org/event/dancing-mood'
+    const candidate = { name: 'Dancing Mood', date: '2026-12-17', time: '20:30', doorsTime: '20:00', sites: officialSites({ website: url }) }
+    const pair = 'Jueves 17 de diciembre - Puerta 20 hs | Show 20:30 hs'
+    const line = `${pair}. Sector General`
+    // Visible text and headings from the live Konex page captured on 2026-11-26, trimmed to the timing line and page chrome.
+    const visible = `Ir a la compra de entradas\nDancing Mood\nSoporte\nIngresar / Registrarse\nUBICACIONES Y TARIFAS\n\n` +
+      `BOTÓN DE ARREPENTIMIENTO\n Español English Português\n${line}`
+    const read = readHtml('<h1>Dancing Mood</h1>')
+    const render = async () => renderedPageRead(url, { url, title: '🐴 Dancing Mood',
+      headings: ['Dancing Mood', 'Ingresar en tu cuenta', 'Crear cuenta'], hasH1: true,
+      visible, ogTitle: null, siteName: null, fanzLinks: [], fanzJson: '', singleDate: '', challenge: false })
+    for (const excerpt of [pair, line]) {
+      for (const fields of [['date', 'time'], ['date', 'time', 'doors_time']] as const) {
+        expect(await Effect.runPromise(verifyOfficialPagesEffect([evidence(url, excerpt, [...fields])], candidate, read, render)),
+          `${fields.join(',')}: ${excerpt}`).toEqual([])
+      }
+    }
+  })
+
+  it.each([' | Platea Alta', ' - Campo', '. Sector Norte', ' | Pullman'])('accepts a separated ticket-sector label: %s', async tail => {
+    const pair = 'Lunes 23 de noviembre - Puerta 20 hs | Show 21 hs'
+    const line = pair + tail
+    const read = readHtml(`<h1>${facts.name}</h1><p>${line}</p>`)
+    for (const excerpt of [pair, line]) {
+      expect(await Effect.runPromise(verifyOfficialPagesEffect([evidence(officialUrl, excerpt, ['date', 'time', 'doors_time'])],
+        { ...facts, doorsTime: '20:00' }, read))).toEqual([])
+    }
+  })
+
+  it.each(['. Ingreso 18 hs', ' | Sujeto a confirmación', ' - 21:00', '. Preventa', ' | En caso de lluvia',
+    '. Sector General sujeto a confirmación', ' | Sector Preventa', ' - Campo 21:00', '. Sector General | Ingreso 18 hs',
+  ])('does not treat a timing qualifier as a ticket-sector label: %s', async tail => {
+    const pair = 'Lunes 23 de noviembre - Puerta 20 hs | Show 21 hs'
+    const line = pair + tail
+    const read = readHtml(`<h1>${facts.name}</h1><p>${line}</p>`)
+    for (const excerpt of [pair, line]) {
+      expect(await Effect.runPromise(verifyOfficialPagesEffect([evidence(officialUrl, excerpt)], facts, read)))
+        .toEqual([`Official page excerpt mentions a doors time; cite a line that states the show's start: ${officialUrl}`])
     }
   })
 
