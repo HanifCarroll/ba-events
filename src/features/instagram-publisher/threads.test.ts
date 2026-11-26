@@ -26,7 +26,7 @@ describe('Threads text fitting', () => {
       priceLabel({ isFree: false, price: null, payWhatYouWant: true }), priceLabel({ isFree: false, price: null, payWhatYouWant: false })]
     const events = prices.map(price => ({ ...pick, title: 'Cine 🎞️ del #barrio', price }))
     const text = threadsText('hoy', events)
-    expect(text).toBe(`Hoy en Buenos Aires, 4 planes de cultura independiente:\n\n19:30 · Cine del barrio · La Linterna, Boedo · Gratis\n19:30 · Cine del barrio · La Linterna, Boedo · $12.000\n19:30 · Cine del barrio · La Linterna, Boedo · A la gorra\n19:30 · Cine del barrio · La Linterna, Boedo\n\nToda la agenda de hoy: baeventos.com`)
+    expect(text).toBe(`Hoy en Buenos Aires, 4 planes de cultura independiente:\n\n19:30 · Cine del barrio · La Linterna, Boedo · Gratis\n\n19:30 · Cine del barrio · La Linterna, Boedo · $12.000\n\n19:30 · Cine del barrio · La Linterna, Boedo · A la gorra\n\n19:30 · Cine del barrio · La Linterna, Boedo\n\nToda la agenda de hoy: baeventos.com`)
     expect(threadsText('gratis', events)).not.toContain(' · Gratis')
   })
 

@@ -50,7 +50,7 @@ export function threadsText(format: ThreadsFormat, events: PostEvent[]): string 
   const { min, intro, link } = words[format]
   if (events.length < min) return null
   const picks = [...events].sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt))
-  const build = (shorten: boolean) => `${intro(picks.length)}\n\n${picks.map(event => eventLine(format, event, shorten)).join('\n')}\n\n${link}`
+  const build = (shorten: boolean) => `${intro(picks.length)}\n\n${picks.map(event => eventLine(format, event, shorten)).join('\n\n')}\n\n${link}`
   const fits = (text: string) => [...text].length <= 500
   while (true) {
     const text = build(false)
