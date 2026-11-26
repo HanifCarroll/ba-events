@@ -1,6 +1,9 @@
 import type { EventInsert } from '#shared/lib/types.ts'
 import type { Candidate } from './schema.ts'
 import { isOfficialPage, validPublicUrl } from './schema.ts'
+import { citesCreditName, isExcludedCreditName } from '#shared/lib/event-credit-evidence.ts'
+import { TICKET_SELLERS } from '#shared/lib/ticket-sellers.ts'
+import { citesClock, citesDateAndClock, normalizeEvidenceText } from './clock-evidence.ts'
 
 export type Observation = {
   id: string; post_id: string; source_username: string; caption: string;
@@ -16,13 +19,69 @@ export type CatalogMatch = {
 export type MatchDecision = { action: 'create' | 'update' | 'link' | 'held'; target: CatalogMatch | null; reasons: string[] }
 
 export const normalizeTitle = (value: string) => value.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
+const sellerDomains = TICKET_SELLERS.map(domain => RegExp.escape(domain)).join('|')
+const ticketTokens = new RegExp(String.raw`(?<![\p{L}\p{N}_.@/-])(?:https?://|www\.|(?:${sellerDomains})(?![\p{L}\p{N}-]))[^\s<>"“”]*`, 'giu')
+
 export function canonicalTicket(value: string | null): string | null {
-  if (!value || !validPublicUrl(value)) return null
-  const url = new URL(value)
+  if (!value) return null
+  const explicitScheme = /^https?:\/\//i.test(value)
+  const https = explicitScheme ? value.replace(/^http:\/\//i, 'https://') : `https://${value}`
+  if (!validPublicUrl(https)) return null
+  const url = new URL(https)
+  if (!explicitScheme && !/^www\./i.test(value) && !TICKET_SELLERS.includes(url.hostname)) return null
+  url.hostname = url.hostname.replace(/^www\./i, '')
   for (const key of [...url.searchParams.keys()]) if (/^(utm_|fbclid$|igshid$)/i.test(key)) url.searchParams.delete(key)
   url.searchParams.sort()
   return `${url.origin}${url.pathname.replace(/\/$/, '')}${url.search}`
 }
+function stripTicketPunctuation(token: string): string {
+  const openingFor: Readonly<Record<string, string>> = { ')': '(', ']': '[', '}': '{' }
+  let url = token
+  for (;;) {
+    url = url.replace(/[.,;:!?…’']+$/u, '')
+    const close = url.at(-1) ?? ''
+    const open = openingFor[close]
+    if (!open || url.split(close).length <= url.split(open).length) return url
+    url = url.slice(0, -1)
+  }
+}
+
+/** Read complete URL tokens from the source, so a quote cannot cut off a path or query. */
+export function citesTicketDestination(excerpt: string, ticket: string, caption = excerpt): boolean {
+  const destination = canonicalTicket(ticket), quote = excerpt.trim()
+  if (!destination || !quote) return false
+  const tokens = [...caption.matchAll(ticketTokens)].flatMap(({ 0: raw, index }) => {
+    const url = stripTicketPunctuation(raw)
+    return canonicalTicket(url) === destination ? [{ start: index, end: index + url.length }] : []
+  })
+  for (let start = caption.indexOf(quote); start !== -1; start = caption.indexOf(quote, start + 1)) {
+    if (tokens.some(token => token.start >= start && token.end <= start + quote.length)) return true
+  }
+  return false
+}
+
+export function hasPostTicketEvidence(evidence: Candidate['evidence'], observations: ReadonlyArray<Record<string, unknown>>,
+  media: readonly Media[], ticket: string | null | undefined, direct = false): boolean {
+  return Boolean(ticket && evidence.some(item => {
+    if (isOfficialPage(item) || !item.fields.includes('ticket')) return false
+    const post = observations.find(post => post.id === item.observation_id)
+    if (!post || direct && post.authority !== 'venue' && post.authority !== 'organizer') return false
+    if (item.media_id) return media.some(image => image.id === item.media_id && image.observation_id === post.id) && citesTicketDestination(item.excerpt, ticket)
+    return typeof post.caption === 'string' && citesTicketDestination(item.excerpt, ticket, post.caption)
+  }))
+}
+
+/** Create only: callers separately verify the official page's excerpt, identity, and allowed host. */
+export function hasOfficialTicketEvidence(evidence: Candidate['evidence'], ticket: string): boolean {
+  const destination = canonicalTicket(ticket)
+  return Boolean(destination && evidence.some(item => isOfficialPage(item) && item.fields.includes('ticket') && canonicalTicket(item.url) === destination))
+}
+
+export function ticketDestinationChanged(before: unknown, after: string | null | undefined): boolean {
+  if (!after) return false
+  return typeof before !== 'string' || (canonicalTicket(before) ?? before) !== (canonicalTicket(after) ?? after)
+}
+
 export const descriptionChanged = (before: Record<string, unknown>, after: EventInsert) =>
   (before.description_es ?? null) !== (after.description_es ?? null) || (before.description_en ?? null) !== (after.description_en ?? null)
 
@@ -33,21 +92,83 @@ export const searchInputsChanged = (before: Record<string, unknown>, after: Even
   JSON.stringify(before.categories ?? []) !== JSON.stringify(after.categories ?? [])
 
 export const baDate = (iso: string) => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' }).format(new Date(iso))
+export const baTime = (iso: string) => new Intl.DateTimeFormat('en-GB', { timeZone: 'America/Argentina/Buenos_Aires',
+  hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(iso))
 
-/** The timezone is explicit even when the catalog uses a time-TBA placeholder. */
-export function candidateStart(candidate: Candidate): string {
-  const parsed = new Date(`${candidate.date}T${candidate.time ?? '00:00'}:00-03:00`)
-  if (Number.isNaN(parsed.getTime()) || baDate(parsed.toISOString()) !== candidate.date) throw new Error('Invalid calendar date')
+function localTimestamp(date: string, time: string): string {
+  const parsed = new Date(`${date}T${time}:00-03:00`)
+  if (Number.isNaN(parsed.getTime()) || baDate(parsed.toISOString()) !== date) throw new Error('Invalid calendar date')
   return parsed.toISOString()
 }
 
-export function validateEvidence(candidate: Candidate, observations: Observation[], media: Media[], now: Date): string[] {
+/** The timezone is explicit even when the catalog uses a time-TBA placeholder. */
+export function candidateStart(candidate: Candidate): string {
+  return localTimestamp(candidate.date, candidate.time ?? '00:00')
+}
+
+export function candidateDoors(candidate: Candidate): string | undefined {
+  if (!candidate.doors_time) return
+  return localTimestamp(candidate.doors_date ?? candidate.date, candidate.doors_time)
+}
+
+export function retainedIntakeDoors(doors: unknown, sameDay: boolean, startsAt: string, timeTba: boolean | undefined): string | null {
+  return sameDay && typeof doors === 'string' && (timeTba || Date.parse(doors) <= Date.parse(startsAt)) ? doors : null
+}
+
+export function suppliedDetailFacts(candidate: Candidate): string[] {
+  return Object.entries({ organizer: candidate.organizer, performers: candidate.performers,
+    offers_valid_from: candidate.offers_valid_from, doors_time: candidate.doors_time })
+    .filter(([, value]) => value !== undefined).map(([field]) => field)
+}
+
+const wholeLineFields: readonly string[] = ['organizer', 'performers', 'offers_valid_from']
+export const requiresWholeCaptionExcerpt = (fields: readonly string[]) => fields.some(field => wholeLineFields.includes(field))
+
+const captionLines = (text: string) => text.trim().split(/\r?\n/u).map(line => line.trim())
+
+export function isWholeCaptionExcerpt(caption: string, excerpt: string): boolean {
+  const source = captionLines(caption), quote = captionLines(excerpt)
+  return Boolean(excerpt.trim()) && source.some((_, start) => quote.every((line, offset) => source[start + offset] === line))
+}
+
+export const SAME_CLOCK_REASON = 'Equal doors and start times need two separate clocks in the doors excerpt'
+
+export function citesIntakeClock(excerpt: string, time: string, caption: string | undefined, wholeLines: boolean, count = 1): boolean {
+  if (caption !== undefined && wholeLines) return citesClock(captionLines(excerpt).join('\n'), time, captionLines(caption).join('\n'), count)
+  return citesClock(excerpt, time, caption, count)
+}
+
+export const SAME_CLOCK_RETAINED_REASON = 'Equal retained doors and start times need two separate clocks in one excerpt'
+
+export function separatelyCitedDoors(evidence: Candidate['evidence'], time: string, observations: readonly Observation[], doorsRetained = false): boolean {
+  return evidence.some(item => {
+    if (!item.fields.includes('doors_time') && !(doorsRetained && item.fields.includes('time'))) return false
+    if (isOfficialPage(item)) return citesClock(normalizeEvidenceText(item.excerpt), time, undefined, 2)
+    if (item.media_id) return citesClock(item.excerpt, time, undefined, 2)
+    const post = observations.find(post => post.id === item.observation_id)
+    return post && citesIntakeClock(item.excerpt, time, post.caption, requiresWholeCaptionExcerpt(item.fields), 2)
+  })
+}
+
+export function validateEvidence(candidate: Candidate, observations: Observation[], media: Media[], now: Date, venueName = candidate.venue_name): string[] {
   const reasons = [...candidate.issues]
   try {
     const start = candidateStart(candidate)
     if (candidate.intent === 'create' && baDate(start) < baDate(now.toISOString())) reasons.push('Event date is in the past')
     if (new Date(start).getTime() > now.getTime() + 370 * 86400000) reasons.push('Event is outside the supported discovery horizon')
   } catch { reasons.push('Invalid calendar date') }
+  if (candidate.doors_date && !candidate.doors_time) reasons.push('A separate doors date needs a door time')
+  if (candidate.doors_time && candidate.doors_time < '06:00' && !candidate.doors_date) reasons.push('State doors_date for an after-midnight door time')
+  try {
+    const doors = candidateDoors(candidate)
+    if (doors) {
+      const dateDistance = Date.parse(`${baDate(doors)}T00:00Z`) - Date.parse(`${candidate.date}T00:00Z`)
+      if (Math.abs(dateDistance) > 86_400_000) reasons.push('Door time must be on the event date or an adjacent day')
+      if (candidate.time && doors > candidateStart(candidate)) reasons.push('Doors cannot follow the known start time')
+    }
+  } catch { reasons.push('Invalid doors date') }
+  const doorTime = candidate.doors_time
+  if (doorTime && doorTime === candidate.time && !separatelyCitedDoors(candidate.evidence, doorTime, observations)) reasons.push(SAME_CLOCK_REASON)
   if (!candidate.venue_id) reasons.push('Venue must be resolved before publishing')
   if (candidate.price_kind === 'fixed' && (!candidate.price_ars || candidate.price_ars < 0)) reasons.push('Fixed price must be positive')
   if (candidate.price_kind !== 'fixed' && candidate.price_ars !== null) reasons.push('Only a fixed price may set price_ars')
@@ -61,10 +182,47 @@ export function validateEvidence(candidate: Candidate, observations: Observation
     const post = observations.find(item => item.id === evidence.observation_id)
     if (!post) { reasons.push('Evidence observation is missing'); continue }
     if (post.media_urls && media.filter(item => item.observation_id === post.id).length !== post.media_urls.length) reasons.push('Some source images have not been retained; resolve incomplete evidence')
+    const wholeLines = requiresWholeCaptionExcerpt(evidence.fields)
     if (evidence.media_id) {
       if (!media.some(item => item.id === evidence.media_id && item.observation_id === post.id)) reasons.push('Flyer evidence is not attached to this observation')
+    } else if (wholeLines) {
+      if (!isWholeCaptionExcerpt(post.caption, evidence.excerpt)) reasons.push('Credit and sale-opening caption evidence must quote complete lines')
     } else if (!post.caption.includes(evidence.excerpt)) reasons.push('Caption evidence must be an exact excerpt')
+    const caption = evidence.media_id ? undefined : post.caption
+    if (candidate.time && evidence.fields.includes('time')) {
+      if (!citesIntakeClock(evidence.excerpt, candidate.time, caption, wholeLines)) reasons.push('Start time must appear in the cited excerpt')
+    }
+    if (doorTime && evidence.fields.includes('doors_time') && !citesIntakeClock(evidence.excerpt, doorTime, caption, wholeLines)) {
+      reasons.push('Door time must appear in the cited excerpt')
+    }
     for (const field of evidence.fields) supported.add(field)
+  }
+  const postEvidence = candidate.evidence.filter(item => 'observation_id' in item)
+  for (const field of suppliedDetailFacts(candidate)) {
+    if (field === 'doors_time') {
+      if (!supported.has(field)) reasons.push('Missing evidence for doors_time')
+    } else if (!postEvidence.some(item => item.fields.some(value => value === field))) reasons.push(`Missing Instagram evidence for ${field}`)
+  }
+  for (const [field, credits] of [['organizer', candidate.organizer ? [candidate.organizer] : []], ['performers', candidate.performers ?? []]] as const) {
+    for (const credit of credits) {
+      if (isExcludedCreditName(credit.name, venueName)) {
+        reasons.push(`A ticket seller or the venue itself cannot be credited as ${field}: ${credit.name}`)
+        continue
+      }
+      const support = postEvidence.filter(item => item.fields.includes(field) && citesCreditName(item.excerpt, credit.name))
+      if (!support.length) reasons.push(`Instagram evidence must quote the name for ${field}: ${credit.name}`)
+      if (credit.url && (!validPublicUrl(credit.url) || !support.some(item => item.excerpt.includes(credit.url!)))) {
+        reasons.push(`Instagram evidence must explicitly give the HTTPS URL for ${credit.name}`)
+      }
+    }
+  }
+  if (candidate.offers_valid_from) {
+    const sales = new Date(candidate.offers_valid_from)
+    if (!Number.isFinite(sales.getTime()) || sales.toISOString() !== candidate.offers_valid_from || sales.getUTCSeconds() !== 0 || sales.getUTCMilliseconds() !== 0) {
+      reasons.push('Invalid ticket-sale opening timestamp')
+    } else if (!postEvidence.some(item => item.fields.includes('offers_valid_from') && citesDateAndClock(item.excerpt, baDate(sales.toISOString()), baTime(sales.toISOString())))) {
+      reasons.push('Ticket-sale opening needs the stated calendar date and time')
+    }
   }
   const required = ['name', 'date', 'venue', ...(candidate.time ? ['time'] : []),
     ...(candidate.status !== 'scheduled' ? ['status'] : []), ...(candidate.price_kind !== 'unknown' ? ['price'] : []),

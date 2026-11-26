@@ -32,7 +32,12 @@ For a chat URL, extract the conversation ID from `/chat/<conversationId>` and in
 bun scripts/guest-chat-debug.ts <conversationId>
 ```
 
-The D1 read is the primary diagnostic record. A rendered page or screenshot alone does not establish the stored conversation or execution trace. If there is no guest record, inspect the authenticated `conversations` record with the [read-only D1 helper](d1.md#operator-commands). Keep credentials and transcripts out of shared output.
+The D1 read is the primary diagnostic record. A rendered page or screenshot alone does not establish the stored conversation or execution trace. If there is no guest record, inspect the authenticated `conversations` record with the [read-only D1 helper](d1.md#operator-commands). Keep credentials and transcripts out of shared output. The operator view shows each
+assistant turn's displayed cards, suggestions, search context, and available
+sanitized tool traces. Traces are transient in the browser; the guest debug
+row retains them across transcript updates by response ID. It keeps the newest
+complete messages and traces within a 256 KiB UTF-8 transcript limit. Traces
+from unversioned rows are not displayed: older writes could accept client-supplied traces, so their origin cannot be verified. The visible transcript remains available.
 
 ## Search configuration
 

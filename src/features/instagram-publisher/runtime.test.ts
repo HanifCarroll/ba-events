@@ -1,12 +1,24 @@
 import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync, utimesSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { runWindow } from './formats.ts'
-import { alert, catalogSql, loadToken, mediaBin, readConfig, renderFrames, renderReel, toCatalogEvent, type Runner } from './runtime.ts'
+import { DEFAULT_REVIEW, alert, catalogSql, loadToken, mediaBin, readConfig, renderFrames, renderReel, reviewPush, toCatalogEvent, type Runner } from './runtime.ts'
 import { reelTiming } from './reel/project.ts'
 
 describe('publisher config', () => {
+  it('defaults approval previews to #alerts and honors a configured channel', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ig-config-'))
+    try {
+      const path = join(dir, 'publisher.json')
+      expect(readConfig(path).slack.channel).toBe('C0CG3EGKKP1')
+      writeFileSync(path, JSON.stringify({ slack: { channel: ' C_APPROVALS ' } }))
+      expect(readConfig(path).slack.channel).toBe('C_APPROVALS')
+      writeFileSync(path, JSON.stringify({ slack: { channel: ' ' } }))
+      expect(readConfig(path).slack.channel).toBe('C0CG3EGKKP1')
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+
   it.each([
     { bucket: '', publicBaseUrl: 'https://media.example.com' },
     { bucket: ' \t ', publicBaseUrl: 'https://media.example.com' },
@@ -19,6 +31,16 @@ describe('publisher config', () => {
       const path = join(dir, 'publisher.json')
       writeFileSync(path, JSON.stringify({ linkStickers: { hoy: true }, r2 }))
       expect(readConfig(path)).toMatchObject({ linkStickers: { hoy: true }, r2: null })
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+
+  it('defaults the reviewer and expands a configured key file without changing the other settings', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ig-config-'))
+    try {
+      const path = join(dir, 'publisher.json')
+      expect(readConfig(path).review).toEqual(DEFAULT_REVIEW)
+      writeFileSync(path, JSON.stringify({ review: { model: ' test-model ', keyFile: '~/keys/review' }, auto: { hoy: true } }))
+      expect(readConfig(path)).toMatchObject({ review: { model: 'test-model', keyFile: join(homedir(), 'keys/review') }, auto: { hoy: true } })
     } finally { rmSync(dir, { recursive: true, force: true }) }
   })
 
@@ -40,6 +62,16 @@ describe('alert command', () => {
     }
     expect(await alert('draft/test/threads', 'Title', 'Body', undefined, runner)).toBe(code === 0)
   })
+})
+
+it('uses the Home options interface with Slack as the decision source', async () => {
+  const body = 'Is the show at 21:00? React on the Slack preview.'
+  const runner: Runner = async argv => {
+    expect(argv.slice(1)).toEqual(['--from', 'BA Eventos', 'A BA Eventos preview needs your decision',
+      '--options', 'Publicar', 'No publicar', '--body', body])
+    return { code: 0, out: '', err: '' }
+  }
+  await reviewPush(body, runner)
 })
 
 describe('catalog read', () => {

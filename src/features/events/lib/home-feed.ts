@@ -11,6 +11,7 @@ export type HomeEventCard = Pick<ChatEventPayload,
 export type HomeAgendaEvent = HomeEventCard & {
   image_url: string
   ends_at: string | null
+  doors_at?: string | null
   venue_id: string | null
   is_all_day: boolean
   location_hidden: boolean
@@ -25,6 +26,8 @@ export type HomeFilter = (typeof HOME_FILTERS)[number]
 export const HOME_FALLBACK_LIMIT = 4
 export const HOME_PAGE_SIZE = 24
 export const HOME_EVENT_DEFAULT_DURATION_MS = 3 * 60 * 60 * 1000
+// The catalog's date-only night ends at 04:00 Buenos Aires time (28 hours from local midnight).
+export const HOME_DOORS_ONLY_DURATION_MS = 28 * 60 * 60 * 1000
 export const HOME_FEED_FRESH_SECONDS = 60
 export const HOME_FEED_STALE_SECONDS = 300
 export const HOME_FEED_HEADERS = {
@@ -72,7 +75,8 @@ function occurrenceEnd(event: HomeAgendaEvent): number {
   const start = Date.parse(event.starts_at)
   if (event.is_all_day || event.time_tba) {
     const midnight = Date.parse(homeWindow(new Date(start)).tomorrow)
-    return Math.max(midnight, explicitEnd || midnight)
+    const cutoff = event.time_tba && event.doors_at ? start + HOME_DOORS_ONLY_DURATION_MS : midnight
+    return Math.max(cutoff, explicitEnd || midnight)
   }
   return Number.isFinite(explicitEnd) ? explicitEnd : start + HOME_EVENT_DEFAULT_DURATION_MS
 }
@@ -112,7 +116,8 @@ function groupOccurrences(events: HomeAgendaEvent[], now: number): HomeAgendaCar
     const event = group.find((slot) => Date.parse(slot.starts_at) > now) ?? group[0]
     const slotStarts = [...new Set(group.map((slot) => slot.starts_at))]
     return { ...event, slotStarts }
-  }).sort((a, b) => a.starts_at.localeCompare(b.starts_at))
+  }).sort((a, b) => homeDay(a.starts_at).localeCompare(homeDay(b.starts_at)) ||
+    (Date.parse(a.time_tba && a.doors_at || a.starts_at) - Date.parse(b.time_tba && b.doors_at || b.starts_at)))
 }
 
 export function selectHomeView(agenda: HomeAgenda, filter: HomeFilter | null, now = agenda.asOf): HomeView {

@@ -14,7 +14,8 @@
  *   - On `generateObject` failure we return `{}` and log — extracting one
  *     event must never fail the whole enrichment run.
  */
-import { generateObject } from 'ai'
+import { generateObject, type LanguageModel } from 'ai'
+import { EVENT_CREDIT_RULES, eventCreditsModelSchema, statedEventCredits } from './event-credits.ts'
 import { logger } from '#shared/lib/logger.ts'
 import { textModel, NO_THINKING } from './providers.ts'
 import {
@@ -47,7 +48,9 @@ const EMPTY = Object.freeze({}) as EventFacets
 export const eventFacetsModelSchema = eventFacetsSchema.extend({
   energy: eventFacetsSchema.shape.energy.nullable(),
   socialInteraction: eventFacetsSchema.shape.socialInteraction.nullable(),
+  ...eventCreditsModelSchema.shape,
 })
+export type EventFacetExtraction = EventFacets & ReturnType<typeof statedEventCredits>
 
 const FACETS_EXTRACTION_PROMPT = `Classify this event into structured, closed-vocabulary search facets.
 
@@ -91,6 +94,8 @@ RULES
 - Translate Spanish words to the English canonical value (e.g. "jazz en vivo"
   → genres: ["jazz"], "Íntimo" → vibes: ["intimate"]).
 
+${EVENT_CREDIT_RULES}
+
 Event name: {name}
 Categories: {categories}
 Description (ES): {description_es}
@@ -102,7 +107,7 @@ Return strictly valid JSON matching the schema.`
  * Extract structured facets for an event. On failure returns `{}` and logs;
  * never throws.
  */
-export async function extractEventFacets(input: ExtractFacetsInput): Promise<EventFacets> {
+export async function extractEventFacets(input: ExtractFacetsInput): Promise<EventFacetExtraction> {
   const { name, description_es, description_en, categories } = input
 
   // Nothing to base facets on.
@@ -123,8 +128,8 @@ export async function extractEventFacets(input: ExtractFacetsInput): Promise<Eve
       prompt,
       ...NO_THINKING,
     })
-    const { energy, socialInteraction, ...facets } = object
-    return { ...facets, ...(energy != null ? { energy } : {}),
+    const { energy, socialInteraction, organizer, performers, ...facets } = object
+    return { ...facets, ...statedEventCredits({ organizer, performers }, [description_es, description_en]), ...(energy != null ? { energy } : {}),
       ...(socialInteraction != null ? { socialInteraction } : {}) }
   } catch (error) {
     logger.warn(`[extract-facets] extraction failed, returning empty facets: ${String(error)}`, {
@@ -132,4 +137,14 @@ export async function extractEventFacets(input: ExtractFacetsInput): Promise<Eve
     })
     return EMPTY
   }
+}
+
+/** Same credit contract, without paying to extract facets again during the operator backfill. */
+export async function requestEventCredits(descriptions: readonly (string | null)[], model: LanguageModel = textModel) {
+  const { object } = await generateObject({
+    model, schema: eventCreditsModelSchema, system: EVENT_CREDIT_RULES,
+    prompt: JSON.stringify(descriptions), ...NO_THINKING,
+    maxRetries: 0, maxOutputTokens: 1600, abortSignal: AbortSignal.timeout(30_000),
+  })
+  return statedEventCredits(object, descriptions)
 }

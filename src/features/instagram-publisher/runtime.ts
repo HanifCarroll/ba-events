@@ -4,14 +4,16 @@
  */
 import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
-import { homedir } from 'node:os'
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { homedir, tmpdir } from 'node:os'
 import { basename, delimiter, dirname, extname, join, resolve } from 'node:path'
-import type { Artwork } from './artwork.ts'
+import { readArtworkBody, type Artwork } from './artwork.ts'
 import { addDays } from './format.ts'
 import type { FormatKey, RunWindow } from './formats.ts'
 import { writeExcerpt, type ReadyTrack } from './reel/music.ts'
 import { REEL_FAILURE, reelProject, type ReelTiming } from './reel/project.ts'
+import { readReviewKey, reviewWithOpenAI, type ReviewConfig, type Reviewer } from './review.ts'
+import { loadReviewSources } from './review-evidence.ts'
 import type { CatalogEvent, PostEvent } from './select.ts'
 import type { ThreadsFormat } from './threads-copy.ts'
 
@@ -24,7 +26,9 @@ const CF_TOKEN_FILE = process.env.BA_D1_TOKEN_FILE ?? join(HOME, '.config/ba-eve
 const CF_ACCOUNT = '38d9d25d890a220fb7cf6dd92f8a322a'
 const SLACK_API = process.env.BA_INSTAGRAM_SLACK_API ?? join(HOME, '.hermes/skills/productivity/slack-workspace/scripts/slack_api.py')
 const ALERT = process.env.BA_INSTAGRAM_ALERT ?? join(HOME, '.local/bin/alert')
-export const SLACK_CHANNEL = 'C0CHBCSEV3R'
+const HOME_NOTIFY = process.env.BA_INSTAGRAM_HOME_NOTIFY ?? join(HOME, 'projects/agent-home/bin/vps/home-notify')
+/** Previews already sent or handed off before the channel was saved. */
+export const LEGACY_SLACK_CHANNEL = 'C0CHBCSEV3R'
 
 export const sleep = (ms: number) => new Promise<void>(done => setTimeout(done, ms))
 
@@ -63,11 +67,15 @@ export interface Config {
   /** Hoy can use Business Suite when enabled. Off by default. */
   linkStickers: { hoy: boolean }
   threads: { enabled: boolean; auto: Record<ThreadsFormat, boolean> }
+  slack: { channel: string }
   /** R2 bucket and its public base URL (no trailing slash). Publishing is skipped until both are set. */
   r2: { bucket: string; publicBaseUrl: string } | null
   /** The Reel's music directory (tracks.json and the audio files), outside the repo. */
   reel: { musicDir: string }
+  review: ReviewConfig
 }
+
+export const DEFAULT_REVIEW: ReviewConfig = { model: 'gpt-6.2-sol', keyFile: join(HOME, '.config/ba-events/openai-review-key') }
 
 export function readConfig(path = CONFIG_FILE): Config {
   const raw = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : {}
@@ -80,7 +88,13 @@ export function readConfig(path = CONFIG_FILE): Config {
     enabled: raw.threads?.enabled === true,
     auto: { hoy: raw.threads?.auto?.hoy === true, finde: raw.threads?.auto?.finde === true, gratis: raw.threads?.auto?.gratis === true },
   }
-  return { auto, linkStickers: { hoy: raw.linkStickers?.hoy === true }, threads, r2, reel: { musicDir } }
+  const review = {
+    model: typeof raw.review?.model === 'string' && raw.review.model.trim() ? raw.review.model.trim() : DEFAULT_REVIEW.model,
+    keyFile: typeof raw.review?.keyFile === 'string' && raw.review.keyFile.trim()
+      ? raw.review.keyFile.trim().replace(/^~(?=\/)/, HOME) : DEFAULT_REVIEW.keyFile,
+  }
+  const channel = (typeof raw.slack?.channel === 'string' && raw.slack.channel.trim()) || 'C0CG3EGKKP1'
+  return { auto, linkStickers: { hoy: raw.linkStickers?.hoy === true }, threads, slack: { channel }, r2, reel: { musicDir }, review }
 }
 
 // Lock: one tick or command at a time.
@@ -144,7 +158,7 @@ export function toCatalogEvent(row: Record<string, any>): CatalogEvent {
   }
 }
 
-async function d1Read(sql: string): Promise<unknown> {
+export async function d1Read(sql: string): Promise<unknown> {
   const { out, err, code } = await run([join(REPO, 'bin/ba-d1-read.sh'), sql], 120_000)
   if (code !== 0) throw new Error(`D1 read failed: ${err.trim().slice(0, 300)}`)
   return JSON.parse(out)
@@ -378,7 +392,58 @@ export const fileHash = (paths: string[]) => {
   return hash.digest('hex').slice(0, 16)
 }
 
+// Draft review
+
+async function readIntakeFlyer(key: string) {
+  const url = `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT}/r2/buckets/baeventos-intake-evidence/objects/${encodeURIComponent(key)}`
+  let response: Response
+  try {
+    const token = readFileSync(CF_TOKEN_FILE, 'utf8').trim()
+    response = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, redirect: 'error', signal: AbortSignal.timeout(15_000) })
+  } catch { throw new Error('Could not read retained intake evidence from R2. Check the Cloudflare token and connection.') }
+  if (response.status === 404) { await response.body?.cancel().catch(() => undefined); return null }
+  return readArtworkBody(response).catch(() => { throw new Error(`Could not read retained intake evidence from R2 (HTTP ${response.status}).`) })
+}
+
+export const reviewSources = (ids: string[]) => loadReviewSources(ids, d1Read, readIntakeFlyer)
+
+export async function reviewStills(input: Parameters<Reviewer>[0], dir: string) {
+  if (input.format !== 'reel') return input.frames
+  const [video, cover] = input.frames
+  const mids = input.reelHoldMids
+  if (!video || !cover || mids?.length !== input.events.length + 1 || mids.some(at => !Number.isFinite(at) || at <= 0)) {
+    throw new Error('The saved Reel has no event card sample times. Regenerate it before reviewing.')
+  }
+  const stills = [cover]
+  for (const [index, at] of mids.entries()) {
+    const path = join(dir, `card-${index + 1}.jpg`)
+    const result = await media(['ffmpeg', '-v', 'error', '-ss', String(at), '-i', video, '-frames:v', '1', '-q:v', '2', path])
+    if (result.code !== 0 || !existsSync(path)) throw new Error(`Could not extract Reel still ${index + 1} for review.`)
+    stills.push(path)
+  }
+  return stills
+}
+
+export const reviewDraft: Reviewer = async input => {
+  const config = readConfig().review
+  const key = readReviewKey(config.keyFile)
+  const prompt = readFileSync(join(REPO, 'src/features/instagram-publisher/review-prompt.md'), 'utf8')
+  const sources = await reviewSources(input.events.map(event => event.id))
+  const dir = mkdtempSync(join(tmpdir(), 'ba-reel-review-'))
+  try { return await reviewWithOpenAI(config, key, prompt, input, await reviewStills(input, dir), sources) }
+  finally { rmSync(dir, { recursive: true, force: true }) }
+}
+
+export async function reviewPush(body: string, runner: Runner = run) {
+  const { code } = await runner([HOME_NOTIFY, '--from', 'BA Eventos', 'A BA Eventos preview needs your decision',
+    '--options', 'Publicar', 'No publicar', '--body', body], 20_000)
+  if (code !== 0) throw new Error('Could not send the Home review notification.')
+}
+
 // Slack, through Hermes' slack_api.py (it reads the bot token itself).
+
+/** Slack explicitly rejected the request. A lost response is not a rejection. */
+export class SlackRejected extends Error {}
 
 export async function slack(method: string, args: Record<string, string>): Promise<any> {
   // The args file holds only message text and ids; the bot token stays inside slack_api.py.
@@ -389,7 +454,12 @@ export async function slack(method: string, args: Record<string, string>): Promi
   try {
     const { out, err } = await run(['python3', '-I', SLACK_API, '--form', method, `@file=${argsFile}`], 60_000)
     const body = (() => { try { return JSON.parse(out) } catch { return null } })()
-    if (!body?.ok) throw new Error(`Slack ${method} failed: ${body?.error ?? err.trim().slice(0, 200)}`)
+    if (!body?.ok) {
+      const message = `Slack ${method} failed: ${body?.error ?? err.trim().slice(0, 200)}`
+      // A timeout or an internal Slack error does not prove a write failed.
+      if (body?.ok === false && !['internal_error', 'fatal_error', 'request_timeout', 'service_unavailable'].includes(body.error)) throw new SlackRejected(message)
+      throw new Error(message)
+    }
     return body
   } finally {
     rmSync(argsFile, { force: true })
@@ -410,27 +480,28 @@ export async function slackUploadFiles(frames: string[], draftId: string): Promi
   return files
 }
 
-/** Share uploaded files in one new top-level message in #ba-eventos. */
-export const slackShareFiles = (files: Array<{ id: string; title: string }>, text: string) =>
-  slack('files.completeUploadExternal', { files: JSON.stringify(files), channel_id: SLACK_CHANNEL, initial_comment: text })
+/** Share uploaded files as one approval preview. */
+export const slackShareFiles = (files: Array<{ id: string; title: string }>, text: string, channel: string) =>
+  slack('files.completeUploadExternal', { files: JSON.stringify(files), channel_id: channel, initial_comment: text })
 
 /** The ts of the message a shared file landed in. Slack fills `shares` a moment after the upload completes. */
-export async function slackShareTs(fileId: string): Promise<string | null> {
+export async function slackShareTs(fileId: string, channel: string): Promise<string | null> {
   for (let attempt = 0; attempt < 10; attempt++) {
     const { file } = await slack('files.info', { file: fileId })
-    const ts = file?.shares?.public?.[SLACK_CHANNEL]?.[0]?.ts ?? file?.shares?.private?.[SLACK_CHANNEL]?.[0]?.ts
+    const ts = file?.shares?.public?.[channel]?.[0]?.ts ?? file?.shares?.private?.[channel]?.[0]?.ts
     if (ts) return ts
     await sleep(3_000)
   }
   return null
 }
 
-export const slackPost = (text: string, threadTs?: string) =>
-  slack('chat.postMessage', { channel: SLACK_CHANNEL, text, ...(threadTs ? { thread_ts: threadTs } : {}), unfurl_links: 'false' })
+export const slackPost = (text: string, threadTs: string, channel: string) =>
+  slack('chat.postMessage', { channel, text, thread_ts: threadTs, unfurl_links: 'false' })
 
-export async function slackReactions(ts: string) {
-  const { message } = await slack('reactions.get', { channel: SLACK_CHANNEL, timestamp: ts, full: 'true' })
-  return message?.reactions as Array<{ name: string; users?: string[] }> | undefined
+export async function slackReactions(ts: string, channel: string) {
+  const { message } = await slack('reactions.get', { channel, timestamp: ts, full: 'true' })
+  if (!message) throw new Error('Slack reactions.get returned no preview message')
+  return message.reactions as Array<{ name: string; users?: string[] }> | undefined
 }
 
 // R2, through the Cloudflare API with the same token file bin/ba-d1-read.sh reads.
@@ -496,9 +567,9 @@ export async function loadToken(now: Date, fetchImpl: typeof fetch = fetch, file
 
 const ALERT_TIMEOUT_MS = 180_000
 
-export async function alert(key: string, title: string, text: string, fingerprint?: string, runner: Runner = run) {
+export async function alert(key: string, title: string, text: string, fingerprint?: string, runner: Runner = run, timeoutMs = ALERT_TIMEOUT_MS) {
   const { err, code } = await runner([ALERT, 'raise', `ba-events/instagram/${key}`, '--title', title, '--text', text,
-    ...(fingerprint === undefined ? [] : ['--fingerprint', fingerprint])], ALERT_TIMEOUT_MS)
+    ...(fingerprint === undefined ? [] : ['--fingerprint', fingerprint])], timeoutMs)
   if (code !== 0) log(`alert raise failed: ${err.trim()}`)
   return code === 0
 }

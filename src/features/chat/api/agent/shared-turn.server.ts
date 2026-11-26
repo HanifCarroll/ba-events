@@ -137,6 +137,7 @@ export function runSharedChatTurnEffect(
       locale: normalized.locale,
       originalQuery: normalized.originalQuery,
       priorDisplayedEvents: priorContext.groups,
+      shownEventIds: new Set(input.priorHints.flatMap(hint => hint.events.map(event => event.eventId))),
       venueByEventId: priorContext.venueByEventId,
       lastSearch: input.lastSearch,
       currentDateInBA: dependencies.currentDateInBA ?? currentDateInBuenosAires(),

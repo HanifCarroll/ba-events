@@ -13,7 +13,7 @@ export type IntakePolicy = {
   run_cap_usd: number; monthly_cap_usd: number; actor_build: string; data_detail_level: string
 }
 export type Reservation = Row & {
-  id: string; fresh: boolean; apify_run_id: string | null; reserved_usd: number; actor_build?: string
+  id: string; fresh: boolean; apify_run_id: string | null; reserved_usd: number; created_at: string; actor_build?: string
   input: Row & { username: string[]; resultsLimit: number }
 }
 export type RunPatch =
@@ -46,6 +46,8 @@ export type MonthlyCharges = { charged_usd: number; unmeasured_runs: number }
 export interface CollectionStore {
   readonly policy: Op<IntakePolicy>
   readonly reserveCollection: Op<Reservation>
+  /** Release this exact attempt only when the collector knows it sent no start request. */
+  releaseCollection(id: string, reservedAt: string): Op<void>
   updateRun(id: string, patch: RunPatch): Op<MonthlyCharges | void>
   latestObservation(postId: string): Op<{ id: string; content_hash: string } | null>
   touchObservation(id: string): Op<void>

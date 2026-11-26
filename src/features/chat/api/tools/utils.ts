@@ -21,8 +21,8 @@ import type { ChatEventPayload, EventWithVenue, Venue } from '#shared/lib/types.
 /**
  * Get the current time in Buenos Aires timezone.
  */
-export function getNowInBA(): Date {
-  return toZonedTime(new Date(), BA_TIMEZONE)
+export function getNowInBA(now = new Date()): Date {
+  return toZonedTime(now, BA_TIMEZONE)
 }
 
 /**
@@ -46,6 +46,11 @@ export function formatInBA(utcDateStr: string): string {
 // EVENT FORMATTING
 // ============================================================================
 
+function eventDateTime(event: EventWithVenue): string {
+  if (!event.time_tba) return formatInBA(event.starts_at)
+  return event.doors_at ? `Doors open ${formatInBA(event.doors_at)}` : 'Time TBA'
+}
+
 /**
  * Format a single event for Claude's tool result.
  * Used by get_event_details, list_saved_events, etc.
@@ -62,7 +67,7 @@ export function formatEventForClaude(event: EventWithVenue) {
     venue: event.venue_name,
     venueAddress: event.location_hidden || event.location_tba ? null : event.venue_address,
     neighborhood: event.venue_neighborhood,
-    dateTime: event.time_tba ? 'Time TBA' : formatInBA(event.starts_at),
+    dateTime: eventDateTime(event),
     endsAt: event.time_tba ? null : event.ends_at ? formatInBA(event.ends_at) : null,
     timeTba: event.time_tba,
     isAllDay: event.is_all_day ?? false,
@@ -106,7 +111,7 @@ export function formatEventDetailsForClaude(event: EventWithVenue) {
     venue: event.venue_name,
     venueAddress: event.location_hidden || event.location_tba ? null : event.venue_address,
     neighborhood: event.venue_neighborhood,
-    dateTime: event.time_tba ? 'Time TBA' : formatInBA(event.starts_at),
+    dateTime: eventDateTime(event),
     endsAt: event.time_tba ? null : event.ends_at ? formatInBA(event.ends_at) : null,
     timeTba: event.time_tba,
     isAllDay: event.is_all_day ?? false,
@@ -158,7 +163,7 @@ export function formatSavedEventsForClaude(events: EventWithVenue[]) {
     description: pickDescriptionSummary(e, 'en') ?? pickDescriptionSummary(e, 'es'),
     venue: e.venue_name,
     neighborhood: e.venue_neighborhood,
-    dateTime: e.time_tba ? 'Time TBA' : formatInBA(e.starts_at),
+    dateTime: eventDateTime(e),
     timeTba: e.time_tba,
     price: e.is_free || e.price === 0 ? 'Free' : e.price != null ? `$${e.price} ARS` : 'TBA',
     categories: e.categories,

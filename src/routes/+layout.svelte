@@ -224,7 +224,7 @@
 
 <svelte:head>
 	<meta name="theme-color" content={isLandingPage ? '#101012' : '#fafaf8'} />
-	<link rel="manifest" href="/manifest.json" />
+	<link rel="manifest" href="/manifest.json?v=2" />
 
 	{#if !isEventPage && !isMcpPage}
 		<title>{seo.title}</title>

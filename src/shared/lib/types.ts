@@ -113,8 +113,21 @@ export interface VenueInsert {
   enriched_at?: string | null
 }
 
+export interface EventCredit {
+  name: string
+  url?: string
+}
+
+export interface EventSourceDetails {
+  organizer_name?: string | null
+  organizer_url?: string | null
+  performers?: readonly EventCredit[] | null
+  offers_valid_from?: string | null
+  doors_at?: string | null
+}
+
 // Database event record
-export interface Event {
+export interface Event extends EventSourceDetails {
   id: string
   name: string
   description_es: string | null // Spanish description (primary, used for embedding)
@@ -171,6 +184,7 @@ export type PublicEventRecord = Pick<
   | 'description_summary_en'
   | 'starts_at'
   | 'ends_at'
+  | 'doors_at'
   | 'is_all_day'
   | 'time_tba'
   | 'venue_id'
@@ -196,7 +210,7 @@ export type ChatEventPayload = Omit<EventWithVenue, 'embedding'> & {
 }
 
 // For inserting new events
-export interface EventInsert {
+export interface EventInsert extends EventSourceDetails {
   name: string
   description_es?: string | null
   description_en?: string | null
@@ -238,6 +252,10 @@ export interface EventInsert {
 // Filters for querying events
 export interface EventFilters {
   startsAfter?: string // ISO datetime
+  /** Today separates the local calendar date from the window for timed events. */
+  today?: { dayStart: string; dayEnd: string; now: string; explicitStart?: string }
+  /** Server-only exclusion for cards already shown on an alternatives turn. */
+  excludeEventIds?: readonly string[]
   startsBefore?: string // ISO datetime
   neighborhoods?: Neighborhood[]
   venueIds?: string[]

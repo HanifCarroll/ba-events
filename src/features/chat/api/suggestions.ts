@@ -5,7 +5,8 @@
  * Used to help users refine their event searches.
  */
 
-import type { EventWithVenue, RefinementSuggestion } from '#shared/lib/types.ts'
+import type { ChatEventPayload, RefinementSuggestion } from '#shared/lib/types.ts'
+import { ALTERNATIVES_PROMPT } from './agent/answer-constraints.ts'
 import type { SearchEventsInput } from './tools/search-events.ts'
 
 /**
@@ -17,7 +18,11 @@ export interface SuggestionContext {
   /** The tool input that was used for the search */
   toolInput: SearchEventsInput
   /** The search results */
-  results: EventWithVenue[]
+  results: Pick<ChatEventPayload, 'categories' | 'is_free' | 'price' | 'venue_neighborhood'>[]
+  /** Eligible matches, including cards shown by this search. */
+  totalMatches?: number
+  /** Distinct eligible events already shown, including the current response. */
+  shownMatches?: number
   /** Current locale */
   locale: 'en' | 'es'
 }
@@ -37,6 +42,15 @@ export function generateSuggestions(context: SuggestionContext): RefinementSugge
   const isSingleRecommendation = results.length === 1
 
   if (hasResults) {
+    if (context.totalMatches !== undefined && context.totalMatches > (context.shownMatches ?? results.length)) {
+      suggestions.push({
+        id: 'show-alternatives',
+        label: locale === 'es' ? 'Ver alternativas' : 'Show alternatives',
+        prompt: ALTERNATIVES_PROMPT[locale],
+        icon: 'list',
+        type: 'broader',
+      })
+    }
     // CONCIERGE MODE: Single recommendation = contextual refinements based on the event
     if (isSingleRecommendation) {
       const event = results[0]
@@ -95,15 +109,6 @@ export function generateSuggestions(context: SuggestionContext): RefinementSugge
           type: 'price',
         })
       }
-
-      // Always include "show alternatives"
-      suggestions.push({
-        id: 'show-alternatives',
-        label: locale === 'es' ? 'Ver alternativas' : 'Show alternatives',
-        prompt: locale === 'es' ? 'muéstrame algunas opciones alternativas' : 'show me a few alternative options',
-        icon: 'list',
-        type: 'broader',
-      })
 
     } else {
       // MULTI-RESULT MODE: Standard refinements

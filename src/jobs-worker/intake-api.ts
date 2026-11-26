@@ -141,6 +141,8 @@ const OPERATIONS: Record<string, Handler> = {
   // `collect` runs Apify and normally downloads images on the operator's Mac.
   'collection/policy': (store, body) => fromBadRequest(() => strict(Empty, body)).pipe(Effect.andThen(store.policy)),
   'collection/reserve': (store, body) => fromBadRequest(() => strict(Empty, body)).pipe(Effect.andThen(store.reserveCollection)),
+  'collection/release': (store, body) => fromBadRequest(() => strict(Schema.Struct({ id: Uuid, created_at: Iso }), body)).pipe(
+    Effect.flatMap(({ id, created_at }) => store.releaseCollection(id, created_at)), Effect.as({ ok: true })),
   'collection/run': (store, body) => fromBadRequest(() => strict(RunPatch, body)).pipe(
     Effect.flatMap(({ id, patch }) => store.updateRun(id, patch)), Effect.map(month => ({ ok: true, ...(month ? { month } : {}) }))),
   'collection/latest': (store, body) => fromBadRequest(() => strict(Schema.Struct({ post_id: Text(100) }), body))

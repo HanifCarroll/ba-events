@@ -2,7 +2,7 @@
 	import { ArrowUpRight, MessageCircle } from 'lucide-svelte'
 	import { on } from 'svelte/events'
 	import * as m from '#paraglide/messages.js'
-	import { formatShortDate, formatTime } from '#shared/lib/utils/formatting.ts'
+	import { formatDoorsTime, formatShortDate, formatTime } from '#shared/lib/utils/formatting.ts'
 	import { formatPrice } from '#features/chat/lib/messages.ts'
 	import type { HomeAgendaCardEvent, HomeAgendaEvent } from '../lib/home-feed.ts'
 	import { HOME_ARTWORK_SIZES } from '../lib/artwork-delivery.ts'
@@ -92,7 +92,8 @@
 				<span class="hidden md:inline"><time datetime={event.starts_at}>{formatShortDate(event.starts_at)}</time>{#if hasTime}{' · '}{/if}</span>
 				{#if event.slotStarts}
 					{#each event.slotStarts as slot, i (slot)}{#if i}{' · '}{/if}<time datetime={slot}>{formatTime(slot)}</time>{/each}
-				{:else if event.time_tba}{m.concierge_time_tba()}
+				{:else if event.time_tba}
+					{#if event.doors_at}<time datetime={event.doors_at}>{formatDoorsTime(event.doors_at, event.starts_at)}</time>{:else}{m.concierge_time_tba()}{/if}
 				{:else if hasTime}<time datetime={event.starts_at}>{formatTime(event.starts_at)}</time>{/if}
 			</div>
 			<div class="relative">

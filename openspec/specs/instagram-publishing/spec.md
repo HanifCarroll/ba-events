@@ -1,7 +1,7 @@
 # Instagram Publishing Specification
 
 ## Purpose
-Define how the VPS job drafts the recurring @baeventos.app posts from the catalog, gets Hanif's approval in Slack, and publishes without ever posting twice. The words come from `src/features/instagram-publisher/copy.md`.
+Define how the VPS job drafts the recurring @baeventos.app posts from the catalog, requests Hanif's approval only when needed, and publishes without ever posting twice. The words come from `src/features/instagram-publisher/copy.md`.
 
 ## Requirements
 
@@ -18,7 +18,7 @@ A post MUST show only events from the Instagram intake that are scheduled, marke
 
 #### Scenario: Too few events qualify
 - **WHEN** fewer events qualify than the format's minimum (Hoy 2, Este finde 4, Gratis 5, Este finde Reel 4)
-- **THEN** the run is skipped and a new top-level message in #ba-eventos says "Skipped: only {n} events qualified"
+- **THEN** the job records the skip without posting a new Slack message; a rebuild may reply in the preceding revision's preview thread
 
 #### Scenario: A free event qualifies for Hoy or Este finde
 - **WHEN** at least one free event qualifies
@@ -82,12 +82,12 @@ The Reel MUST be one 1080 × 1920 H.264/AAC MP4 at 30 fps, drafted Thursday 18:0
 - **WHEN** HyperFrames' managed Chrome is missing
 - **THEN** the draft fails with an alert that names the install command
 
-### Requirement: Every draft is approved in Slack before it is published
-Each draft MUST go to #ba-eventos as a new top-level message with every frame attached (for a Reel, the video, and a last line naming the track). Only Hanif's ✅ and ❌ reactions count; thread replies do not.
+### Requirement: Slack previews request approval only when needed
+While approval is open, a rendered draft MUST request approval in a top-level Slack preview when an enabled publication needs Hanif's ✅. This includes manual mode, a missing or failed review, and review problems that an automatic investigation or rebuild cannot resolve. If Threads later needs approval and its text was not shown, the new preview MUST show its text and request only the missing approval. A ✅ applies only to the destinations and content revision it showed and does not replace approval for unchanged Instagram content. The preview MUST attach every frame (for a Reel, the video, and a last line naming the track). It MUST use `slack.channel` from publisher config, defaulting to #alerts (`C0CG3EGKKP1`), and save that channel with the preview. Existing previews without a stored channel MUST keep using #ba-eventos (`C0CHBCSEV3R`). Only Hanif's ✅ and ❌ reactions on an existing preview count; thread replies do not. Routine outcomes MUST only reply under an existing preview. Failures continue through the alert path.
 
 #### Scenario: Hanif reacts ❌
-- **WHEN** Hanif's ❌ is on the preview before the post goes out
-- **THEN** the draft is skipped, even in auto mode, and the thread gets "Skipped: you reacted ❌"
+- **WHEN** Hanif's ❌ is on any preview of the draft before the post goes out, including an earlier revision or a preview for only one destination
+- **THEN** the draft is skipped, even if it later qualified for auto mode, and the thread gets "Skipped: you reacted ❌"
 
 #### Scenario: No ✅ by the cutoff
 - **WHEN** there is no ✅ by 17:00 for Hoy, Friday 18:00 for Este finde and the Reel, or Tuesday 20:00 for Gratis, and auto mode is off
@@ -118,9 +118,66 @@ Each draft MUST go to #ba-eventos as a new top-level message with every frame at
 - **THEN** it publishes at once
 
 #### Scenario: Auto mode
-- **WHEN** both the saved Instagram preview mode and the current config allow auto mode for the format
-- **THEN** the preview is still posted and the post goes out at its slot unless Hanif reacted ❌
-- **AND** if either setting is false or the preview predates saved modes, a ✅ is required
+- **WHEN** every eligible publication allows auto mode in both the saved revision and current config, and the revision meets the review requirement
+- **THEN** no new preview is sent; if none has been shown, the publisher can publish without contacting Slack
+- **AND** if either setting is false or the revision predates saved modes, a ✅ is required for that publication; if the live flag turns off while approval is still open, a previously silent draft sends a preview
+
+#### Scenario: One publication awaits an approval preview and the other is automatic
+- **WHEN** a preview needed by one publication definitely has not been sent, and the other meets its automatic publishing requirements
+- **THEN** the automatic publication proceeds subject to its catalog checks, deadline, and the decisions on any earlier previews; the manual publication waits for approval
+
+#### Scenario: A preview's decision is unknown
+- **WHEN** any preview's reactions cannot be read or a Slack share has an unclear outcome
+- **THEN** the publisher retries the read or share lookup without replacing the preview, rebuilding, or starting new publication writes that depend on those reactions, including in auto mode
+- **AND** a readable ❌ still vetoes the draft, and a publish already dispatched can still be reconciled
+
+#### Scenario: The publisher rebuilds without sending a replacement preview
+- **WHEN** an earlier revision already has a preview, and the new revision can publish automatically
+- **THEN** the publisher keeps the earlier preview's thread for its ❌ veto and follow-up replies, including the rebuild and outcome
+- **AND** a ✅ cannot approve changed media or text unless a preview shows that revision
+
+### Requirement: A new draft needs a revision-specific review for automatic publishing
+
+After rendering, the publisher MUST review the still frames (for a Reel, its cover and card stills), Instagram caption, and exact Threads text, if present. It MUST supply the selected catalog fields, Buenos Aires dates, and linked intake captions and source flyers when available. The reviewer MUST report material factual, scope, artwork, or rendering problems, not style preferences. It MUST return an `ok`, `wrong`, or `question` verdict for each event and identify any post-wide issue. A new draft MUST NOT auto-publish to either channel unless the post verdict is `ok` and every event is `ok` in the quick review or resolved as `ok` by the investigator for the exact revision, frames hash, and saved content. A preview already sent or handed to Slack before review was introduced keeps its earlier approval rules.
+
+#### Scenario: The reviewer accepts every event and the post
+- **WHEN** the reviewer returns all `ok` for the saved revision
+- **THEN** the job saves the result, model, and timestamps, uses the normal auto rules without running that successful review again, and reports the result in Slack only if a preview exists
+
+#### Scenario: The quick review flags events
+- **WHEN** a new review reports any event as `wrong` or `question` and Hanif has not reacted ✅ or ❌
+- **THEN** the job queues a detached investigation once for that revision without requiring a Slack preview, holds automatic publishing in both channels, and checks the result on subsequent ticks
+- **AND** an event-only flag can wait for the investigation without sending an approval preview unless a destination is already in manual mode
+- **AND** the investigator has at most 30 minutes and stops at least 20 minutes before the earliest applicable approval cutoff; at most two revisions of a draft may be investigated
+- **AND** a review already saved before investigation was introduced keeps its earlier behavior; a post-wide issue keeps its existing handling and cannot be cleared by event results
+
+#### Scenario: The investigation completes
+- **WHEN** every flagged event is resolved as `ok` with evidence, or the investigator returns `fixed`, `exclude`, or `ask` entries
+- **THEN** the job replies with one line per event if a preview exists or if the findings require one
+- **AND** all `ok` clears the event gate for that exact revision only; a `fixed` or `exclude` result without any `ask` rebuilds with cumulative exclusions and a fresh review, at most twice per draft per Buenos Aires day before the cutoff; if too few qualify it skips in the old thread
+- **AND** a confirmed error the investigator cannot correct is excluded and the evidence and requested correction go to Hermes without blocking the rebuild
+- **AND** an `ask`, including doubts after the investigation limit, requires ✅ and sends one Home push with the question and what was checked, even when Hermes also gets a fix request, unless Hanif already reacted or approval has closed
+
+#### Scenario: Investigation fails
+- **WHEN** the investigator cannot start, times out, or exits without a complete, valid, on-time result
+- **THEN** the revision requires ✅, and the infrastructure failure goes to Hermes, not to Hanif as a push question
+- **AND** before the time limit, the job does not infer a crash from a missing result without two consecutive unsuccessful unit checks
+
+#### Scenario: The investigator corrects the catalog
+- **WHEN** direct evidence proves a catalog value is wrong for a flagged event
+- **THEN** only the narrow correction command can change title, start time, price, free flag, display or summary descriptions, or cancel an event; it changes only matching scheduled rows whose old values still agree with the request
+- **AND** it maintains derived search data, logs every correction in publisher state and the draft, and refers unsupported corrections to Hermes
+- **AND** `investigate <draft id> --dry-run` shows what would be queued without applying fixes, launching Pi, or writing state.
+
+#### Scenario: The review is unavailable or Hanif decides explicitly
+- **WHEN** the review cannot return a valid result
+- **THEN** the job retries while a channel can still publish, and alerts Hermes if there is no result starting 30 minutes before the first eligible slot
+- **AND** a preview distinguishes manual mode from an automatic post that a later passing review could release without ✅
+- **AND** an in-time ✅ overrides a missing, `question`, or `wrong` review for its own preview; ❌ still wins, and review never bypasses the existing deadlines, event checks, or publish reconciliation
+
+#### Scenario: An operator inspects a review
+- **WHEN** the operator runs `review <draft id>` or `review <draft id> --dry-run`
+- **THEN** the job prints a fresh verdict without saving a result, rebuilding, publishing, or sending any messages
 
 ### Requirement: Hoy can publish with Instagram link stickers
 
@@ -180,7 +237,7 @@ The job MUST save each container and media id before the next step, check `conte
 
 #### Scenario: The post is published
 - **WHEN** publishing finishes
-- **THEN** the preview's thread gets "Posted: {permalink}"
+- **THEN** if a preview exists, its thread gets "Posted: {permalink}"; otherwise the outcome stays in the saved draft and log
 
 ### Requirement: Alerts report persistent failures and missed deadlines
 
@@ -206,9 +263,9 @@ The job MUST log every failed attempt, persist failure streaks across ticks, and
 - **WHEN** an open tick, publishing, or Slack reply alert is no longer failing because the job succeeded
 - **THEN** the job closes the alert with a one-line recovery message that names the outcome
 
-### Requirement: Eligible Instagram drafts share their Slack preview and approval with Threads
+### Requirement: Eligible drafts share any Slack preview and approval with Threads
 
-With Threads enabled, a Hoy, Este finde, or Gratis esta semana preview MUST append the exact Threads text in a quote block unless an earlier revision already dispatched Threads. The preview MUST distinguish manual approval from auto mode. Publishing without ✅ requires both the saved Threads preview mode and the current config to allow auto mode. The Reel MUST NOT preview or publish to Threads. The same Slack message and only Hanif's reactions govern both posts; ❌ skips both, including in auto mode. Threads auto mode is separate per format.
+With Threads enabled, the draft MUST save the exact Threads text for Hoy, Este finde, or Gratis esta semana. A preview that offers Threads MUST display that text in a quote block and distinguish manual approval from auto mode. Publishing without ✅ requires both the saved Threads mode and the current config to allow auto mode, and the revision must meet the review requirement. The Reel MUST NOT preview or publish to Threads. If there is a Slack preview, ❌ skips both posts, including in auto mode. Its ✅ approves Threads only if it showed the saved Threads text for the current revision. Threads auto mode is separate per format.
 
 #### Scenario: Publishing window
 - **WHEN** the job considers a new Threads write
@@ -228,11 +285,11 @@ With Threads enabled, a Hoy, Este finde, or Gratis esta semana preview MUST appe
 
 #### Scenario: The picks change or approval is withdrawn
 - **WHEN** a Threads write would begin
-- **THEN** the job re-reads reactions and the cutoff, and before the first write of each attempt checks every saved pick using Instagram's current catalog check. An event that would hold Instagram also holds Threads. With auto off, removing ✅ pauses further writes. A confirmed or unclear publish still gets reconciled without new writes.
+- **THEN** the job re-reads reactions if there is a preview, re-checks the cutoff, and before the first write of each attempt checks every saved pick using Instagram's current catalog check. An event that would hold Instagram also holds Threads. With auto off, removing ✅ pauses further writes. A confirmed or unclear publish still gets reconciled without new writes.
 
 #### Scenario: Threads is disabled
 - **WHEN** Threads is disabled or absent from config
-- **THEN** the job adds no Threads preview or outcome text, makes no Threads API calls, and does not backfill a preview sent without Threads text. The job re-reads the enabled flag just before creating or publishing a container. If disabled during the tick, it pauses new writes and keeps any saved container. An explicit `dry-run --threads` can still write the text locally.
+- **THEN** the job adds no Threads preview or outcome text, makes no Threads API calls, and does not backfill a revision prepared without Threads. The job re-reads the enabled flag just before creating or publishing a container. If disabled during the tick, it pauses new writes and keeps any saved container. An explicit `dry-run --threads` can still write the text locally.
 
 ### Requirement: Threads uses plain text from the saved picks
 
@@ -256,11 +313,16 @@ Threads MUST save its own state, retries, container ID, media ID, permalink, and
 
 #### Scenario: One channel fails
 - **WHEN** Instagram or Threads fails, or Slack cannot deliver an outcome reply
-- **THEN** the other channel keeps its own outcome and retry schedule, and pending Threads replies are retried in the original preview thread without republishing. A final Threads failure also raises `ba-events/instagram/draft/<id>/threads`. If the alert command fails, the alert remains pending for another tick.
+- **THEN** the other channel keeps its own outcome and retry schedule, and pending Threads replies are retried in the original preview thread without republishing; a revision with no preview posts no reply. A final Threads failure also raises `ba-events/instagram/draft/<id>/threads`. If the alert command fails, the alert remains pending for another tick.
 
 #### Scenario: Slack approval cannot be read
 - **WHEN** a Slack reaction read fails at or after the Threads slot
-- **THEN** Threads waits for a successful read until the cutoff without counting a Threads API failure
+- **THEN** manual and automatic Threads wait without counting a Threads API failure
+
+#### Scenario: Threads finds a catalog problem before Instagram's slot
+- **WHEN** a current event check holds Threads before it sends
+- **THEN** the draft saves the affected event and reason, and the job raises a Threads hold alert through the shared alert path even if there was no Slack preview
+- **AND** if a later revision publishes Threads, the job resolves that hold alert and retries the resolution if needed
 
 #### Scenario: The Threads token needs attention
 - **WHEN** a live tick uses Threads and the long-lived token is over seven days old and not yet expired
@@ -270,8 +332,8 @@ Threads MUST save its own state, retries, container ID, media ID, permalink, and
 - **WHEN** the operator runs `threads-report` with a day count (default 28)
 - **THEN** the job reads saved Threads publications and the verified account's insights to report the date, format, views, likes, replies, reposts, quotes, link clicks if returned, permalink, and account follower count without writing anything.
 
-### Requirement: The job never writes the catalog and never exposes secrets
-The job MUST read D1 only through read-only SELECT statements, MUST NOT print the Instagram, Threads, Slack, or Cloudflare tokens or pass them in any process's arguments, and MUST NOT publish to Instagram when the Instagram token file is missing.
+### Requirement: Only the guarded correction command writes the catalog and secrets are never exposed
+The job MUST read D1 only through read-only SELECT statements, MUST NOT print the Instagram, Threads, Slack, Cloudflare, or OpenAI tokens or pass them in any process's arguments, and MUST NOT publish to Instagram when the Instagram token file is missing.
 
 #### Scenario: Token file missing
 - **WHEN** `~/.config/ba-events/instagram-token.json` does not exist

@@ -120,14 +120,9 @@ const extractionScript = `(() => {
     const coordinates = extractCoordinates(mapsHref)
     const address = parsedAddress || mapsAddress
 
-    let moreInfoUrl = ''
-    const links = card.querySelectorAll('a')
-    for (const link of links) {
-      if (link.textContent?.toLowerCase().includes('más información')) {
-        moreInfoUrl = link.href || ''
-        break
-      }
-    }
+    const detailLink = card.querySelector('.card-footer-landing-qhs a[href]') ||
+      [...card.querySelectorAll('a[href]')].find(link => link.textContent?.toLowerCase().includes('más información'))
+    const moreInfoUrl = detailLink?.href || ''
 
     let description = ''
     let foundDonde = false

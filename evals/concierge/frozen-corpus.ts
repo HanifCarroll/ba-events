@@ -67,11 +67,19 @@ export async function frozenSearchIntent(input: CanonicalizeInput, corpus: reado
 function matches(event: ChatEventPayload, intent: EventSearchIntent, happeningNow: boolean): boolean {
   const must = intent.must
   const timestamp = Date.parse(event.starts_at)
+  const now = Date.parse(FROZEN_NOW)
   const within = (after?: string, before?: string) =>
     (!after || timestamp >= Date.parse(after)) && (!before || timestamp < Date.parse(before))
+  const today = must.today
+  const inTimeWindow = today
+    ? within(today.explicitStart, must.startsBefore) && (event.time_tba || event.is_all_day
+      ? within(today.dayStart, today.dayEnd)
+      : timestamp >= Date.parse(today.now) || (event.ends_at !== null && Date.parse(event.ends_at) > Date.parse(today.now)))
+    : within(must.startsAfter, must.startsBefore)
   return event.status === 'scheduled'
-    && (happeningNow ? timestamp <= Date.parse(FROZEN_NOW) && !!event.ends_at && Date.parse(event.ends_at) > Date.parse(FROZEN_NOW) : timestamp >= Date.parse(FROZEN_NOW))
-    && within(must.startsAfter, must.startsBefore)
+    && (happeningNow ? !event.time_tba && timestamp <= now &&
+      (event.ends_at ? Date.parse(event.ends_at) > now : event.is_all_day ? timestamp >= Date.parse(`${FROZEN_DATE}T00:00:00-03:00`) : now - timestamp < 3 * 60 * 60 * 1000) : true)
+    && inTimeWindow
     && (!must.weekdayWindows || must.weekdayWindows.some(window => within(window.startsAfter, window.startsBefore)))
     && (!must.neighborhoodIds || must.neighborhoodIds.includes(event.venue_neighborhood!))
     && (!must.venueIds || must.venueIds.includes(event.venue_id!))
@@ -94,7 +102,8 @@ export function frozenReadExecutors(corpus: readonly ChatEventPayload[] = frozen
       const boundary = searchRetryBoundary(intent, input)
       const widened = widenedSearchConstraints(context.searchRetryBoundary, boundary)
       if (widened.length) return rejectedSearchRetry(widened)
-      let candidates = rows.filter(row => matches(row, intent, input.timeFilter === 'now'))
+      let candidates = rows.filter(row => matches(row, intent, input.timeFilter === 'now') &&
+        !(context.excludeShownEvents && context.shownEventIds?.has(row.id)))
       const namedGenres = intent.queryGenres ?? []
       const genreMatches = candidates.filter(row => namedGenres.some(genre => row.facets.genres?.some(value => value === genre)))
       if (genreMatches.length) candidates = genreMatches
@@ -105,6 +114,7 @@ export function frozenReadExecutors(corpus: readonly ChatEventPayload[] = frozen
         ? surpriseRank(candidates, Date.parse(FROZEN_NOW)).slice(0, 1)
         : applyDiversity(candidates, intent.displayLimit)
       return { ...okEvents(events, { toolInput: input, zeroResults: !events.length, resultCount: events.length,
+        totalMatches: candidates.length, previouslyShownMatches: candidates.filter(row => context.shownEventIds?.has(row.id)).length,
         coverage: { searchedFrom: intent.must.startsAfter ?? null, searchedTo: intent.must.startsBefore ?? null,
           searchedWindows: intent.must.weekdayWindows ?? null, totalMatches: candidates.length,
           returned: events.length, maxEventDate: rows.reduce((latest, row) => row.starts_at > latest ? row.starts_at : latest, '') } }), searchRetryBoundary: boundary }

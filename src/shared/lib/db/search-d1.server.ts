@@ -2,6 +2,7 @@
 import { Schema } from 'effect'
 import type { D1Database, VectorizeIndex } from '@cloudflare/workers-types'
 import type { ChatEventPayload, EventFilters, Venue } from '../types.ts'
+import { BA_TIMEZONE } from '../constants.ts'
 import { tsRankCd, websearchToFts5 } from '../search/websearch-fts5.ts'
 
 /** Vectorize returns at most 100 matches when it doesn't return values or metadata. */
@@ -11,7 +12,7 @@ export const SEMANTIC_MATCH_THRESHOLD = 0.2
 
 /** The `events_with_venues` columns (without embedding and search_document), over events e and venues v. */
 export const EVENT_COLUMNS = `e.id, e.name, e.description_es, e.description_en, e.description_display_es, e.description_display_en,
-  e.description_summary_es, e.description_summary_en, e.starts_at, e.ends_at, e.is_all_day, e.time_tba, e.venue_id,
+  e.description_summary_es, e.description_summary_en, e.starts_at, e.ends_at, e.doors_at, e.is_all_day, e.time_tba, e.venue_id,
   e.categories, e.price, e.is_free, e.min_age, e.image_url, e.image_width, e.image_height, e.link, e.ticket_url, e.source,
   e.external_id, e.status, e.location_hidden, e.location_tba, e.description_unavailable, e.enrichment_status,
   e.enrichment_error, e.enriched_at, e.created_at, e.updated_at, v.name AS venue_name, v.neighborhood AS venue_neighborhood,
@@ -26,7 +27,7 @@ const EventRow = Schema.Struct({
   id: Schema.String, name: Schema.String,
   description_es: text, description_en: text, description_display_es: text, description_display_en: text,
   description_summary_es: text, description_summary_en: text,
-  starts_at: Schema.String, ends_at: text, is_all_day: Schema.BooleanFromBit, time_tba: Schema.BooleanFromBit,
+  starts_at: Schema.String, ends_at: text, doors_at: text, is_all_day: Schema.BooleanFromBit, time_tba: Schema.BooleanFromBit,
   venue_id: text, categories: Schema.fromJsonString(Schema.Array(Schema.String)), price,
   is_free: Schema.BooleanFromBit, min_age: integer, image_url: text, image_width: integer, image_height: integer,
   link: text, ticket_url: text, source: Schema.String, external_id: text, status: Schema.String,
@@ -53,8 +54,16 @@ type Where = { sql: string[]; values: unknown[] }
 function filterSql(filters: EventFilters, options: { priceCap: 'or-null' | 'strict'; avoidGenres: boolean }): Where {
   const where: Where = { sql: ["e.scope = 'in'"], values: [] }
   const add = (sql: string, ...values: unknown[]) => { where.sql.push(sql); where.values.push(...values) }
-  if (filters.startsAfter) add('e.starts_at >= ?', iso(filters.startsAfter))
-  if (filters.startsBefore) add('e.starts_at <= ?', iso(filters.startsBefore))
+  if (filters.today) {
+    const { dayStart, dayEnd, now, explicitStart } = filters.today
+    add(`(((e.time_tba = 1 OR e.is_all_day = 1) AND e.starts_at >= ? AND e.starts_at < ?) OR
+      (e.time_tba = 0 AND e.is_all_day = 0 AND (e.starts_at >= ? OR e.ends_at > ?)))`,
+      iso(dayStart), iso(dayEnd), iso(now), iso(now))
+    if (explicitStart) add('e.starts_at >= ?', iso(explicitStart))
+  } else if (filters.startsAfter) add('e.starts_at >= ?', iso(filters.startsAfter))
+  if (filters.startsBefore) add(filters.today ? 'e.starts_at < ?' : 'e.starts_at <= ?', iso(filters.startsBefore))
+  const excludedIds = list(filters.excludeEventIds)
+  if (excludedIds) add('e.id NOT IN (SELECT value FROM json_each(?))', excludedIds)
   const neighborhoods = list(filters.neighborhoods)
   if (neighborhoods) add('v.neighborhood IN (SELECT value FROM json_each(?))', neighborhoods)
   const venueIds = list(filters.venueIds)
@@ -125,27 +134,38 @@ const cosine = (a: ArrayLike<number>, b: ArrayLike<number>) => {
 /**
  * Vectorize version of `match_events_with_venues_filtered`: the nearest scheduled events to `embedding`. Vectorize
  * filters on status and the date window (each vector's metadata is `{ status, starts_at }`, with starts_at in epoch
- * milliseconds) and returns the 100 nearest. D1 applies every other filter to those. The survivors are then scored by
- * exact cosine similarity from their stored vectors, because Vectorize's own scores are approximate and reorder near
- * ties that pgvector didn't.
+ * milliseconds) and returns the 100 nearest. For today, D1 also selects earlier events still running; the Vectorize
+ * index does not have end times. D1 applies the remaining filters, then scores survivors by exact cosine because
+ * Vectorize's own scores are approximate and reorder near ties that pgvector didn't.
  */
 export async function semanticEventSearchD1(db: D1Database, vectorize: VectorizeIndex, embedding: number[],
   filters: EventFilters, matchCount: number, signal?: AbortSignal): Promise<ChatEventPayload[]> {
   const startsAt: Record<string, number> = {}
-  if (filters.startsAfter) startsAt.$gte = Date.parse(filters.startsAfter)
+  const today = filters.today
+  const canStartBeforeToday = today && (!today.explicitStart || today.explicitStart < today.dayStart)
+  const earliestStart = canStartBeforeToday ? today.dayStart : today?.explicitStart ?? filters.startsAfter
+  if (earliestStart) startsAt.$gte = Date.parse(earliestStart)
   if (filters.startsBefore) startsAt.$lte = Date.parse(filters.startsBefore)
-  const { matches } = await vectorize.query(embedding, {
-    topK: VECTORIZE_TOP_K,
-    returnValues: false,
-    returnMetadata: 'none',
-    filter: { status: 'scheduled', ...(Object.keys(startsAt).length ? { starts_at: startsAt } : {}) },
-  })
-  signal?.throwIfAborted()
-  if (matches.length === 0) return []
   const where = filterSql(filters, { priceCap: 'or-null', avoidGenres: true })
+  const [nearest, earlier] = await Promise.all([
+    vectorize.query(embedding, {
+      topK: VECTORIZE_TOP_K,
+      returnValues: false,
+      returnMetadata: 'none',
+      filter: { status: 'scheduled', ...(Object.keys(startsAt).length ? { starts_at: startsAt } : {}) },
+    }),
+    today && canStartBeforeToday
+      ? db.prepare(`SELECT e.id FROM ${FROM_EVENTS}
+          WHERE e.status = 'scheduled' AND e.starts_at < ?${and(where)} ORDER BY e.starts_at DESC LIMIT ?`)
+        .bind(today.dayStart, ...where.values, VECTORIZE_TOP_K).all<{ id: string }>()
+      : Promise.resolve({ results: [] }),
+  ])
+  signal?.throwIfAborted()
+  const candidateIds = [...nearest.matches.map(match => match.id), ...earlier.results.map(row => row.id)]
+  if (!candidateIds.length) return []
   const { results } = await db.prepare(`SELECT ${EVENT_COLUMNS} FROM ${FROM_EVENTS}
     WHERE e.id IN (SELECT value FROM json_each(?)) AND e.status = 'scheduled'${and(where)}`)
-    .bind(JSON.stringify(matches.map(match => match.id)), ...where.values).all()
+    .bind(JSON.stringify(candidateIds), ...where.values).all()
   signal?.throwIfAborted()
   const events = results.map(toPayload)
   const batches: string[][] = []
@@ -186,12 +206,20 @@ export async function getFurthestEventDateD1(db: D1Database): Promise<string | n
   return row?.starts_at ?? null
 }
 
+const UNKNOWN_END_DURATION_MS = 3 * 60 * 60 * 1000
+
 /** `getEventsHappeningNow`: scheduled events that have started and not ended. */
 export async function getEventsHappeningNowD1(db: D1Database, now = new Date()): Promise<ChatEventPayload[]> {
   const at = now.toISOString()
+  const day = new Intl.DateTimeFormat('sv-SE', { timeZone: BA_TIMEZONE }).format(now)
+  const midnight = iso(`${day}T00:00:00-03:00`)
+  const recent = new Date(now.getTime() - UNKNOWN_END_DURATION_MS).toISOString()
   const { results } = await db.prepare(`SELECT ${EVENT_COLUMNS} FROM ${FROM_EVENTS}
-    WHERE e.status = 'scheduled' AND e.scope = 'in' AND e.starts_at <= ? AND (e.ends_at IS NULL OR e.ends_at >= ?) ORDER BY e.starts_at`)
-    .bind(at, at).all()
+    WHERE e.status = 'scheduled' AND e.scope = 'in' AND e.time_tba = 0 AND e.starts_at <= ? AND (
+      e.ends_at > ? OR (e.is_all_day = 1 AND e.starts_at >= ?) OR
+      (e.is_all_day = 0 AND e.ends_at IS NULL AND e.starts_at > ?)
+    ) ORDER BY e.starts_at`)
+    .bind(at, at, midnight, recent).all()
   return results.map(toPayload)
 }
 

@@ -65,6 +65,17 @@ Two more crons run in `scheduled()` itself (`CRON_TASKS`): `mark-past-events` ho
 
 Every step retries twice more with exponential backoff from one second (Trigger.dev's old three attempts) and keeps the old per-task time budget as its timeout. Secrets: `INTAKE_API_TOKEN` (the intake API, see [Instagram intake](instagram-intake.md)), `DEEPSEEK_API_KEY` (categorization, description extraction, translation, and facets), and `OPENAI_API_KEY` (embeddings). They reach shared code through `process.env` (`nodejs_compat_populate_process_env`). Run a job by hand with `bunx wrangler workflows trigger <workflow> --config wrangler.jobs.jsonc`, and read it with `bunx wrangler workflows instances describe <workflow> latest --config wrangler.jobs.jsonc`.
 
+## Event credit backfill
+
+After the event-details migration, an operator can fill missing organizer and performer credits on scheduled events. The command needs Node 24, a Wrangler login for the selected database, and `EVENT_CREDITS_DEEPSEEK_API_KEY` for that environment (it never loads `.env`). Reports contain source descriptions and are written to a new private file; do not commit them.
+
+```sh
+node scripts/event-credits.ts --staging --limit 10 --report /private/path/staging-credits.json
+node scripts/event-credits.ts --production --apply --limit 100 --report /private/path/credits-batch-01.json
+```
+
+Omitting `--apply` is a dry run. Review a dry-run report first. Each apply skips already reviewed rows, including rows for which the model found no credits, and never replaces existing facts. Retry failed extractions with a new report filename. Doors are not inferred by the model: re-review their evidence and use an Instagram intake update.
+
 ## Local checks
 
 From the repository root:

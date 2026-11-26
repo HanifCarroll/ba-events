@@ -181,6 +181,38 @@ describe('imported pending rows leave the enrichment queue', () => {
     expect(buildPresentationFields).toHaveBeenCalledTimes(1)
   })
 
+  it('persists guests-only Luma detail before translating its stored description', async () => {
+    const client = makeClient()
+    getEnrichmentAdapterMock.mockReturnValue({ config: {}, serverEnrich: async () => ({
+      organizer: { name: 'Colectivo Nube' }, location_hidden: true, venue_name: null, description_es: null, description_en: null,
+    }) })
+    const result = await enrichSingleEvent(client.catalog, {
+      id: 'private', name: 'Jazz', link: 'https://luma.com/synthetic', source: 'luma', venue_id: 'old-venue',
+      description_es: 'Jazz en vivo.', enrichment_status: 'pending',
+    }, { translate: async () => {
+      expect(client.updates[0]?.data).toEqual({ location_hidden: true, venue_id: null })
+      return null
+    } })
+    expect(result.error).toBe('Failed to translate description to English')
+    expect(client.updates[0]?.data).toEqual({ location_hidden: true, venue_id: null })
+  })
+
+  it('does not use a BA Tourism organizer even if a linked detail or model returns one', async () => {
+    const client = makeClient()
+    const serverEnrich = vi.fn(async () => ({ organizer: { name: 'Another Event' } }))
+    getEnrichmentAdapterMock.mockReturnValue({ config: {}, serverEnrich })
+    embedEventWithDocumentMock.mockResolvedValue({ embedding: [0.1], searchDocument: 'Jazz' })
+    const response = await enrichSingleEvent(client.catalog, {
+      id: 'tourism', name: 'Jazz', link: 'https://example.org/jazz', source: 'ba-tourism',
+      description_es: 'Jazz en vivo.', description_en: 'Live jazz.', enrichment_status: 'pending',
+    }, { extractFacets: async () => ({ organizer: { name: 'Another Event' }, performers: [{ name: 'Trío Sol' }] } as never),
+      buildPresentationFields: async () => ({ description_display_es: null, description_display_en: null, description_summary_es: null, description_summary_en: null }) })
+    expect(response.success).toBe(true)
+    expect(serverEnrich).not.toHaveBeenCalled()
+    expect(client.updates.some(write => write.data.organizer_name)).toBe(false)
+    expect(client.updates.at(-1)?.data.performers).toEqual([{ name: 'Trío Sol' }])
+  })
+
   it('keeps a Spanish-only row retryable when translation fails, then completes it on the catch-up retry', async () => {
     embedEventWithDocumentMock.mockReset()
     embedEventWithDocumentMock.mockResolvedValue({ embedding: [0.4], searchDocument: 'Tango' })

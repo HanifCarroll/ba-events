@@ -1,5 +1,5 @@
 [Unit]
-Description=BA Eventos Instagram publisher: draft, preview in #ba-eventos, and publish approved posts
+Description=BA Eventos Instagram publisher: draft, request approval when needed, and publish
 OnFailure=notify-failure@%n.service
 
 [Service]

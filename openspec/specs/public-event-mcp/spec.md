@@ -26,6 +26,10 @@ Tool inputs MUST pass strict bounded schemas. Output MUST be constructed by the 
 - **WHEN** the event matches a search but is not marked `in`
 - **THEN** `search_events` omits it without changing the direct lookup contract
 
+#### Scenario: A caller searches for events today
+- **WHEN** a public caller sets `timeFilter` to `today`
+- **THEN** the shared event-search tool applies the Buenos Aires today window
+
 ### Requirement: Detail returns displayable events only
 `get_event` MUST return only a currently displayable event. Missing, invalid, or non-displayable ids SHALL use the bounded not-available response.
 

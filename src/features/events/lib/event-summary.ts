@@ -2,6 +2,7 @@ import { BA_TIMEZONE } from '#shared/lib/constants.ts';
 import { pickDescriptionSummary } from '#features/events/lib/description-presentation.ts';
 import { isPayWhatYouCan } from '#features/events/lib/admission.ts';
 import type { EventWithVenue } from '#shared/lib/types.ts';
+import { normalizeText } from '#shared/lib/utils/normalize-text.ts';
 
 /**
  * Human-readable label for a category slug ("live-music" → "Live Music").
@@ -57,6 +58,14 @@ export function buildEventJsonLd(
 	// BA Tourism copies its info page into ticket_url even when it isn't an admission link.
 	const ticketUrl = event.source !== 'ba-tourism' && event.ticket_url?.trim();
 	const price = contribution ? undefined : (isFree ? 0 : event.price);
+	const isUpcoming = event.status === 'scheduled' || event.status === 'postponed';
+	const organizerName = event.organizer_name?.trim();
+	const descriptions = ` ${normalizeText([event.description_es, event.description_en].join(' '))} `;
+	const performer = event.performers?.map(({ name, url }) => {
+		const label = normalizeText(name);
+		const soloist = label && ['solista', 'soloist'].some(role => descriptions.includes(` ${role} ${label} `));
+		return { '@type': soloist ? 'Person' : 'PerformingGroup', name, ...(url ? { url } : {}) };
+	});
 
 	return {
 		'@context': 'https://schema.org',
@@ -65,6 +74,7 @@ export function buildEventJsonLd(
 		description: buildEventSummary(event),
 		startDate,
 		endDate,
+		...(event.doors_at ? { doorTime: event.doors_at } : {}),
 		eventAttendanceMode: 'https://schema.org/OfflineEventAttendanceMode',
 		eventStatus: status ? `https://schema.org/${status}` : undefined,
 		image: imageUrl,
@@ -79,9 +89,14 @@ export function buildEventJsonLd(
 				streetAddress: showVenue ? event.venue_address?.trim() || undefined : undefined
 			}
 		},
+		...(organizerName ? { organizer: {
+			'@type': 'Organization', name: organizerName, url: event.organizer_url?.trim() || undefined
+		} } : {}),
+		...(performer?.length ? { performer } : {}),
 		isAccessibleForFree: isFree || undefined,
-		offers: ticketUrl ? {
-			'@type': 'Offer', url: ticketUrl,
+		offers: isUpcoming && (ticketUrl || price != null) ? {
+			'@type': 'Offer',
+			...(ticketUrl ? { url: ticketUrl, ...(event.offers_valid_from ? { validFrom: event.offers_valid_from } : {}) } : {}),
 			...(price != null ? { price, priceCurrency: 'ARS' } : {})
 		} : undefined
 	};

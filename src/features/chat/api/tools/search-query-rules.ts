@@ -9,15 +9,10 @@
 
 import { NEIGHBORHOODS, type Neighborhood } from '#shared/lib/types.ts'
 import { normalizeText } from '#shared/lib/utils/normalize-text.ts'
-import type { QueryRule } from './search-query-annotations.ts'
+import { annotateQuery, type QueryRule } from './search-query-annotations.ts'
 
-export type SearchTimeFilter =
-  | 'now'
-  | 'tonight'
-  | 'tomorrow'
-  | 'weekend'
-  | 'week'
-  | 'future'
+export const SEARCH_TIME_FILTERS = ['now', 'today', 'tonight', 'tomorrow', 'weekend', 'week', 'future'] as const
+export type SearchTimeFilter = (typeof SEARCH_TIME_FILTERS)[number]
 
 const SEMANTIC_FILLER = new Set([
   'el',
@@ -114,7 +109,8 @@ const GENERIC_DISCOVERY_PHRASES: string[][] = [
 ]
 
 const TEMPORAL_PHRASES_BY_FILTER: Record<SearchTimeFilter, string[][]> = {
-  now: [['now'], ['right', 'now'], ['ahora'], ['en', 'este', 'momento']],
+  now: [['now'], ['right', 'now'], ['currently'], ['at', 'the', 'moment'], ['ahora'], ['en', 'este', 'momento']],
+  today: [['today'], ['hoy']],
   tonight: [
     ['tonight'],
     ['this', 'evening'],
@@ -191,6 +187,21 @@ function temporalRules(timeFilter: SearchTimeFilter | undefined): QueryRule[] {
     kind: 'temporal' as const,
     value: timeFilter,
   }))
+}
+
+/** Distinguish time language from a quoted event name. */
+export function requestedDaypart(text: string): 'today' | 'tonight' | 'now' | undefined {
+  const unquoted = text.replace(/"[^"]*"|“[^”]*”|«[^»]*»/g, '')
+  const { spans } = annotateQuery(unquoted, [...temporalRules('today'), ...temporalRules('tonight'), ...temporalRules('now')])
+  if (spans.some(span => span.value === 'now')) return 'now'
+  if (spans.some(span => span.value === 'tonight')) return 'tonight'
+  if (spans.some(span => span.value === 'today')) return 'today'
+  return undefined
+}
+
+/** Recognize "today" even when the planner omitted it or chose "now". */
+export function resolveToday(text: string, timeFilter?: SearchTimeFilter): SearchTimeFilter | undefined {
+  return (!timeFilter || timeFilter === 'now') && requestedDaypart(text) === 'today' ? 'today' : timeFilter
 }
 
 export function buildQueryAnnotationRules(

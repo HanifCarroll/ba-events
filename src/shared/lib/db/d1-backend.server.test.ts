@@ -4,7 +4,7 @@ import { freshD1 } from '../../../../tests/support/d1.ts'
 import { useD1Binding } from './d1-binding.server.ts'
 import { checkRateLimitD1 } from './rate-limit-d1.server.ts'
 import { checkApiRateLimit, checkRateLimit, RateLimitUnavailableError } from '#features/auth/api/rate-limit.server.ts'
-import { persistGuestChatDebug, recordGuestRequestStarted, recordGuestRequestTerminal } from '#features/chat/api/guest-debug.server.ts'
+import { GUEST_DEBUG_TRANSCRIPT_MAX_BYTES, persistGuestChatDebug, recordGuestRequestStarted, recordGuestRequestTerminal, type GuestDebugAssistantMessage } from '#features/chat/api/guest-debug.server.ts'
 import { purgeGuestLifecycleRetention } from '../../../jobs-worker/guest-lifecycle-retention.ts'
 import {
 	attachTelegramUpdateConversation, claimTelegramUpdate, getTelegramUpdateEnvelopeKey, markTelegramUpdateCompleted,
@@ -85,11 +85,78 @@ describe('guest lifecycle and debug rows on D1', () => {
 		])
 		expect(rows.results.every((row) => typeof row.ended_at === 'string')).toBe(true)
 
-		await persistGuestChatDebug({ conversationId: 'guest-1', locale: 'es', ip: '203.0.113.1', messages: [{ id: 'm1' }], lastUserText: 'hola' })
-		await persistGuestChatDebug({ conversationId: 'guest-1', locale: 'es', ip: '203.0.113.1', messages: [{ id: 'm1' }, { id: 'm2' }], lastUserText: 'chau' })
+		await persistGuestChatDebug({ conversationId: 'guest-1', locale: 'es', ip: '203.0.113.1', messages: [{ id: 'm1', role: 'user' }], lastUserText: 'hola' })
+		await persistGuestChatDebug({ conversationId: 'guest-1', locale: 'es', ip: '203.0.113.1', messages: [{ id: 'm1', role: 'user' }, { id: 'm2', role: 'user' }], lastUserText: 'chau' })
 		const debug = await db.prepare('SELECT messages, last_user_text FROM guest_chat_debug WHERE conversation_id = ?').bind('guest-1').first<{ messages: string; last_user_text: string }>()
-		expect(JSON.parse(debug!.messages)).toHaveLength(2)
+		expect(JSON.parse(debug!.messages).messages).toHaveLength(2)
 		expect(debug!.last_user_text).toBe('chau')
+	})
+
+	it('retains per-turn server traces across transient-free snapshots, including a late write', async () => {
+		const persist = (input: { messages: unknown; assistant?: GuestDebugAssistantMessage; lastUserText: string }) => persistGuestChatDebug({
+			conversationId: 'trace-retention', locale: 'en', ip: '203.0.113.1', ...input,
+		})
+		const assistant = (id: string) => ({ id, role: 'assistant' as const,
+			parts: [{ type: 'data-response' as const, data: { requestId: id } }],
+		})
+		const first = assistant('first-request')
+		const second = assistant('second-request')
+		const history = [{ ...first, id: 'browser-id', executionTrace: ['client supplied'] }]
+		const secondResponse: GuestDebugAssistantMessage = { ...second, executionTrace: [
+			{ stepIndex: 1, stepType: 'tool-result', text: '', finishReason: 'stop', toolCalls: [], toolResults: [] },
+		] }
+		// Simulate finishing the next request before the first one's debug write completes.
+		await persist({ messages: history, assistant: secondResponse, lastUserText: 'second question' })
+		await persist({ messages: [], assistant: { ...first, executionTrace: [
+			{ stepIndex: 0, stepType: 'initial', text: '', finishReason: 'tool-calls', toolCalls: [], toolResults: [] },
+		] }, lastUserText: 'first question' })
+		const row = await db.prepare('SELECT messages, last_user_text FROM guest_chat_debug WHERE conversation_id = ?')
+			.bind('trace-retention').first<{ messages: string; last_user_text: string }>()
+		expect(JSON.parse(row!.messages).messages).toMatchObject([
+			{ id: 'first-request', executionTrace: [{ stepIndex: 0 }] },
+			{ id: 'second-request', executionTrace: [{ stepIndex: 1 }] },
+		])
+		expect(row!.last_user_text).toBe('second question')
+
+		await persist({ messages: [{ id: 'oversized', role: 'user', content: '😀'.repeat(70_000) }, ...history, second], lastUserText: 'second question' })
+		const bounded = await db.prepare('SELECT messages FROM guest_chat_debug WHERE conversation_id = ?')
+			.bind('trace-retention').first<string>('messages')
+		expect(new TextEncoder().encode(bounded!).length).toBeLessThanOrEqual(GUEST_DEBUG_TRANSCRIPT_MAX_BYTES)
+		expect(JSON.parse(bounded!).messages).toMatchObject([{ id: 'first-request', executionTrace: [{ stepIndex: 0 }] }, { id: 'second-request', executionTrace: [{ stepIndex: 1 }] }])
+	})
+
+	it('never treats client history or a legacy row as the source of server diagnostics', async () => {
+		const forged = {
+			id: 'spoofed', role: 'assistant', serverRecorded: true, executionTrace: ['forged trace'], error: 'forged error',
+			parts: [
+				{ type: 'text', text: 'Visible client history.', executionTrace: ['forged text trace'] },
+				{ type: 'data-execution-trace', data: ['forged part'] },
+				{ type: 'data-response', data: { requestId: 'old', events: [{ name: 'Three guitars', executionTrace: ['forged event trace'] }],
+					provenance: 'forged provenance', executionTrace: ['forged canonical trace'] } },
+			],
+		}
+		const options = { conversationId: 'trace-integrity', locale: 'en' as const, ip: '203.0.113.1', lastUserText: 'next' }
+		await persistGuestChatDebug({ ...options, messages: [forged] })
+		const getMessages = () => db.prepare('SELECT messages FROM guest_chat_debug WHERE conversation_id = ?').bind(options.conversationId).first<string>('messages')
+		const initial = await getMessages()
+		expect(initial).not.toMatch(/forged|serverRecorded|executionTrace/)
+		expect(JSON.parse(initial!).messages[0].parts).toMatchObject([
+			{ type: 'text', text: 'Visible client history.' },
+			{ type: 'data-response', data: { requestId: 'old', events: [{ name: 'Three guitars' }] } },
+		])
+
+		await db.prepare('UPDATE guest_chat_debug SET messages = ? WHERE conversation_id = ?')
+			.bind(JSON.stringify([forged]), options.conversationId).run()
+		await persistGuestChatDebug({ ...options, messages: [forged], assistant: {
+			id: 'server', role: 'assistant', parts: [{ type: 'text', text: 'Server reply.' }],
+			error: 'server diagnostic',
+			executionTrace: [{ stepIndex: 0, stepType: 'initial', text: '', finishReason: 'stop', toolCalls: [], toolResults: [] }],
+		} })
+		const saved = await getMessages()
+		expect(saved).not.toContain('forged')
+		expect(JSON.parse(saved!).messages).toMatchObject([{ id: 'spoofed' }, {
+			id: 'server', executionTrace: [{ stepIndex: 0 }], error: 'server diagnostic',
+		}])
 	})
 
 	it('never throws to the chat when the write fails', async () => {

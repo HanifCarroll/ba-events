@@ -11,6 +11,7 @@
  * - Declarative config for routing decisions
  */
 
+import type { EventCredit } from '#shared/lib/types.ts'
 import type { ImportSource } from './types.ts'
 
 /**
@@ -119,6 +120,7 @@ export interface ServerEnrichmentResult {
   description_es: string | null
   description_en: string | null
   venue_name: string | null
+  organizer?: EventCredit
   /** Set when the source says whether the address is hidden until registration; omitted when it can't tell. */
   location_hidden?: boolean
 }

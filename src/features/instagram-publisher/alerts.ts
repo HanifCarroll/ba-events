@@ -7,8 +7,10 @@ import { addDays, baLocal, englishDates, hhmm, WEEKDAYS_EN } from './format.ts'
 import { draftId, FORMATS, runWindow, TICK_MS } from './formats.ts'
 import { InstagramError, PROFILE_URL } from './instagram.ts'
 import type { Draft, Services } from './job.ts'
+import type { Verdict } from './review.ts'
 import { writeJson } from './runtime.ts'
 import type { StickerFailure } from './story-stickers.ts'
+import { isThreadsFormat, threadsWindow } from './threads-copy.ts'
 
 const HOUR_MS = 60 * 60_000
 export const ALERT_FAILURES = 3
@@ -69,6 +71,35 @@ export function threadsFailed(item: Item, reason: string | null, unclear: boolea
       codes(item.id, reason ? errorCode(reason) : undefined, `state ${homeRelative(stateFile)}`)].join('\n'),
     fingerprint: JSON.stringify([unclear, reason]),
   }
+}
+
+export function reviewFix(draft: Draft, id: string | null, finding: Verdict) {
+  const issue = [finding.field, finding.reason].join(': ')
+  return {
+    key: id ? `review-fix/${id}` : `${draftKey(draft)}/review-fix`,
+    title: 'Publisher review found incorrect content',
+    text: [`⚠️ *Fix a problem found by the publisher review*. ${TRIAGE}`,
+      'Hermes should check the linked evidence and correct the catalog or the publisher.',
+      codes(`Draft ${draft.id} r${draft.revision}`, `Event ${id ?? 'not specific to one event'}`, slackLiteral(issue))].join('\n'),
+    fingerprint: issue,
+  }
+}
+
+/** Quote short model and catalog excerpts without allowing Slack mentions or markup. */
+export const slackLiteral = (value: string) => value.replace(/[\r\n]+/g, ' ').replaceAll('`', "'")
+  .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replace(/[*_~]/g, '')
+
+export function investigatorFailed(draft: Draft, reason: string, dir: string) {
+  return [`⚠️ *The ${label(draft)} investigation did not finish*. ${TRIAGE}`,
+    'The publisher will not auto-publish this revision. Hermes should check the private run and fix logs before retrying any catalog change.',
+    codes(draft.id, `revision ${draft.revision}`, reason, homeRelative(dir))].join('\n')
+}
+
+export function reviewUnavailable(draft: Draft, slot: Date, now: Date, error: unknown) {
+  const failure = describeFailure(error)
+  return [`⚠️ *The ${label(draft)} has no automated review for its ${when(slot, now)} slot*. ${TRIAGE}`,
+    'Hermes should check the review setup. Without a review, the publisher only posts with an in-time ✅.',
+    codes(draft.id, `revision ${draft.revision}`, slackLiteral(failure.message))].join('\n')
 }
 
 export function tokenAlert(warning: string, now: Date) {
@@ -159,17 +190,21 @@ export function publishSkipped(draft: Draft, reason: Exclude<SkipReason, { kind:
   return `⚠️ *The ${label(draft)} wasn't posted*: ${why}. No action needed.`
 }
 
-export function heldAlert(draft: Draft, event: NonNullable<PublishStop['stale']>, now: Date) {
+export function heldAlert(draft: Draft, event: NonNullable<PublishStop['stale']>, now: Date, destination: 'Instagram' | 'Threads' = 'Instagram') {
   const hasUploads = draft.publish?.units.some(unit => unit.containerId || unit.childIds?.some(Boolean))
+  const rebuildBlocked = draft.publish || draft.storyShare || draft.state === 'publishing' || draft.state === 'published'
   const cutoff = runWindow(draft.format, draft.from).cutoff
+  const threadsCutoff = destination === 'Threads' && isThreadsFormat(draft.format) ? threadsWindow(draft.format, draft.from).cutoff : null
+  const rebuildBy = threadsCutoff && threadsCutoff < cutoff ? threadsCutoff : cutoff
+  const item = destination === 'Threads' ? `${name(draft)} post on Threads` : label(draft)
   return [
-    `⚠️ *The ${label(draft)} is on hold*: ${event.title.replace(/\s+/g, ' ')} ${heldEventReason[event.why]}. ${TRIAGE}`,
-    hasUploads ? "Nothing was posted, but Instagram already holds its uploads, so it can't be rebuilt automatically."
-      : draft.publish ? "Nothing was posted, but publishing already started, so it can't be rebuilt automatically."
-      : now >= cutoff ? "Nothing went out on Instagram. It's too late to approve a new preview."
-      : `Nothing went out on Instagram. To post it, Hermes rebuilds it without that event and you approve the new preview by ${when(cutoff, now)}.`,
-    codes(`\`${event.id} ${event.detail}\``, draft.id, draft.publish ? `${CLI} status`
-      : now < cutoff ? `${CLI} regenerate ${draft.id} --exclude ${event.id}` : undefined),
+    `⚠️ *The ${item} is on hold*: ${event.title.replace(/\s+/g, ' ')} ${heldEventReason[event.why]}. ${TRIAGE}`,
+    `Nothing went out on ${destination}. ${hasUploads ? "Instagram already holds uploads, so the draft can't be rebuilt automatically."
+      : rebuildBlocked ? "Instagram publishing already started, so the draft can't be rebuilt automatically."
+      : now >= rebuildBy ? "It's too late to rebuild for this publication."
+      : `Hermes can rebuild without that event before ${when(rebuildBy, now)}. The new revision requests approval only if it needs it.`}`,
+    codes(`\`${event.id} ${event.detail}\``, draft.id, rebuildBlocked ? `${CLI} status`
+      : now < rebuildBy ? `${CLI} regenerate ${draft.id} --exclude ${event.id}` : undefined),
   ].join('\n')
 }
 
@@ -353,7 +388,7 @@ export class TickFailures {
           stopped = true
           return `the ${label(item)} ${outcome}`
         }
-        if (!item.hasPreview && previewed) return `the ${name(item)} preview for ${dates(item)} is in #ba-eventos`
+        if (!item.hasPreview && previewed) return `the ${name(item)} preview for ${dates(item)} is in Slack`
         return `the ${label(item)} is moving again`
       })
       const verdict = stopped ? '⚠️ *Instagram publisher stopped retrying*' : '✅ *Instagram publisher recovered*'

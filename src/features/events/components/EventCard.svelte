@@ -13,7 +13,7 @@
 	import EventArtwork from './EventArtwork.svelte';
 	import { Button } from '#shared/ui/button/index.ts';
 	import { formatPrice } from '#features/chat/lib/messages.ts';
-	import { formatShortDate, formatTime } from '#shared/lib/utils/formatting.ts';
+	import { formatEventCardTime, formatShortDate } from '#shared/lib/utils/formatting.ts';
 	import { track } from '#shared/lib/analytics.ts';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
@@ -60,9 +60,8 @@
 	} = $props();
 
 	const locale = getLocale() as 'en' | 'es';
-	const startDate = $derived(new Date(event.starts_at));
-	const dateStr = $derived(formatShortDate(startDate));
-	const timeStr = $derived(event.time_tba ? m.concierge_time_tba() : formatTime(startDate));
+	const dateStr = $derived(formatShortDate(event.starts_at));
+	const timeStr = $derived(formatEventCardTime(event, locale));
 	const priceDisplay = $derived(formatPrice(event.price, event.is_free));
 	const isFree = $derived(event.is_free || event.price === 0);
 	const summaryDescription = $derived(pickDescriptionSummary(event, locale));

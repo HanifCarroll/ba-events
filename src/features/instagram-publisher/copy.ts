@@ -65,11 +65,13 @@ export function caption(format: FormatKey, window: RunWindow, events: PostEvent[
 }
 
 /** `track` names the Reel's music: the message ends with `Music: "{title}" by {artist}.` */
-export function slackPreview(format: FormatKey, window: RunWindow, captionText: string | null, auto: boolean, track?: { title: string; artist: string }): string {
+export function slackPreview(format: FormatKey, window: RunWindow, captionText: string | null, mode: boolean | 'review-hold' | 'closed' | 'already-previewed', track?: { title: string; artist: string }): string {
   const at = baLocal(window.publishAt)
   const when = `${WEEKDAYS_EN[at.weekday]} at ${hhmm(at)}`
-  // copy.md's line says "once you react ✅", which is untrue in auto mode, so auto mode says what actually happens.
-  const gate = auto ? `It goes out ${when} unless you react ❌.` : `It goes out ${when} once you react ✅. React ❌ to skip it.`
+  const gate = mode === 'closed' ? 'Instagram is no longer waiting for approval.'
+    : mode === 'already-previewed' ? 'This preview only asks about Threads. Use the earlier preview to approve Instagram.'
+    : mode === 'review-hold' ? 'Review is blocking automatic publishing for now. It can still publish automatically if the review passes. React ✅ to approve this version or ❌ to skip it.'
+      : mode ? `It goes out ${when} unless you react ❌.` : `It goes out ${when} once you react ✅. React ❌ to skip it.`
   const music = track ? `\n\nMusic: "${track.title}" by ${track.artist}.` : ''
   return `Instagram draft: ${FORMATS[format].slackName} for ${englishDates(window.from, window.to)}. ${gate}\n\n${captionText ?? 'Stories have no caption.'}${music}`
 }
@@ -89,7 +91,7 @@ export const heldEventReason = { cancelled: 'was cancelled', over: 'has already 
 export const heldText = (title: string, why: keyof typeof heldEventReason = 'cancelled') =>
   `Held: ${title} ${heldEventReason[why]}. Ask Hermes to regenerate it.`
 
-/** The too-few notice is a new top-level message: there is no preview to reply to. */
+/** Human-readable summary for the CLI dry run, not a Slack notification. */
 export function tooFewText(format: FormatKey, window: RunWindow, count: number): string {
   return `Instagram draft: ${FORMATS[format].slackName} for ${englishDates(window.from, window.to)}. ${skipText({ kind: 'too-few', count })}`
 }
