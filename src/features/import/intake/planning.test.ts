@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { candidateError, decodeCandidate } from './schema.ts'
 import { candidateDoors, candidateStart, canonicalTicket, citesTicketDestination, decideMatch, ticketDestinationChanged,
-  validateEvidence, type Observation, type Media, type CatalogMatch } from './planning.ts'
+  separatelyCitedDoors, validateEvidence, type Observation, type Media, type CatalogMatch } from './planning.ts'
 import { allowedInstagramMedia, fetchInstagramImage, mediaUrls } from './collection.ts'
 
 const id = '10000000-0000-4000-8000-000000000001'
@@ -71,6 +71,28 @@ describe('Instagram candidate publication rules', () => {
     expect(validateEvidence(input, posts, [], now)).toEqual([])
     expect(validateEvidence({ ...input, doors_time: '09:30' }, posts, [], now)).toContain('Door time must appear in the cited excerpt')
   })
+  it('accepts a bare hour explicitly introduced in a doors caption, but not as a start', () => {
+    const excerpt = 'Ingreso a las 21. A las 21:45 aproximadamente comienza el espectáculo.'
+    const evidence = [{ ...candidate().evidence[0], fields: ['name', 'date', 'venue', 'doors_time'] as const, excerpt }]
+    const posts = [{ ...post, caption: excerpt }]
+    const input = { ...candidate(), time: null, doors_time: '21:00', evidence }
+    expect(validateEvidence(input, posts, [], now)).toEqual([])
+    const start = (time: string, excerpt: string) => validateEvidence({ ...input, time,
+      evidence: [...evidence, { ...candidate().evidence[0], fields: ['time'], excerpt }] }, posts, [], now)
+    expect(start('21:00', 'Ingreso a las 21')).toContain('Start time must appear in the cited excerpt')
+    expect(start('21:45', 'A las 21:45')).toContain('Start time must appear in the cited excerpt')
+  })
+  it('uses the retained flyer clock as doors when its caption identifies flyer times as entry', () => {
+    const caption = `${post.caption}\nLos horarios de los flyers son de ingreso.`
+    const posts = [{ ...post, caption }]
+    const flyer: Media = { id: eventId, observation_id: observationId, object_key: 'synthetic.jpg', sha256: 'a'.repeat(64), content_type: 'image/jpeg' }
+    const flyerClock = { ...candidate().evidence[0], excerpt: '21:00', media_id: flyer.id }
+    const base = { ...candidate().evidence[0], fields: ['name', 'date', 'venue'] as const, excerpt: caption }
+    expect(validateEvidence({ ...candidate(), time: null, doors_time: '21:00',
+      evidence: [base, { ...flyerClock, fields: ['doors_time'] }] }, posts, [flyer], now)).toEqual([])
+    expect(validateEvidence({ ...candidate(), evidence: [base, { ...flyerClock, fields: ['time'] }] }, posts, [flyer], now))
+      .toContain('The caption identifies flyer times as doors, not the show start')
+  })
   it.each(['20.11', '20.11 noviembre', '20.11.2026 hs'])('does not read a dotted date as a clock: %s', excerpt => {
     const evidence = [{ ...candidate().evidence[0], fields: ['name', 'date', 'venue', 'doors_time'] as const, excerpt }]
     expect(validateEvidence({ ...candidate(), time: null, doors_time: '20:11', evidence }, [{ ...post, caption: excerpt }], [], now))
@@ -105,6 +127,13 @@ describe('Instagram candidate publication rules', () => {
       .toContain('Equal doors and start times need two separate clocks in the doors excerpt')
     const both = `${single}\nShow: 9 PM`
     expect(validateEvidence({ ...input, evidence: evidence(both) }, [{ ...post, caption: both }], [], now)).toEqual([])
+  })
+  it('does not count an official picker range as two roles when the plan keeps stored doors', () => {
+    const page = { kind: 'official_page' as const, url: 'https://teatro.example.org/obra', fields: ['time'] as const }
+    const picker = { ...page, excerpt: 'Empieza el lun. 23 de nov 2026 a las 21:00 - 21:00' }
+    expect(separatelyCitedDoors([picker], '21:00', [], true)).toBe(false)
+    const pair = { ...page, excerpt: 'Lunes 23 de noviembre | Puertas 21 hs | Show 21 hs' }
+    expect(separatelyCitedDoors([pair], '21:00', [], true)).toBe(true)
   })
   it('requires an explicit doors date before 06:00 even when only doors are known', () => {
     const excerpt = 'Synthetic Jazz, Puerta 00:30'

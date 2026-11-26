@@ -549,7 +549,8 @@ describe.skipIf(bun)('the operator flow on D1', () => {
     const doors = new Date(`${date}T21:00:00-03:00`).toISOString()
     await db.prepare(`INSERT INTO events (id, name, starts_at, time_tba, doors_at, venue_id, source, categories)
       VALUES (?, 'Synthetic Jazz', ?, 1, ?, ?, 'instagram', '["music"]')`).bind(event, oldStart, doors, venueId).run()
-    const excerpt = both ? 'Synthetic Jazz — Puertas 21 hs. Show 21 hs.' : 'Synthetic Jazz — Puertas 21 hs.'
+    // An explicit entry label would already be rejected as a start before the retained-doors check runs.
+    const excerpt = both ? 'Synthetic Jazz — Puertas 21 hs. Show 21 hs.' : 'Synthetic Jazz — 21 hs.'
     const post = await observation((await run(store.reserveCollection)).id, excerpt)
     await run(submitCandidateEffect(store, candidateInput(candidate, post, venueId, { intent: 'update', target_event_id: event, date,
       evidence: [{ observation_id: post, fields: ['name', 'date', 'time', 'venue'], excerpt, media_id: null }] })))
@@ -562,7 +563,8 @@ describe.skipIf(bun)('the operator flow on D1', () => {
       expect(preview).toMatchObject({ action: 'held', reasons: [reason] })
       const bypass = await run(store.insertPlan({ candidate_id: candidate, revision: 1, action: 'update', event_id: event,
         expected_event_updated_at: (await db.prepare('SELECT updated_at FROM events WHERE id = ?').bind(event).first<string>('updated_at'))!,
-        payload: preview.payload, artwork_media_id: null, artwork_note: 'No retained image', evidence: preview.evidence, reasons: [] }))
+        payload: preview.payload, artwork_media_id: null, artwork_note: 'No retained image', reasons: [],
+        evidence: [...preview.evidence, { kind: 'official_page', url: 'https://sala.example.org/show', fields: ['time'], excerpt: `${date} 21:00 - 21:00` }] }))
       expect(await fails(store.commitPlan(bypass.id))).toContain(reason)
     }
     expect(await db.prepare('SELECT starts_at, time_tba, doors_at FROM events WHERE id = ?').bind(event).first())
