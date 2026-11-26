@@ -28,7 +28,7 @@ Hermes wrote this text and Hanif's rules apply to it. Commit it word for word. C
   - Headline: "¿A cuál vas?"
   - Body (Este finde): "Contanos en los comentarios y guardá el post para el finde."
   - Body (Gratis): "Contanos en los comentarios y guardá el post para la semana."
-  - Line above the button: "Todos los planes, gratis y sin registrarte:"
+  - Line above the button: "Usá la agenda gratis y sin registrarte:"
   - Button: "baeventos.com"
   - Footer: "Link en la bio"
 - **The English caption line is removed** from every format. Instagram is Spanish only.
