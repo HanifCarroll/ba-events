@@ -5,6 +5,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { applyCatalogFix, catalogRowSql, eventId, fixInput, line, StaleCatalogFix, type CatalogQuery, type FixInput, type FixReceipt } from './catalog-fix.ts'
 import { parseDraftId } from './formats.ts'
+import { InvestigatorToolError } from './investigator-error.ts'
 import { finding, hasCompleted, location, readJson, unitName, type InvestigationRequest } from './investigation.ts'
 import type { Draft } from './job.ts'
 import * as runtime from './runtime.ts'
@@ -40,16 +41,16 @@ export async function stopInvestigator(request: InvestigationRequest) {
 
 function active(dir: string) {
   const request = readJson(paths(dir).request) as InvestigationRequest | null
-  if (!request || !Number.isSafeInteger(request.revision)) throw new Error('No active investigation request.')
+  if (!request || !Number.isSafeInteger(request.revision)) throw new InvestigatorToolError('No active investigation request.')
   parseDraftId(request.id)
   if (dir !== location(runtime.STATE_DIR, request) || hasCompleted(dir) || existsSync(join(dir, 'stopped')) || Date.now() >= request.endsAt) {
-    throw new Error('The investigation has ended.')
+    throw new InvestigatorToolError('The investigation has ended.')
   }
   const draft = readJson(join(runtime.STATE_DIR, 'drafts', `${request.id}.json`)) as Draft | null
   const saved = draft?.review?.investigation
   if (!draft || draft.state !== 'previewed' || draft.revision !== request.revision || draft.framesHash !== request.framesHash ||
       draft.publish || draft.storyShare || draft.approvedSeenAt || saved?.findings || saved?.request.startsAt !== request.startsAt ||
-      saved.request.copyHash !== request.copyHash) throw new Error('The investigation no longer owns this preview.')
+      saved.request.copyHash !== request.copyHash) throw new InvestigatorToolError('The investigation no longer owns this preview.')
   return request
 }
 
@@ -89,12 +90,12 @@ async function withProductionD1<T>(use: (query: CatalogQuery) => Promise<T>) {
 export async function catalogFix(dir: string, input: FixInput, use = withProductionD1) {
   input = fixInput.parse(input)
   const request = active(dir)
-  if (!request.events.some(event => event.id === input.id)) throw new Error('Only flagged events can be corrected.')
+  if (!request.events.some(event => event.id === input.id)) throw new InvestigatorToolError('Only flagged events can be corrected.')
   const lock = join(dir, 'catalog-fix.lock')
   mkdirSync(lock, { mode: 0o700 })
   try {
     const { applied, uncertain } = fixLog(dir)
-    if (uncertain || applied.length >= 12) throw new Error('The investigation has an unconfirmed correction or reached its fix limit.')
+    if (uncertain || applied.length >= 12) throw new InvestigatorToolError('The investigation has an unconfirmed correction or reached its fix limit.')
     let receipt: FixReceipt | undefined
     const append = (state: string) => appendFileSync(paths(dir).log, `${JSON.stringify({ state, receipt })}\n`, { mode: 0o600 })
     try {
@@ -111,10 +112,12 @@ export async function catalogFix(dir: string, input: FixInput, use = withProduct
       })
     } catch (error) {
       // Don't let a provider exception leak headers or credential-bearing configuration into a model session.
-      if (receipt && error instanceof StaleCatalogFix) { append('refused'); throw error }
-      if (receipt) throw new Error('The D1 correction was submitted. Check the fix log before retrying.')
-      if (error instanceof Error && /^(Catalog correction refused|Correct only |The corrected start |A free event |Invalid catalog correction|Use a UTC |Price must |is_free must |The preview frames changed)/u.test(error.message)) throw error
-      throw new Error('Could not prepare the correction. Hermes should check the D1 Write token and binding.')
+      if (receipt && error instanceof StaleCatalogFix) { append('refused'); throw new InvestigatorToolError(error.message) }
+      if (receipt) throw new InvestigatorToolError('The D1 correction was submitted. Check the fix log before retrying.')
+      if (error instanceof Error && /^(Catalog correction refused|Correct only |The corrected start |A free event |Invalid catalog correction|Use a UTC |Price must |is_free must |The preview frames changed)/u.test(error.message)) {
+        throw new InvestigatorToolError(error.message)
+      }
+      throw new InvestigatorToolError('Could not prepare the correction. Hermes should check the D1 Write token and binding.')
     }
   } finally { rmSync(lock, { recursive: true, force: true }) }
 }
@@ -160,7 +163,8 @@ export async function runInvestigator(dir: string) {
 export async function investigatorTool(dir: string, action: string, raw: string) {
   const request = active(dir)
   const { id, input } = request
-  const data: unknown = JSON.parse(raw)
+  let data: unknown
+  try { data = JSON.parse(raw) } catch { throw new InvestigatorToolError('Pass valid JSON in data.') }
   const memory = join(runtime.STATE_DIR, 'investigator-memory.md')
   if (action === 'remember') { appendFileSync(memory, `${line(500).parse(data)}\n`, { mode: 0o600 }); return null }
   if (action === 'research' || action === 'search') {
@@ -175,10 +179,10 @@ export async function investigatorTool(dir: string, action: string, raw: string)
       memory: existsSync(memory) ? readFileSync(memory, 'utf8').slice(-4000) : '' }
   }
   if (action === 'finish') {
-    if (!Array.isArray(data) || data.length !== 2) throw new Error('Pass [event ID, finding].')
+    if (!Array.isArray(data) || data.length !== 2) throw new InvestigatorToolError('Pass [event ID, finding].')
     const [uuid, result] = data as unknown[]
     const target = eventId.parse(uuid)
-    if (!request.events.some(event => event.id === target)) throw new Error('Not a flagged event.')
+    if (!request.events.some(event => event.id === target)) throw new InvestigatorToolError('Not a flagged event.')
     runtime.writeJson(join(dir, `${target}.result.json`), { at: Date.now(), finding: finding.parse(result) })
     return 'Finding saved.'
   }
@@ -187,10 +191,13 @@ export async function investigatorTool(dir: string, action: string, raw: string)
     return { jpeg: readFileSync(data === 'cover' ? frames[0]! : frames.at(-1)!).toString('base64') }
   }
   const target = eventId.parse(data)
-  if (!request.events.some(event => event.id === target)) throw new Error(`Not a flagged event in ${id}.`)
-  if (action === 'catalog' || action === 'occurrences') return runtime.d1Read(catalogRowSql(target, action === 'occurrences'))
+  if (!request.events.some(event => event.id === target)) throw new InvestigatorToolError(`Not a flagged event in ${id}.`)
+  if (action === 'catalog' || action === 'occurrences') {
+    try { return await runtime.d1Read(catalogRowSql(target, action === 'occurrences')) }
+    catch { throw new InvestigatorToolError('Could not read the event catalog.') }
+  }
   const { frames, events } = readJson(join(dir, 'evidence.json')) as { frames: string[]; events: Array<{ id: string; flyer?: string }> }
   if (action === 'flyer') return { jpeg: events.find(event => event.id === target)?.flyer?.split(',')[1] ?? null }
   if (action === 'image') return { jpeg: readFileSync(frames[input.events.findIndex(event => event.id === target) + 1]!).toString('base64') }
-  throw new Error('Unknown investigation operation.')
+  throw new InvestigatorToolError('Unknown investigation operation.')
 }
