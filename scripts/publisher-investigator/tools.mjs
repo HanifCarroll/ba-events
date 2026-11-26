@@ -23,13 +23,15 @@ export default function (pi) {
           command = ['catalog-fix', argument(fix.id), `--field=${argument(fix.field)}`, `--from=${argument(fix.from)}`,
             `--to=${argument(fix.to)}`, `--evidence=${argument(fix.evidence)}`, ...(fix.allOccurrences === true ? ['--all-occurrences'] : [])]
         }
-        const { stdout } = await exec(node, ['--experimental-transform-types', entry, ...command], { signal, timeout: 110_000, maxBuffer: 10_000_000 })
+        const { stdout } = await exec(node, ['--no-warnings', '--experimental-transform-types', entry, ...command], { signal, timeout: 110_000, maxBuffer: 10_000_000 })
         const result = JSON.parse(stdout)
         if (result?.jpeg) return { content: [{ type: 'image', data: result.jpeg, mimeType: 'image/jpeg' }], details: {} }
         return reply(result?.jpeg === null ? 'No retained flyer.' : JSON.stringify(result))
       } catch (error) {
-        // Only the guarded CLI's sanitized errors are useful to the investigator. Never include a process command line.
-        return reply(action === 'catalog-fix' && error.stderr ? error.stderr.trim().slice(0, 600) : 'The operation could not complete.')
+        // Never use execFile's Error.message: it embeds the process command line.
+        const message = typeof error.stderr === 'string' ? error.stderr.trim() : ''
+        if (error.code === 2 && /^[^\r\n]+$/u.test(message)) return reply(message.slice(0, 600))
+        return reply('The operation could not complete.')
       }
     },
   })

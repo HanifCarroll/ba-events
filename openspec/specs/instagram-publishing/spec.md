@@ -151,6 +151,11 @@ After rendering, the publisher MUST review the still frames (for a Reel, its cov
 - **AND** the investigator has at most 30 minutes and stops at least 20 minutes before the earliest applicable approval cutoff; at most two revisions of a draft may be investigated
 - **AND** a review already saved before investigation was introduced keeps its earlier behavior; a post-wide issue keeps its existing handling and cannot be cleared by event results
 
+#### Scenario: An investigator tool call fails
+- **WHEN** a tool call fails validation or cannot complete
+- **THEN** the investigator receives a short, safe error message without process commands or local paths; validation errors identify the field when applicable
+- **AND** if public search is unavailable after trying its fallback, the tool tells the investigator to research a known URL instead
+
 #### Scenario: The investigation completes
 - **WHEN** every flagged event is resolved as `ok` with evidence, or the investigator returns `fixed`, `exclude`, or `ask` entries
 - **THEN** the job replies with one line per event if a preview exists or if the findings require one

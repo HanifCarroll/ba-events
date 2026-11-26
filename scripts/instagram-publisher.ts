@@ -15,6 +15,7 @@
 import { parseArgs } from 'node:util'
 import { isFormatKey } from '../src/features/instagram-publisher/formats.ts'
 import { Job, dryRun, liveServices, regenerate, review, status, stickersDryRun, tick } from '../src/features/instagram-publisher/job.ts'
+import { InvestigatorToolError, investigatorErrorMessage } from '../src/features/instagram-publisher/investigator-error.ts'
 import { catalogFix, investigatorTool, runInvestigator } from '../src/features/instagram-publisher/investigator-run.ts'
 import { renderFramesInProcess, withLock } from '../src/features/instagram-publisher/runtime.ts'
 import { threadsApi } from '../src/features/instagram-publisher/threads-api.ts'
@@ -61,7 +62,7 @@ async function main(argv: string[]) {
         evidence: { type: 'string' }, 'all-occurrences': { type: 'boolean' } } })
       const dir = process.env.BA_INVESTIGATION_DIR
       const { from, to, field, evidence } = values
-      if (!dir) throw new Error('catalog-fix requires an active investigator request.')
+      if (!dir) throw new InvestigatorToolError('catalog-fix requires an active investigator request.')
       if (!id || field === undefined || from === undefined || to === undefined || evidence === undefined) throw new Error(USAGE)
       const { fixInput } = await import('../src/features/instagram-publisher/catalog-fix.ts')
       const input = fixInput.parse({ id, field, from: from === 'null' ? null : from, to: to === 'null' ? null : to, evidence, allOccurrences: values['all-occurrences'] === true })
@@ -108,6 +109,12 @@ async function main(argv: string[]) {
 }
 
 main(process.argv.slice(2)).catch(error => {
+  if (process.argv[2] === 'investigator-tool' || process.argv[2] === 'catalog-fix') {
+    // tools.mjs accepts only this handled failure status, not Node crashes or spawn errors.
+    console.error(investigatorErrorMessage(error))
+    process.exitCode = 2
+    return
+  }
   console.error((error as Error).message)
   process.exitCode = 1
 })
