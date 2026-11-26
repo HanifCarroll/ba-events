@@ -28,9 +28,19 @@ describe('homepage server-rendered agenda', () => {
     const filter = parseHomeFilter(url.searchParams.get('f'))
     const fullView = occurrences ? selectHomeView({ window, events: occurrences, asOf }, filter) : { events: [], empty: 'feed' as const }
     const view = pageHomeView(fullView, url.searchParams.get('n'))
-    const chat = createRawSnippet(() => ({ render: () => '<section data-test-chat></section>' }))
-    return render(HomeAgenda, { props: { view, filter, url, chat, day: window.day, onAsk() {}, async onMore() {} } }).body.replace(/<!--.*?-->/gs, '')
+    const composer = createRawSnippet(() => ({ render: () => '<section data-test-chat></section>' }))
+    return render(HomeAgenda, { props: { view, filter, url, composer, day: window.day, onAsk() {}, async onMore() {} } }).body.replace(/<!--.*?-->/gs, '')
   }
+
+  it('renders a browsable agenda without mounting a chat component', () => {
+    const url = new URL('https://example.test/')
+    const view = pageHomeView(selectHomeView({ window, events, asOf }, null), null)
+    const { body } = render(HomeAgenda, { props: { view, filter: null, url, day: window.day, async onMore() {} } })
+    expect(body).toContain(`href="/events/${events[0].id}"`)
+    expect(body).toContain(m.home_showing_count({ shown: events.length, total: events.length }))
+    expect(body).not.toContain('data-section="agenda-composer"')
+    expect(body).not.toContain(m.home_ask_event({ name: events[0].name }))
+  })
 
   it('puts responsive artwork, titles, and event links in HTML before hydration', () => {
     const body = renderAgenda('/')

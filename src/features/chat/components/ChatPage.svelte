@@ -4,9 +4,10 @@
 	import ChatContainer from './ChatContainer.svelte'
 	import { getChatConversationId } from '#features/chat/lib/chat-navigation.ts'
 	import type { ConversationWithMessages } from '#shared/lib/types.ts'
-	import type { HomeAgendaPage } from '#features/events/lib/home-feed.ts'
+	import type { Snippet } from 'svelte'
+	import type { LandingPromptHandler } from '#features/chat/lib/landing-prompt.ts'
 
-	const isMarketingLanding = $derived(page.url.pathname === '/')
+	let { landing }: { landing?: Snippet<[LandingPromptHandler]> } = $props()
 
 	/**
 	 * Shared page for the chat routes. Reads the active conversation id from the
@@ -17,9 +18,8 @@
 		getChatConversationId(page.url.pathname, page.params.conversationId as string | undefined)
 	)
 
-	// Guests read conversations from IndexedDB; the homepage only preloads the agenda.
+	// Guests read conversations from IndexedDB.
 	const data = $derived(page.data as {
-		homeAgenda?: HomeAgendaPage | null
 		conversation?: ConversationWithMessages | null
 		turns?: Array<{ id: string; status: string; content: string; user_client_message_id: string; assistant_client_message_id: string }>
 	})
@@ -34,10 +34,9 @@
 <div class="h-full flex flex-col">
 	<ChatContainer
 		conversationId={conversationId}
-		homeAgenda={data.homeAgenda}
 		preloadedConversation={preloadedConversation}
 		pendingTurns={turns}
-		showLanding={isMarketingLanding}
+		{landing}
 		onConversationChange={handleConversationChange}
 	/>
 </div>

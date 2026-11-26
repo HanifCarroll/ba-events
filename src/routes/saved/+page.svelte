@@ -4,7 +4,7 @@
 	import { onMount } from 'svelte';
 	import { Bookmark, Calendar, Clock, ArrowLeft, Sparkles } from 'lucide-svelte';
 	import { useAuthContext } from '#features/auth/hooks/auth-context.svelte.ts';
-	import { getSavedEvents } from '#features/chat/lib/saved.ts';
+	import { getSavedEvents } from '#features/events/lib/saved.ts';
 	import EventCard from '#features/events/components/EventCard.svelte';
 	import { Button } from '#shared/ui/button/index.ts';
 	import * as m from '#paraglide/messages.js';

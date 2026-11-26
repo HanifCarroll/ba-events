@@ -3,12 +3,12 @@
 	import { on } from 'svelte/events'
 	import * as m from '#paraglide/messages.js'
 	import { formatDoorsTime, formatShortDate, formatTime } from '#shared/lib/utils/formatting.ts'
-	import { formatPrice } from '#features/chat/lib/messages.ts'
+	import { formatPrice } from '../lib/format-price.ts'
 	import type { HomeAgendaCardEvent, HomeAgendaEvent } from '../lib/home-feed.ts'
 	import { HOME_ARTWORK_SIZES } from '../lib/artwork-delivery.ts'
 	import EventArtwork from './EventArtwork.svelte'
 
-	let { event, index, onAsk }: { event: HomeAgendaCardEvent; index: number; onAsk: (event: HomeAgendaEvent) => void } = $props()
+	let { event, index, onAsk }: { event: HomeAgendaCardEvent; index: number; onAsk?: (event: HomeAgendaEvent) => void } = $props()
 	let expanded = $state<string | null>(null)
 	let hovered = $state<string | null>(null)
 	const visibleTooltip = $derived(hovered ?? expanded)
@@ -114,14 +114,16 @@
 				<ArrowUpRight class="size-3.5 shrink-0" aria-hidden="true" /> <span>{sourceIsPost ? m.home_view_post() : m.home_view_event()}</span>
 			</a>
 		{/if}
-		<button
-			type="button"
-			aria-label={m.home_ask_event({ name: event.name })}
-			onclick={() => onAsk(event)}
-			class="inline-flex min-h-11 min-w-11 items-center justify-center gap-1 px-1 whitespace-nowrap text-[#d0ff36] underline-offset-4 hover:underline focus-visible:underline md:px-0"
-		>
-			<MessageCircle class="size-3.5 shrink-0" aria-hidden="true" /> <span>{m.home_ask()}</span>
-		</button>
+		{#if onAsk}
+			<button
+				type="button"
+				aria-label={m.home_ask_event({ name: event.name })}
+				onclick={() => onAsk?.(event)}
+				class="inline-flex min-h-11 min-w-11 items-center justify-center gap-1 px-1 whitespace-nowrap text-[#d0ff36] underline-offset-4 hover:underline focus-visible:underline md:px-0"
+			>
+				<MessageCircle class="size-3.5 shrink-0" aria-hidden="true" /> <span>{m.home_ask()}</span>
+			</button>
+		{/if}
 	</div>
 </article>
 
