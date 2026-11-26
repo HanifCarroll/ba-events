@@ -70,9 +70,11 @@ export function threadsText(format: ThreadsFormat, events: PostEvent[]): string 
   }
 }
 
-export function threadsPreview(text: string, slot: Date, auto = false) {
+export function threadsPreview(text: string, slot: Date, mode: boolean | 'review-hold' = false, sharedApproval = true) {
   const time = hhmm(baLocal(slot))
-  const gate = auto ? `se publica solo a las ${time} salvo que reacciones ❌` : `se publica con el mismo ✅, ${time}`
+  const gate = mode === 'review-hold' ? 'puede publicarse automáticamente si pasa la revisión; reaccioná ✅ para aprobar esta versión o ❌ para omitirla'
+    : mode ? `se publica solo a las ${time} salvo que reacciones ❌`
+      : `se publica con ${sharedApproval ? 'el mismo ✅' : 'un ✅ en este mensaje'}, ${time}`
   const escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   // Slack only decodes &amp;, &lt;, and &gt;. Quote a code block for literal styling delimiters;
   // split any embedded triple backticks with a zero-width space so they cannot close the block.

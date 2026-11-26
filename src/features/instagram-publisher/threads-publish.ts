@@ -1,4 +1,4 @@
-import { PublishStop, readReactions } from './approval.ts'
+import { PublishStop, type Reactions } from './approval.ts'
 import { TICK_MS } from './formats.ts'
 import { ThreadsError, type ThreadsApi } from './threads-api.ts'
 import { threadsReplies, type threadsWindow } from './threads-copy.ts'
@@ -7,8 +7,10 @@ export interface ThreadsDraft {
   state: 'waiting' | 'publishing' | 'published' | 'skipped' | 'held' | 'failed'
   /** Frozen before the preview is sent: this is also the exact recovery key. */
   text: string | null
-  /** Auto mode shown in the original Slack preview; absent on older drafts means manual. */
+  /** Auto mode saved for the original revision; absent on older drafts means manual. */
   auto?: boolean
+  /** Revision that owns this attempt, even when it had no Slack preview. */
+  revision?: number
   containerId: string | null
   mediaId: string | null
   permalink: string | null
@@ -18,11 +20,14 @@ export interface ThreadsDraft {
   beforeIds?: string[]
   /** A preserved send keeps its original Slack thread when Instagram gets another revision. */
   threadTs?: string
+  threadChannel?: string
   publishedAt: string | null
   error: string | null
   failures: number
   notify: string | null
   failureAlertSent?: boolean
+  hold?: NonNullable<PublishStop['stale']>
+  holdAlertSent?: boolean
 }
 
 export function newThreadsDraft(text: string | null, auto: boolean): ThreadsDraft {
@@ -54,11 +59,11 @@ interface Services {
   now(): Date
   sleep(ms: number): Promise<void>
   save(): void
-  reactions(): Promise<Parameters<typeof readReactions>[0]>
+  reactions(): Promise<Reactions>
   enabled(): boolean
   auto(): boolean
   checkEvents(): Promise<void>
-  reply(text: string): Promise<unknown>
+  reply?(text: string): Promise<unknown>
   log(text: string): void
 }
 
@@ -82,11 +87,11 @@ export async function advanceThreads(draft: ThreadsDraft, window: ReturnType<typ
     const checkGate = async () => {
       if (s.now() >= window.cutoff) throw new PublishStop('deadline', 'Threads cutoff reached')
       if (s.now() < window.publishAt) throw new PublishStop('unapproved', 'Waiting for Threads slot')
-      const reactions = readReactions(await s.reactions().catch(() => {
+      const reactions = await s.reactions().catch(() => {
         if (s.now() >= window.cutoff) throw new PublishStop('deadline', 'Threads cutoff reached')
         s.log('Threads: no se pudo leer la aprobación de Slack; se reintenta en el próximo tick')
         throw new PublishStop('unapproved', 'Waiting for a successful Slack reaction read')
-      }))
+      })
       if (reactions.rejected) throw new PublishStop('rejected', 'Hanif reacted ❌')
       if (s.now() >= window.cutoff) throw new PublishStop('deadline', 'Threads cutoff reached')
       if (!reactions.approved && !(draft.auto === true && s.auto())) throw new PublishStop('unapproved', 'Waiting for Threads approval')
@@ -173,7 +178,10 @@ export async function advanceThreads(draft: ThreadsDraft, window: ReturnType<typ
         if (error.kind === 'unapproved') return
         if (error.kind === 'deadline') settle(draft, 'skipped', threadsReplies.cutoff(window.cutoff))
         if (error.kind === 'rejected') stopThreads(draft, 'rejected')
-        if (error.kind === 'stale' && error.stale) stopThreads(draft, error.stale)
+        if (error.kind === 'stale' && error.stale) {
+          draft.hold = error.stale
+          stopThreads(draft, error.stale)
+        }
       } else {
         const reason = error instanceof ThreadsError ? error.message : 'no se pudo completar el intento'
         s.log(`Threads: ${reason}`)
@@ -190,7 +198,7 @@ export async function advanceThreads(draft: ThreadsDraft, window: ReturnType<typ
     }
   }
   if (draft.notify) {
-    try { await s.reply(draft.notify) } catch {
+    try { await s.reply?.(draft.notify) } catch {
       s.log('Threads: no se pudo enviar la respuesta de Slack; se reintenta en el próximo tick')
       return
     }
