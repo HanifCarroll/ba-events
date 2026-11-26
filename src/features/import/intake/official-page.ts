@@ -394,6 +394,14 @@ const JOINED_DAYS = /\b\d{1,2}\b *(?:[,–—-]|y\b|o\b|al\b) *#|# *(?:[,–—-
 
 const ADJACENT_CLOCKS = new RegExp(String.raw`^${LIST_JOIN}(?:a las? )?$`)
 
+function pageClocks(text: string) {
+  const clocks = [...clockTokens(text)]
+  if (!clocks.some(clock => clock.bareAfterColon)) return clocks
+  // A contextual day can also appear as a colon-delimited number ("viernes: 20").
+  const days = new Set([...text.matchAll(DAY_ONLY)].map(day => day.index + day[0].length - day[1].length))
+  return clocks.filter(clock => !clock.bareAfterColon || !days.has(clock.start))
+}
+
 /** Read clock tokens without mistaking a range's end for another performance. */
 function pageTiming(text: string) {
   const bareStarts: string[] = []
@@ -403,12 +411,13 @@ function pageTiming(text: string) {
     if (Number(start) <= 23 && !/^[ap]/.test(unit ?? '')) bareStarts.push(start.padStart(2, '0') + ':00')
     return ' '.repeat(token.length)
   })
-  const clocks = [...clockTokens(withoutBareRanges)]
+  const clocks = pageClocks(withoutBareRanges)
   let multipleTimes = CLOCK_LIST.test(text)
   const starts = clocks.filter((clock, index) => {
     if (!index) return true
     const gap = text.slice(clocks[index - 1].end, clock.start)
-    multipleTimes ||= ADJACENT_CLOCKS.test(gap)
+    // Parenthetical notes don't turn a list of alternatives into one occurrence.
+    multipleTimes ||= ADJACENT_CLOCKS.test(gap.replace(/ *\([^()]*\)/g, ''))
     return !isClockRangeGap(gap)
   })
   let calendar = withoutBareRanges
@@ -425,7 +434,6 @@ function occurrenceDateReason(calendar: string, date: string, required: boolean)
   // Mark recognized dates so a shorthand list such as "20 y 21 de noviembre" also holds.
   const joinedDays = JOINED_DAYS.test(partialCalendar.replace(DAY_ONLY, '#'))
   if (dateCount > 1 || joinedDays) return MULTIPLE_OCCURRENCES
-  if (!dateCount && !required) return null
   const dateIndex = dates[0]?.index ?? contextualDays[0]?.index
   if (dateIndex !== undefined) {
     const prefix = calendar.slice(0, dateIndex)
@@ -434,7 +442,7 @@ function occurrenceDateReason(calendar: string, date: string, required: boolean)
   }
   const groups = dates[0]?.groups
   const statedDay = groups?.isoDay ?? groups?.day ?? contextualDays[0]?.[1]
-  if (Number(statedDay) !== day) return `does not state the day ${day}`
+  if ((required || statedDay !== undefined) && Number(statedDay) !== day) return `does not state the day ${day}`
   const wrongMonth = `does not state the month ${String(month).padStart(2, '0')}`
   const wrongYear = `does not state the year ${year}`
   if (groups) {
@@ -445,8 +453,8 @@ function occurrenceDateReason(calendar: string, date: string, required: boolean)
   }
   // A month heading or a separated year still constrains the quoted occurrence.
   for (const { 0: name, index } of calendar.matchAll(MONTH_NAME)) {
-    // Before a day number, bare "mar" is the weekday abbreviation. A month after the day is checked above.
-    if (name === 'mar' && /^[.,]? \d{1,2}\b/.test(calendar.slice(index + name.length))) continue
+    // Treat bare "mar" as a weekday when there is no day or it comes before a day number.
+    if (name === 'mar' && (!dateCount || /^[.,]? \d{1,2}\b/.test(calendar.slice(index + name.length)))) continue
     if (monthNumber(name) !== month) return wrongMonth
   }
   for (const [number] of calendar.matchAll(/\b(?:19|20)\d{2}\b/g)) if (Number(number) !== year) return wrongYear
@@ -467,7 +475,7 @@ function matchedTimingReason(lines: readonly string[], quoted: RegExp, date: str
     while (end < index + text.length) end += lines[++last].length + 1
     const context = lines.slice(first, last + 1).join(' ')
     const start = index - offset, stop = start + text.length
-    const tokens = [...clockTokens(context)]
+    const tokens = pageClocks(context)
     if (tokens.some(clock => clock.start < stop && clock.end > start && (clock.start < start || clock.end > stop))) return CUT_CLOCK
     const { times, calendar, multipleTimes } = pageTiming(context)
     if (multipleTimes) return MULTIPLE_OCCURRENCES

@@ -71,6 +71,13 @@ describe('Instagram candidate publication rules', () => {
     expect(validateEvidence(input, posts, [], now)).toEqual([])
     expect(validateEvidence({ ...input, doors_time: '09:30' }, posts, [], now)).toContain('Door time must appear in the cited excerpt')
   })
+  it.each(['Puertas:21', 'Apertura de sala: 21', 'Horario:\n21'])('matches a colon-delimited bare hour in %s', excerpt => {
+    const quote = { ...candidate().evidence[0], fields: ['doors_time'] as const, excerpt }
+    const input = { ...candidate(), time: null, doors_time: '21:00', evidence: [...candidate().evidence, quote] }
+    expect(validateEvidence(input, [{ ...post, caption: `${post.caption}\n${excerpt}` }], [], now)).toEqual([])
+    expect(validateEvidence(input, [{ ...post, caption: `${post.caption}\n${excerpt}:30` }], [], now))
+      .toContain('Door time must appear in the cited excerpt')
+  })
   it('matches a caption clock at a bare hour without inspecting the entry line’s wording', () => {
     const caption = 'Ingreso a las 21. A las 21:45 aproximadamente comienza el espectáculo.'
     const quote = { ...candidate().evidence[0], fields: ['doors_time'] as const, excerpt: 'a las 21' }
