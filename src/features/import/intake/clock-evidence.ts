@@ -1,11 +1,11 @@
-// Dots are also date separators: a dotted clock needs a suffix or an explicit introduction.
+// Dots are also date separators: a dotted clock needs a suffix or explicit clock context.
 const clock = /(?<![\p{L}\d])(?<!\d[.:/])(?<introduced>a las? )?(?<hour>[01]?\d|2[0-3])(?:(?<separator>[:.])(?<minute>[0-5]\d))?(?:[ \t\u00a0\u202f]*(?<suffix>[ap]\.?[ \t\u00a0\u202f]*m\b\.?|(?:horas|hs?)\b))?(?![\p{L}\d]|[.:/]\d)/giu
 
 export const ENTRY_LABEL = String.raw`(?:abrimos (?:las )?puertas?|(?:las )?puertas? abren|apertura(?: de puertas?)?|puertas?|ingreso|acceso|doors?)`
 export const APPROXIMATE = String.raw`(?:aprox(?:imadamente)?\.?|cerca de|alrededor de|mas o menos)`
 const fold = (text: string) => text.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replace(/\s+/gu, ' ')
 const entryBefore = new RegExp(String.raw`\b${ENTRY_LABEL}(?: *[:–—-] *| +)(?:a las? )?$`)
-const entryAfter = new RegExp(String.raw`^\.? *(?:\( *${ENTRY_LABEL} *\)|[:–—-] *${ENTRY_LABEL}(?= *[.;,|!?]| *$))`)
+const entryAfter = new RegExp(String.raw`^\.? *(?:\( *${ENTRY_LABEL} *\)|(?:[:–—-] *| +)${ENTRY_LABEL}(?= *[.;,|!?]| *$))`)
 const approximateBefore = new RegExp(String.raw`\b${APPROXIMATE}[,)]?(?: (?:a )?las?)? $`)
 const approximateAfter = new RegExp(String.raw`^\.? *[,(:–—-]? *${APPROXIMATE}(?![\p{L}\d])`, 'u')
 const durationAmount = String.raw`\d+(?:[.,]\d+)? +(?:horas?|min(?:utos?|s)?\.?)\b`
@@ -23,13 +23,13 @@ export function isApproximateClock(before: string, after: string): boolean {
   return !!qualifier && !duration.test(tail.slice(qualifier[0].length).trimStart())
 }
 
-// The hour in a caption such as "Ingreso a las 21" (or "Puertas: 21") has an explicit role without a unit.
+// An entry label also makes a bare hour or dotted clock explicit without a unit.
 export function* clockTokens(source: string, { allowIntroducedHour = false, allowEntryHour = false } = {}) {
   for (const { 0: token, index, groups } of source.matchAll(clock)) {
     if (!groups) continue
     const start = index + (groups.introduced?.length ?? 0)
     if (!(groups.suffix || groups.separator === ':' || allowIntroducedHour && groups.introduced ||
-      allowEntryHour && !groups.separator && isEntryClock(source.slice(0, start), source.slice(index + token.length)))) continue
+      allowEntryHour && isEntryClock(source.slice(0, start), source.slice(index + token.length)))) continue
     const period = groups.suffix?.[0].toLowerCase()
     let hours = Number(groups.hour)
     if (period === 'a' || period === 'p') {

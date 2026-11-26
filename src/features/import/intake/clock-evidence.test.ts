@@ -4,7 +4,7 @@ import { captionLabelsFlyerDoors, citesClock } from './clock-evidence.ts'
 describe('intake clock roles', () => {
   it.each([
     'Ingreso a las 21', 'Puertas:21', 'Ingreso 21h', 'Abrimos las puertas a las 21h', 'Apertura\n21:00',
-    '21:00 (ingreso)', '21 hs - ingreso', '21h: apertura de puertas',
+    '21:00 (ingreso)', '21 hs - ingreso', '21h: apertura de puertas', '21:00 ingreso', '21 hs ingreso',
   ])('cites %s as entry, never as a start', excerpt => {
     expect(citesClock(excerpt, '21:00', excerpt, 1, 'doors')).toBe(true)
     expect(citesClock(excerpt, '21:00', excerpt, 1, 'start')).toBe(false)

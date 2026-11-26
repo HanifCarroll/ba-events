@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Effect } from 'effect'
 import { readFileSync } from 'node:fs'
-import { normalizePageText, officialSites, publicPageUrl, readOfficialPage, renderedPageRead, siteOf, verifyOfficialPagesEffect, visibleText } from './official-page.ts'
+import { normalizePageText, officialSites, publicPageUrl, readOfficialPage, renderedPageRead, siteOf, verifyOfficialPagesEffect, visibleText, type PageFacts } from './official-page.ts'
 
 const fixture = (name: string) => readFileSync(new URL(`./fixtures/${name}.html`, import.meta.url), 'utf8')
 
@@ -219,6 +219,7 @@ describe('official-page evidence', () => {
   it.each([
     ['Abrimos las puertas a las 21h', '21:00'],
     ['Ingreso 17h', '17:00'],
+    ['Ingreso a las 20.30', '20:30'],
     ['Ingreso a las 20:30. Servimos la cena y luego comienza el espectáculo', '20:30'],
     ['Ingreso a las 20:30. El espectáculo comienza después de la cena.', '20:30'],
     ['Ingreso a las 21. A las 21:45 aproximadamente comienza el espectáculo.', '21:00'],
@@ -233,7 +234,7 @@ describe('official-page evidence', () => {
     const url = 'https://sala-nube.example.com/entradas/prisma'
     const available = { ...facts, name, time: null, doorsTime, sites: officialSites({ website: url }) }
     const read = readHtml(`<h1>${name}</h1><p>${excerpt}</p>`)
-    const verify = (fields: Parameters<typeof evidence>[2], at = available, page = read, quote = excerpt) =>
+    const verify = (fields: Parameters<typeof evidence>[2], at: PageFacts = available, page = read, quote = excerpt) =>
       Effect.runPromise(verifyOfficialPagesEffect([evidence(url, quote, fields)], at, page))
     expect(await verify(['doors_time'])).toEqual([])
     expect(await verify(['doors_time'], { ...available, doorsTime: '19:00' })).toEqual([
@@ -250,6 +251,7 @@ describe('official-page evidence', () => {
     ['21:00', 'Abrimos las puertas a las 21h'],
     ['22:00', 'Ingreso 21 h | Show: 22:30 (aprox.)'],
     ['22:00', 'Horarios de la sala: ingreso a las 21 h. Consultar por mesa.'],
+    ['20:30', 'Ingreso a las 20.30'],
     ['21:00', '21:00 (ingreso)'],
   ])('rejects unlabeled %s on a page that states %s even without a doors citation', async (start, entry) => {
     const name = 'Cuarteto Jacarandá'
