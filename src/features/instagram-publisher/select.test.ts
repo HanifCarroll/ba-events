@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { baInstant } from './format.ts'
-import { runWindow } from './formats.ts'
+import { addDays, baInstant } from './format.ts'
+import { FORMATS, runWindow } from './formats.ts'
 import { qualifies } from './select.ts'
 import { accountIsVenue, selectEvents, stripVenueSuffix, toPostEvent, type CatalogEvent } from './select.ts'
 
@@ -78,6 +78,37 @@ describe('qualifying events', () => {
 })
 
 describe('picking the mix', () => {
+  it.each(['finde', 'reel', 'gratis'] as const)('covers qualifying local days for %s even when the first day has stronger picks', format => {
+    const window = runWindow(format, format === 'gratis' ? '2026-11-23' : '2026-11-20')
+    const { max, days } = FORMATS[format]
+    const firstDay = Array.from({ length: max + 2 }, (_, i) => event({
+      startsAt: baInstant(window.from, 20, i).toISOString(),
+      isFree: true,
+      imageUrl: 'https://imagenes.passline.com/eventos/a.jpg',
+      barrio: `Barrio ${i}`,
+      categories: [`c${i}`],
+    }))
+    const later = Array.from({ length: days - 1 }, (_, i) => event({
+      startsAt: baInstant(addDays(window.from, i + 1), 23).toISOString(), // UTC date is the next day.
+      isFree: true,
+      summary: null,
+    }))
+    const pool = [...firstDay, ...later]
+    const picked = selectEvents(pool, format, window)
+    expect(picked.map(p => p.id)).toEqual([...firstDay.slice(0, max - later.length), ...later].map(e => e.id))
+    expect(selectEvents(pool.toReversed(), format, window)).toEqual(picked)
+    expect(selectEvents(firstDay, format, window).map(p => p.id)).toEqual(firstDay.slice(0, max).map(e => e.id))
+  })
+
+  it('covers all feasible days without losing the free pick or repeating a venue', () => {
+    const freeFriday = event({ isFree: true, venue: 'Sala Lúcida', imageUrl: 'https://imagenes.passline.com/eventos/a.jpg' })
+    const saturday = event({ venue: 'Sala Lucida —', startsAt: baInstant('2026-11-21', 21).toISOString() })
+    const friday = event()
+    const freeSunday = event({ isFree: true, startsAt: baInstant('2026-11-22', 21).toISOString() })
+    expect(selectEvents([freeFriday, saturday, friday, freeSunday], 'finde', finde).map(p => p.id))
+      .toEqual([friday.id, saturday.id, freeSunday.id])
+  })
+
   it('allows one event per venue, matching names loosely', () => {
     const a = event({ venue: 'Sala Lúcida' })
     const b = event({ venue: 'Sala Lucida —', startsAt: '2026-11-21T22:00:00.000Z' })

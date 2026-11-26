@@ -65,11 +65,12 @@ export function caption(format: FormatKey, window: RunWindow, events: PostEvent[
 }
 
 /** `track` names the Reel's music: the message ends with `Music: "{title}" by {artist}.` */
-export function slackPreview(format: FormatKey, window: RunWindow, captionText: string | null, mode: boolean | 'review-hold' | 'closed' | 'already-previewed', track?: { title: string; artist: string }): string {
+export function slackPreview(format: FormatKey, window: RunWindow, captionText: string | null, mode: boolean | 'review-hold' | 'closed' | 'already-previewed' | 'threads-only', track?: { title: string; artist: string }): string {
   const at = baLocal(window.publishAt)
   const when = `${WEEKDAYS_EN[at.weekday]} at ${hhmm(at)}`
   const gate = mode === 'closed' ? 'Instagram is no longer waiting for approval.'
     : mode === 'already-previewed' ? 'This preview only asks about Threads. Use the earlier preview to approve Instagram.'
+    : mode === 'threads-only' ? 'This preview only asks about Threads. Instagram is waiting for a correction.'
     : mode === 'review-hold' ? 'Review is blocking automatic publishing for now. It can still publish automatically if the review passes. React ✅ to approve this version or ❌ to skip it.'
       : mode ? `It goes out ${when} unless you react ❌.` : `It goes out ${when} once you react ✅. React ❌ to skip it.`
   const music = track ? `\n\nMusic: "${track.title}" by ${track.artist}.` : ''

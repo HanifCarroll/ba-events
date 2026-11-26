@@ -24,6 +24,11 @@ A post MUST show only events from the Instagram intake that are scheduled, marke
 - **WHEN** at least one free event qualifies
 - **THEN** the post includes at least one free event
 
+#### Scenario: The format covers multiple days
+- **WHEN** a format spans more than one day
+- **THEN** the pick covers as many qualifying Buenos Aires start dates as possible within the format's size, free-event, and one-event-per-venue rules
+- **AND** within those constraints it prefers artwork and lists the picks in start order; dates with no qualifying event do not get a pick
+
 ### Requirement: Frames show each event's own artwork in the website's look
 Every event card MUST show that event's own artwork whole, uncropped, above a solid panel that holds every word, so no text depends on the artwork's colors. Before a render the job MUST download each picked event's `image_url` over https and only from the catalog's known image origins (the R2 artwork route and the listed CDN hosts and paths), following at most three redirects and requesting no address or redirect hop outside those origins, with one 10 second limit for the whole download and a 15 MB limit, and MUST use it only if it decodes as a raster image. No format may use a stock photo. Among qualifying events the pick MUST prefer events that have artwork.
 
@@ -83,7 +88,7 @@ The Reel MUST be one 1080 × 1920 H.264/AAC MP4 at 30 fps, drafted Thursday 18:0
 - **THEN** the draft fails with an alert that names the install command
 
 ### Requirement: Slack previews request approval only when needed
-While approval is open, a rendered draft MUST request approval in a top-level Slack preview when an enabled publication needs Hanif's ✅. This includes manual mode, a missing or failed review, and review problems that an automatic investigation or rebuild cannot resolve. If Threads later needs approval and its text was not shown, the new preview MUST show its text and request only the missing approval. A ✅ applies only to the destinations and content revision it showed and does not replace approval for unchanged Instagram content. The preview MUST attach every frame (for a Reel, the video, and a last line naming the track). It MUST use `slack.channel` from publisher config, defaulting to #alerts (`C0CG3EGKKP1`), and save that channel with the preview. Existing previews without a stored channel MUST keep using #ba-eventos (`C0CHBCSEV3R`). Only Hanif's ✅ and ❌ reactions on an existing preview count; thread replies do not. Routine outcomes MUST only reply under an existing preview. Failures continue through the alert path.
+While approval is open, a rendered draft MUST request approval in a top-level Slack preview when an enabled publication needs Hanif's ✅. This includes manual mode, an unavailable review, and unresolved questions requiring Hanif's decision. A confirmed error alone does not require his decision. If Threads later needs approval and its text was not shown, the new preview MUST show its text and request only the missing approval. A ✅ applies only to the destinations and content revision it showed and does not replace approval for unchanged Instagram content. The preview MUST attach every frame (for a Reel, the video, and a last line naming the track). It MUST use `slack.channel` from publisher config, defaulting to #alerts (`C0CG3EGKKP1`), and save that channel with the preview. Existing previews without a stored channel MUST keep using #ba-eventos (`C0CHBCSEV3R`). Only Hanif's ✅ and ❌ reactions on an existing preview count; thread replies do not. Routine outcomes MUST only reply under an existing preview. Failures continue through the alert path.
 
 #### Scenario: Hanif reacts ❌
 - **WHEN** Hanif's ❌ is on any preview of the draft before the post goes out, including an earlier revision or a preview for only one destination
@@ -149,7 +154,7 @@ After rendering, the publisher MUST review the still frames (for a Reel, its cov
 - **THEN** the job queues a detached investigation once for that revision without requiring a Slack preview, holds automatic publishing in both channels, and checks the result on subsequent ticks
 - **AND** an event-only flag can wait for the investigation without sending an approval preview unless a destination is already in manual mode
 - **AND** the investigator has at most 30 minutes and stops at least 20 minutes before the earliest applicable approval cutoff; at most two revisions of a draft may be investigated
-- **AND** a review already saved before investigation was introduced keeps its earlier behavior; a post-wide issue keeps its existing handling and cannot be cleared by event results
+- **AND** a review already saved without investigation uses the quick review's event verdicts; a post-wide issue cannot be cleared by event results
 
 #### Scenario: An investigator tool call fails
 - **WHEN** a tool call fails validation or cannot complete
@@ -163,7 +168,13 @@ After rendering, the publisher MUST review the still frames (for a Reel, its cov
 - **THEN** the job replies with one line per event if a preview exists or if the findings require one
 - **AND** all `ok` clears the event gate for that exact revision only; a `fixed` or `exclude` result without any `ask` rebuilds with cumulative exclusions and a fresh review, at most twice per draft per Buenos Aires day before the cutoff; if too few qualify it skips in the old thread
 - **AND** a confirmed error the investigator cannot correct is excluded and the evidence and requested correction go to Hermes without blocking the rebuild
-- **AND** an `ask`, including doubts after the investigation limit, requires ✅, even when Hermes also gets a fix request
+- **AND** an investigator's `ask` or an unresolved quick-review question after the investigation limit requires ✅, even when Hermes also gets a fix request
+
+#### Scenario: Only confirmed errors block an automatic publication
+- **WHEN** the review marks the post or an event `wrong`, or the investigator returns `fixed` or `exclude`, and there is no question requiring a decision
+- **THEN** the publisher does not request approval for an automatic destination. Event corrections or exclusions can still trigger a bounded rebuild; a post-wide error alone does not trigger an unchanged rebuild
+- **AND** the publisher sends confirmed errors requiring follow-up to Hermes through review-fix alerts. Without an approved or passing revision, the publication skips at cutoff or deadline under the normal rules
+- **AND** a rebuilt revision that passes review can auto-publish without a new preview or ✅
 
 #### Scenario: An unresolved review needs Hanif's decision
 - **WHEN** a current Slack preview has an unresolved review question, including a post-wide question or an investigator's `ask`, and Hanif has not reacted ✅ or ❌ and approval remains open
@@ -173,7 +184,7 @@ After rendering, the publisher MUST review the still frames (for a Reel, its cov
 
 #### Scenario: Investigation fails
 - **WHEN** the investigator cannot start, times out, or exits without a complete, valid, on-time result
-- **THEN** the revision requires ✅, and the infrastructure failure goes to Hermes and does not trigger a decision broadcast
+- **THEN** an unresolved quick-review question still requires ✅, and the infrastructure failure goes to Hermes without a decision broadcast for the failure itself. Confirmed errors go to Hermes for correction, not to Hanif for approval of an automatic destination
 - **AND** before the time limit, the job does not infer a crash from a missing result without two consecutive unsuccessful unit checks
 
 #### Scenario: The investigator corrects the catalog

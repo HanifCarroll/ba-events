@@ -211,6 +211,7 @@ describe('tick: draft review', () => {
   const badId = uuid(1)
   const wrong: Verdict = { verdict: 'wrong', field: 'summary', reason: 'The Teatro físico flyer is for a performance, not dog training.', question: null }
   const question = { verdict: 'question', field: null, reason: null, question: 'Is 21:00 the show time or the doors time?' } satisfies Verdict
+  const postWrong = { verdict: 'wrong', field: 'date', reason: 'The cover dates do not match the selected events.', question: null } satisfies Verdict
   const world = () => {
     const w = new World()
     w.config.auto.finde = true
@@ -233,6 +234,53 @@ describe('tick: draft review', () => {
     expect(w.draft()).toMatchObject({ state: 'published', threads: { state: 'published' } })
     expect(w.reviewCalls).toBe(1)
     expect(w.slackCalls).toEqual([])
+  })
+
+  it.each(['cutoff', 'rebuild', 'manual Threads'] as const)('routes a confirmed post error to Hermes (%s)', async outcome => {
+    const w = world()
+    const review = w.reviewer
+    w.reviewer = async input => ({ ...(await review(input)), post: postWrong })
+    if (outcome === 'manual Threads') w.config.threads.auto.finde = false
+    await w.job().tick()
+    const draft = w.draft()
+    expect(draft).toMatchObject({ revision: 1, state: 'previewed' })
+    expect(w.alerts).toEqual([expect.objectContaining({ key: `draft/${draft.id}/review-fix`, text: expect.stringContaining(postWrong.reason) })])
+    if (outcome === 'manual Threads') {
+      expect(draft.slack.previews).toEqual([expect.objectContaining({ instagram: false, threads: true })])
+      w.approve()
+    } else expect(w.slackCalls).toEqual([])
+
+    if (outcome === 'rebuild') {
+      w.catalog[0]!.startsAt = baInstant('2026-11-22', 19).toISOString()
+      w.reviewer = review
+      await w.job().regenerate(draft.id, [])
+    }
+    slot(w)
+    await w.job().tick()
+    if (outcome === 'rebuild') {
+      expect(w.draft()).toMatchObject({ revision: 2, state: 'published', threads: { state: 'published' } })
+      expect(w.reviewCalls).toBe(2)
+      expect(w.slackCalls).toEqual([])
+    } else {
+      expect(w.ig.published).toEqual([])
+      if (outcome === 'cutoff') {
+        expect(w.threads.posts).toEqual([])
+        w.at('2026-11-20', 18)
+        await w.job().tick()
+        expect(w.draft()).toMatchObject({ revision: 1, state: 'skipped', threads: { state: 'skipped' } })
+        expect(w.slackCalls).toEqual([])
+      } else expect(w.threads.posts).toHaveLength(1)
+    }
+  })
+
+  it('asks Hanif about a post question, even with a separate confirmed event error', async () => {
+    const w = world()
+    const review = w.reviewer
+    w.reviewer = async input => ({ ...(await review(input)), post: question })
+    w.verdict = id => id === badId ? wrong : OK
+    await w.job().tick()
+    expect(w.slackCalls.some(call => call.method === 'files.completeUploadExternal')).toBe(true)
+    expect(w.broadcasts()).toEqual([expect.objectContaining({ text: expect.stringContaining(question.question) })])
   })
 
   it.each([
@@ -410,7 +458,8 @@ describe('tick: draft review', () => {
     if (outcome === 'missing') w.reviewer = async () => { w.reviewCalls++; throw new Error('Review unavailable') }
     else w.verdict = id => id === badId ? outcome === 'question' ? question : wrong : OK
     if (outcome === 'wrong') {
-      w.config.threads.auto.finde = false // A visible manual destination lets Hanif stop the automatic rebuild.
+      // Both destinations are approval-only. This doesn't test approval of an automatic destination blocked by a known error.
+      w.config.auto.finde = w.config.threads.auto.finde = false
       w.approve()
     }
     await w.job().tick()
@@ -455,6 +504,7 @@ describe('tick: draft review', () => {
     expect(w.reviewCalls).toBe(3)
     expect(w.ig.published).toHaveLength(0)
     expect(w.threads.posts).toHaveLength(0)
+    expect(w.slackCalls).toEqual([])
   })
 
   it('keeps Hermes fixes pending if alerts fail, without delaying the replacement', async () => {
@@ -795,6 +845,25 @@ describe('tick: publisher investigation', () => {
     expect(w.broadcasts()).toEqual([])
   })
 
+  it.each(['fixed', 'exclude'] as const)('routes a %s finding to Hermes when the rebuild budget is exhausted', async verdict => {
+    const { w, runs, finish } = world(wrong)
+    await w.job().tick()
+    const draft = w.draft()
+    draft.reviewRebuilds = { day: '2026-11-18', count: 2 }
+    writeFileSync(w.job().draftFile(draft.id), JSON.stringify(draft))
+    during(w)
+    if (verdict === 'fixed') {
+      const receipt = { operation: uuid(20), id: flaggedId, field: 'description_summary_es', from: 'Entrenamiento canino.', to: 'Un montaje de teatro físico.',
+        allOccurrences: true, at: w.clock.toISOString(), evidence: 'Flyer: teatro físico.', changes: [{ id: flaggedId, from: 'Entrenamiento canino.', to: 'Un montaje de teatro físico.' }] }
+      writeFileSync(join(runs[0]!.dir, 'fixes.jsonl'), `${JSON.stringify({ state: 'applied', receipt })}\n`)
+      finish({ verdict, fixes: [receipt.operation] })
+    } else finish(exclude)
+    await w.job().tick()
+    expect(w.draft()).toMatchObject({ revision: 1, state: 'previewed', review: { investigation: { findings: { [flaggedId]: { verdict } } } } })
+    expect(w.alerts).toContainEqual(expect.objectContaining({ key: `review-fix/${flaggedId}`, text: expect.stringContaining('Hermes') }))
+    expect(w.slackCalls).toEqual([])
+  })
+
   it.each([false, true])('broadcasts one Slack question even with a separate Hermes fix (Hermes fix: %s)', async needsFix => {
     const { w, finish } = world()
     await w.job().tick()
@@ -866,6 +935,18 @@ describe('tick: publisher investigation', () => {
     expect(w.alerts).toHaveLength(0)
   })
 
+  it('does not turn a confirmed event error into an approval request when the investigator fails', async () => {
+    const { w } = world(wrong)
+    w.investigator!.start = async () => { throw new Error('No user service') }
+    await w.job().tick()
+    slot(w)
+    await w.job().tick()
+    expect(w.alerts.map(alert => alert.key)).toEqual(['investigator', `review-fix/${flaggedId}`])
+    expect(w.slackCalls).toEqual([])
+    expect(w.ig.published).toEqual([])
+    expect(w.threads.posts).toEqual([])
+  })
+
   it.each(['start', 'crash', 'missing', 'invalid', 'late', 'unacknowledged'] as const)('fails closed on %s and alerts Hermes only', async failure => {
     const { w, runs, finish } = world()
     if (failure === 'start') w.investigator!.start = async () => { throw new Error('No user service') }
@@ -895,7 +976,7 @@ describe('tick: publisher investigation', () => {
     expect(w.threads.posts).toHaveLength(0)
   })
 
-  it('allows the second investigation, then asks without a third launch or rebuild and preserves earlier exclusions', async () => {
+  it.each(['wrong', 'question'] as const)('after two investigations, routes a quick-review %s without a third launch or rebuild', async verdict => {
     const { w, runs, finish } = world()
     w.verdict = id => w.catalog.filter(event => !w.job().loadDraft('finde-2026-11-20')?.exclude.includes(event.id))[0]?.id === id ? wrong : OK
     await w.job().tick()
@@ -903,10 +984,19 @@ describe('tick: publisher investigation', () => {
     finish(exclude)
     await w.job().tick()
     finish(exclude, uuid(2))
+    if (verdict === 'question') {
+      const previous = w.verdict
+      w.verdict = id => previous(id).verdict === 'wrong' ? question : OK
+    }
     await w.job().tick()
     expect(runs).toHaveLength(2)
     expect(w.draft()).toMatchObject({ revision: 3, exclude: [flaggedId, uuid(2)], reviewRebuilds: { count: 2 } })
-    expect(w.broadcasts()).toEqual([expect.objectContaining({ text: expect.stringContaining('Two revisions have already been investigated.') })])
+    if (verdict === 'question') {
+      expect(w.broadcasts()).toEqual([expect.objectContaining({ text: expect.stringContaining('Two revisions have already been investigated.') })])
+    } else {
+      expect(w.slackCalls).toEqual([])
+      expect(w.alerts).toContainEqual(expect.objectContaining({ key: `review-fix/${uuid(3)}` }))
+    }
   })
 
   it.each([false, true])('honors a reaction while the investigation is running (rejected: %s)', async rejected => {

@@ -108,11 +108,9 @@ export function toPostEvent(event: CatalogEvent): PostEvent {
 const venueKey = (event: CatalogEvent) => normalize(event.venue!)
 
 /**
- * Greedy pick, deterministic: one event per venue; a free event first when the format wants one; then whichever
- * candidate has artwork, then adds the most variety (new barrio, new category) and has a description line, earliest
- * start on ties. An event without artwork is still picked when no other candidate is left, and it is the free pick when
- * it is the only free event. The Reel picks the same way, so it never drops a qualifying event for lacking a flyer.
- * The post lists the picks in start order.
+ * One event per venue, including a free event when the format wants one. Multi-day picks cover as many local dates
+ * as possible under those constraints. Among candidates that preserve coverage, prefer artwork, then score variety
+ * and a description line. Break ties by start time and ID, and list the result in that same order.
  */
 export function selectEvents(events: CatalogEvent[], format: FormatKey, window: RunWindow, exclude: readonly string[] = []): PostEvent[] {
   const spec = FORMATS[format]
@@ -131,35 +129,72 @@ export function artworkUrl(event: Pick<CatalogEvent, 'imageUrl'>): string | null
   return url && isArtworkOriginAllowed(url) ? url : null
 }
 
-const hasArtwork = (event: CatalogEvent) => artworkUrl(event) !== null
-
 function pick(pool: CatalogEvent[], spec: FormatSpec): CatalogEvent[] {
+  const candidates = pool.map(event => ({ event, date: baLocal(event.startsAt).date, venue: venueKey(event), artwork: artworkUrl(event) !== null }))
+  const venuesByDate = new Map<string, Set<string>>()
+  if (spec.days > 1) for (const { date, venue } of candidates) {
+    if (!venuesByDate.has(date)) venuesByDate.set(date, new Set())
+    venuesByDate.get(date)!.add(venue)
+  }
   const picked: CatalogEvent[] = []
+  const dates = new Set<string>()
   const venues = new Set<string>()
   const barrios = new Set<string>()
   const categories = new Set<string>()
-  const take = (event: CatalogEvent) => {
+  type Candidate = typeof candidates[number]
+  const take = ({ event, date, venue }: Candidate) => {
     picked.push(event)
-    venues.add(venueKey(event))
+    dates.add(date)
+    venues.add(venue)
     barrios.add(event.barrio!)
     for (const category of event.categories) categories.add(category)
   }
-  // Artwork outweighs the rest together (at most 9).
-  const score = (event: CatalogEvent) =>
-    (hasArtwork(event) ? 16 : 0)
+  // Match uncovered dates to distinct, unused venues. Reassign a venue's date if that frees another date to use it.
+  const remainingCoverage = (after?: Candidate) => {
+    const open = spec.max - picked.length - (after ? 1 : 0)
+    const matched = new Map<string, string>()
+    const match = (date: string, seen: Set<string>): boolean => {
+      for (const venue of venuesByDate.get(date)!) {
+        if (venues.has(venue) || venue === after?.venue || seen.has(venue)) continue
+        seen.add(venue)
+        const prior = matched.get(venue)
+        if (prior && !match(prior, seen)) continue
+        matched.set(venue, date)
+        return true
+      }
+      return false
+    }
+    for (const date of venuesByDate.keys()) {
+      if (matched.size >= open) break
+      if (!dates.has(date) && date !== after?.date) match(date, new Set())
+    }
+    return matched.size
+  }
+  // Artwork outweighs the other preferences together (at most 9).
+  const score = ({ event, artwork }: Candidate) =>
+    (artwork ? 16 : 0)
     + (barrios.has(event.barrio!) ? 0 : 4)
     + (event.categories.some(category => !categories.has(category)) ? 2 : 0)
     + (descriptionLine(event.summary) ? 3 : 0)
+  const ranked = (available: Candidate[]) => available.sort((a, b) => score(b) - score(a))
   if (spec.wantsFree) {
-    const free = pool.filter(event => event.isFree).sort((a, b) => score(b) - score(a))[0]
-    if (free) take(free)
+    let best: Candidate | undefined
+    let bestCoverage = -1
+    const target = Math.min(spec.max, venuesByDate.size)
+    for (const candidate of ranked(candidates.filter(({ event }) => event.isFree))) {
+      const coverage = spec.days > 1 ? 1 + remainingCoverage(candidate) : 0
+      if (coverage > bestCoverage) {
+        best = candidate
+        bestCoverage = coverage
+      }
+      if (coverage >= target) break
+    }
+    if (best) take(best)
   }
   while (picked.length < spec.max) {
-    let best: CatalogEvent | undefined
-    for (const event of pool) {
-      if (picked.includes(event) || venues.has(venueKey(event))) continue
-      if (!best || score(event) > score(best)) best = event
-    }
+    const missing = remainingCoverage()
+    const best = ranked(candidates.filter(({ venue, date }) => !venues.has(venue) && (!missing || !dates.has(date))))
+      .find(candidate => !missing || remainingCoverage(candidate) >= missing - 1)
     if (!best) break
     take(best)
   }

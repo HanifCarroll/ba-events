@@ -35,6 +35,8 @@ export interface Investigation {
   round: number
   missedUnitProbes?: number
   findings?: Findings
+  /** Findings synthesized from the quick review, not questions returned by the investigator. */
+  fallback?: boolean
   failure?: string
   failureAlerted?: boolean
   replied?: boolean
