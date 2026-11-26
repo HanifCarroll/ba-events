@@ -30,6 +30,7 @@ export const SITE_ORIGIN = 'https://baeventos.com'
 
 const HOUR = 3_600_000
 const DAY = 24 * HOUR
+const RELEASED_RUN = "state = 'failed' AND charged_usd IS 0 AND apify_run_id IS NULL AND dataset_id IS NULL AND completed_at IS NOT NULL"
 const now = () => new Date().toISOString()
 const iso = (value: unknown) => value === null || value === undefined ? null : new Date(value as string).toISOString()
 const failure = (operation: string, message: string) => new ImportOperationError({ operation, message })
@@ -130,14 +131,9 @@ export function d1Intake({ db, evidence, artwork, vectors }: IntakeBindings, sit
       if (!policy.collection_enabled) throw new Error('Instagram collection is not enabled')
       const at = new Date()
       const day = baDate(at.toISOString())
-      const existing = () => first<Reservation>(db.prepare('SELECT * FROM intake_runs WHERE local_date = ?').bind(day))
-      const found = await existing()
+      const active = `SELECT * FROM intake_runs WHERE local_date = ? AND NOT (${RELEASED_RUN})`
+      const found = await first<Reservation>(db.prepare(active).bind(day))
       if (found) return { ...found, fresh: false }
-      const month = day.slice(0, 7)
-      const used = (await db.prepare('SELECT COALESCE(SUM(COALESCE(charged_usd, reserved_usd)), 0) AS used FROM intake_runs WHERE substr(local_date, 1, 7) = ?')
-        .bind(month).first<{ used: number }>())!.used
-      // shortcut: float sums, not Postgres numeric; at cents-sized charges the 1e-9 slack only matters exactly at the cap.
-      if (used + policy.run_cap_usd > policy.monthly_cap_usd + 1e-9) throw new Error('Monthly collection budget exhausted')
       const handles = (await db.prepare('SELECT username FROM instagram_sources WHERE enabled = 1 ORDER BY username').all<{ username: string }>())
         .results.map(row => row.username)
       if (handles.length < 1 || handles.length > policy.max_sources) throw new Error('Source watchlist exceeds policy or is empty')
@@ -147,22 +143,30 @@ export function d1Intake({ db, evidence, artwork, vectors }: IntakeBindings, sit
       const input = { username: handles, resultsLimit: policy.posts_per_source,
         onlyPostsNewerThan: new Date(since).toISOString().replace(/\.\d{3}Z$/, 'Z'),
         skipPinnedPosts: false, dataDetailLevel: policy.data_detail_level, includeMusicData: false }
-      try {
-        await db.batch([
-          batchAssert(db, 'Instagram collection is not enabled', '(SELECT collection_enabled FROM intake_policy WHERE id = 1) = 1'),
-          batchAssert(db, 'Monthly collection budget exhausted',
-            '(SELECT COALESCE(SUM(COALESCE(charged_usd, reserved_usd)), 0) FROM intake_runs WHERE substr(local_date, 1, 7) = ?) + ? <= ? + 1e-9',
-            month, policy.run_cap_usd, policy.monthly_cap_usd),
-          db.prepare('INSERT INTO intake_runs (id, local_date, reserved_usd, input) VALUES (?, ?, ?, ?)')
-            .bind(crypto.randomUUID(), day, policy.run_cap_usd, JSON.stringify(input)),
-        ])
-      } catch (error) {
-        // Another caller reserved today first (local_date is unique): resume that run, as the advisory lock did.
-        const raced = await existing()
-        if (raced) return { ...raced, fresh: false }
-        throw error
-      }
-      return { ...(await existing())!, fresh: true, actor_build: policy.actor_build }
+      const [,, claimed, existing] = await db.batch<Row>([
+        batchAssert(db, 'Instagram collection is not enabled', '(SELECT collection_enabled FROM intake_policy WHERE id = 1) = 1'),
+        // Another caller may already have claimed today. It uses budget only once. The slack handles float rounding at the cap.
+        batchAssert(db, 'Monthly collection budget exhausted', `EXISTS (${active}) OR
+          (SELECT COALESCE(SUM(COALESCE(charged_usd, reserved_usd)), 0) FROM intake_runs WHERE substr(local_date, 1, 7) = ?) + ? <= ? + 1e-9`,
+          day, day.slice(0, 7), policy.run_cap_usd, policy.monthly_cap_usd),
+        // Advance the timestamp even within the same millisecond so a stale release cannot affect a newer attempt.
+        db.prepare(`INSERT INTO intake_runs (id, local_date, reserved_usd, input) VALUES (?, ?, ?, ?)
+          ON CONFLICT (local_date) DO UPDATE SET state = 'reserved', reserved_usd = excluded.reserved_usd,
+            charged_usd = NULL, completed_at = NULL, input = excluded.input,
+            created_at = max(excluded.created_at, strftime('%Y-%m-%dT%H:%M:%fZ', intake_runs.created_at, '+0.001 seconds'))
+          WHERE ${RELEASED_RUN} RETURNING *`).bind(crypto.randomUUID(), day, policy.run_cap_usd, JSON.stringify(input)),
+        db.prepare(active).bind(day),
+      ])
+      // Only the caller that inserted or renewed the row may send a paid start request.
+      if (claimed.results[0]) return { ...decodeRow<Reservation>(claimed.results[0]), fresh: true, actor_build: policy.actor_build }
+      return { ...decodeRow<Reservation>(existing.results[0]), fresh: false }
+    }),
+
+    releaseCollection: (id, reservedAt) => d1('intake.release', async () => {
+      const result = await db.prepare(`UPDATE intake_runs SET state = 'failed', charged_usd = 0, completed_at = max(?, created_at)
+        WHERE id = ? AND created_at = ? AND state = 'reserved' AND apify_run_id IS NULL AND dataset_id IS NULL
+          AND charged_usd IS NULL AND completed_at IS NULL`).bind(now(), id, reservedAt).run()
+      if (!result.meta.changes) throw new Error('Collection reservation is no longer eligible for release')
     }),
 
     updateRun: (id, patch) => d1(`intake.${patch.state}`, async () => {
