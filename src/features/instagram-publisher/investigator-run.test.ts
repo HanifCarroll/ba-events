@@ -8,6 +8,29 @@ import { endTime, type InvestigationRequest } from './investigation.ts'
 import { startInvestigator } from './investigator-run.ts'
 import { publicResearchUrl } from './investigator-web.ts'
 
+function invokeTool(action: string, data: string, env: NodeJS.ProcessEnv = {}) {
+  const tool = new URL('../../../scripts/publisher-investigator/tools.mjs', import.meta.url)
+  return JSON.parse(execFileSync(process.execPath, ['--input-type=module', '-e', `
+    import register from ${JSON.stringify(tool.href)}
+    register({ async registerTool(tool) {
+      const [action, data] = process.argv.slice(1)
+      console.log(JSON.stringify((await tool.execute('test', { action, data })).content))
+    } })
+  `, '--', action, data], { encoding: 'utf8', timeout: 4_000, env }))
+}
+
+it('names the data field and its limit when the adapter rejects oversized input', () => {
+  expect(invokeTool('finish', 'a'.repeat(12_001)))
+    .toEqual([{ type: 'text', text: 'data must be at most 12,000 characters.' }])
+})
+
+it('explains the catalog-fix JSON shape without echoing malformed input', () => {
+  for (const data of ['{"id":"/synthetic/private/file"', '[]', 'null']) {
+    expect(invokeTool('catalog-fix', data))
+      .toEqual([{ type: 'text', text: 'data must be a JSON object with id, field, from, to, and evidence (and optional allOccurrences).' }])
+  }
+})
+
 it('launches a detached transient user service with the remaining budget and a hard memory cap', async () => {
   const startsAt = Date.now()
   const cutoff = new Date(startsAt + 25 * 60_000)
@@ -40,21 +63,12 @@ it('returns a safe finish validation message and accepts a corrected finding', (
     writeFileSync(join(state, 'drafts', `${id}.json`), JSON.stringify({
       revision: 1, state: 'previewed', framesHash: 'frames', review: { investigation: { request } },
     }))
-    const script = new URL('../../../scripts/instagram-publisher.ts', import.meta.url)
-    const tool = new URL('publisher-investigator/tools.mjs', script)
     const result = join(dir, `${eventId}.result.json`)
-    const invoke = (action: string, data: unknown) => JSON.parse(execFileSync(process.execPath, ['--input-type=module', '-e', `
-      import register from ${JSON.stringify(tool.href)}
-      register({ async registerTool(tool) {
-        const [action, data] = process.argv.slice(1)
-        console.log(JSON.stringify((await tool.execute('test', { action, data })).content))
-      } })
-    `, action, JSON.stringify(data)], {
-      encoding: 'utf8', timeout: 4_000, env: {
-        BA_INSTAGRAM_STATE_DIR: state, BA_INVESTIGATION_DIR: dir,
-        BA_INVESTIGATION_ENTRY: fileURLToPath(script), BA_INVESTIGATION_NODE: process.execPath,
-      },
-    }))
+    const invoke = (action: string, data: unknown) => invokeTool(action, JSON.stringify(data), {
+      BA_INSTAGRAM_STATE_DIR: state, BA_INVESTIGATION_DIR: dir,
+      BA_INVESTIGATION_ENTRY: fileURLToPath(new URL('../../../scripts/instagram-publisher.ts', import.meta.url)),
+      BA_INVESTIGATION_NODE: process.execPath,
+    })
     const finding = { verdict: 'exclude', reason: 'Synthetic event is out of scope.', hermes: 'a'.repeat(301) }
     expect(invoke('finish', [eventId, finding])).toEqual([{ type: 'text', text: 'hermes: Too big: expected string to have <=300 characters' }])
     expect(existsSync(result)).toBe(false)

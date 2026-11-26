@@ -63,26 +63,7 @@ export async function researchPage(url: string) {
   return { url: finalUrl, title: $('title').text().trim(), text: $('body').text().replace(/\s+/gu, ' ').trim().slice(0, 18_000), links }
 }
 
-async function searchPage(query: string) {
-  const form = new URLSearchParams({ q: query }).toString()
-  try {
-    return { ...await page('https://html.duckduckgo.com/html/', form), selector: 'a.result__a[href]' }
-  } catch {
-    const response = await page(`https://lite.duckduckgo.com/lite/?${form}`).catch(() => null)
-    return response && { ...response, selector: 'a.result-link[href]' }
-  }
-}
-
-export async function researchSearch(query: string) {
-  let response = await searchPage(query)
-  if (!response) {
-    const unquoted = query.replace(/["“”„‟]/gu, '')
-    const keywords = unquoted.replace(/\s+/gu, ' ').trim()
-    if (unquoted !== query && keywords) response = await searchPage(keywords)
-  }
-  if (!response) throw new InvestigatorToolError('Web search is unavailable right now; use research on a known URL instead.')
-
-  const { html, url: baseUrl, selector } = response
+function searchLinks({ html, url: baseUrl }: Awaited<ReturnType<typeof page>>, selector: string) {
   const $ = load(html)
   return $(selector).map((_, el) => {
     try {
@@ -92,4 +73,26 @@ export async function researchSearch(query: string) {
       return { title: $(el).text().trim().slice(0, 250), url: publicResearchUrl(redirected ?? link.href).href }
     } catch { return null }
   }).get().slice(0, 8)
+}
+
+async function searchOnce(query: string) {
+  const form = new URLSearchParams({ q: query }).toString()
+  const html = await page('https://html.duckduckgo.com/html/', form).catch(() => null)
+  const results = html && searchLinks(html, 'a.result__a[href]')
+  if (results?.length) return results
+
+  const lite = await page(`https://lite.duckduckgo.com/lite/?${form}`).catch(() => null)
+  // Keep an empty result set if HTML was readable. Only two failed requests mean search is unavailable.
+  return lite ? searchLinks(lite, 'a.result-link[href]') : results
+}
+
+export async function researchSearch(query: string) {
+  let results = await searchOnce(query)
+  if (results === null) {
+    const unquoted = query.replace(/["“”„‟]/gu, '')
+    const keywords = unquoted.replace(/\s+/gu, ' ').trim()
+    if (unquoted !== query && keywords) results = await searchOnce(keywords)
+  }
+  if (results === null) throw new InvestigatorToolError('Web search is unavailable right now; use research on a known URL instead.')
+  return results
 }

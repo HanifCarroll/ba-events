@@ -56,6 +56,23 @@ it('returns HTML results without contacting lite when the POST succeeds', async 
   expect(httpsRequest).toHaveBeenCalledTimes(1)
 })
 
+it('tries lite when HTML search returns HTTP 200 without result links', async () => {
+  respond(200, '<a href="https://other.example/">Not a result</a>')
+  respond(200, '<a class="result-link" href="https://venue.example/">Venue</a>')
+  expect(await researchSearch('theater')).toEqual([{ title: 'Venue', url: 'https://venue.example/' }])
+  expect(requests.map(({ url, method }) => [url, method])).toEqual([
+    ['https://html.duckduckgo.com/html/', 'POST'],
+    ['https://lite.duckduckgo.com/lite/?q=theater', 'GET'],
+  ])
+})
+
+it('returns an empty list if HTML search has no results and lite is unavailable', async () => {
+  respond(200, '<p>No results</p>')
+  respond(202)
+  expect(await researchSearch('"theater"')).toEqual([])
+  expect(httpsRequest).toHaveBeenCalledTimes(2)
+})
+
 it('suggests researching a known URL when both search endpoints fail', async () => {
   respond(202)
   respond(503)

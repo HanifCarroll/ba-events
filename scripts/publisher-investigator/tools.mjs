@@ -14,11 +14,15 @@ export default function (pi) {
     } },
     async execute(_id, { action, data }, signal) {
       const reply = text => ({ content: [{ type: 'text', text }], details: {} })
-      if (!operations.includes(action) || data.length > 12_000) return reply('Invalid operation or input.')
+      if (!operations.includes(action)) return reply('Unknown operation.')
+      if (data.length > 12_000) return reply('data must be at most 12,000 characters.')
       try {
         let command = ['investigator-tool', dir, action, data]
         if (action === 'catalog-fix') {
-          const fix = JSON.parse(data)
+          const hint = 'data must be a JSON object with id, field, from, to, and evidence (and optional allOccurrences).'
+          let fix
+          try { fix = JSON.parse(data) } catch { return reply(hint) }
+          if (!fix || typeof fix !== 'object' || Array.isArray(fix)) return reply(hint)
           const argument = v => typeof v === 'string' ? v : v === null ? 'null' : ''
           command = ['catalog-fix', argument(fix.id), `--field=${argument(fix.field)}`, `--from=${argument(fix.from)}`,
             `--to=${argument(fix.to)}`, `--evidence=${argument(fix.evidence)}`, ...(fix.allOccurrences === true ? ['--all-occurrences'] : [])]

@@ -10,7 +10,7 @@ For an authoritative correction, call `catalog-fix` with `{ "id": "...", "field"
 
 If you confirm a material error you cannot correct (for example, a wrong venue, category, flyer, or source description), return `exclude` so the publisher can rebuild without that event. Put the evidence and exact correction in the `hermes` field so Hermes can fix the underlying issue. Use `ask` only for a genuine unresolved decision Hanif can make, not to report a confirmed error you cannot fix.
 
-Call `finish` with `["event-id", { ... }]` once for each flagged event. Length limits: `reason`, `hermes`, and `question` are at most 300 characters each, and `checked` is at most 500 characters. Use these exact shapes:
+Call `finish` with `["event-id", { ... }]` once for each flagged event. Length limits: `reason`, `hermes`, and `question` are at most 300 characters each, `checked` and the `ok` finding's `url` are at most 500 characters each, and `fixes` must list 1 to 12 operation IDs. Use these exact shapes:
 
 - `{"verdict":"ok","reason":"One line explaining why the card is right","url":"https://public-evidence.example/event"}`. For a saved flyer, use its source post URL.
 - `{"verdict":"fixed","fixes":["operation UUID from each confirmed correction for this event"]}`. Use this only after all material doubts for that event are resolved.
