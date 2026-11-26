@@ -1,5 +1,6 @@
 import type { D1Database } from '@cloudflare/workers-types'
 import { BA_TIMEZONE } from '#shared/lib/constants.ts'
+import { eventColumnsWith } from '#shared/lib/db/event-columns.ts'
 import { judgeScopeBatch, requestScopeJudgments, SCOPE_BATCH_SIZE, SCOPE_VERSION, type RequestJudgments, type ScopeDecision } from './judge.ts'
 
 export interface ScopeRow {
@@ -34,13 +35,20 @@ export async function readScopePage(db: D1Database, from: string, limit: number,
 
 export type ScopeReportRow = Pick<ScopeRow, 'id' | 'name' | 'venue' | 'source'> & { scope: ScopeDecision['scope'] | null; reason: string }
 
+const judgmentColumns = eventColumnsWith('scope', 'judgment')
+const retireJudgment = judgmentColumns.map(column => `${column} = NULL`).join(', ')
+const applyJudgment = [
+  ...judgmentColumns.map(column => `${column} = ?`),
+  ...eventColumnsWith('scope', 'invalidation').map(column => `${column} = NULL`),
+].join(', ')
+
 export async function processScopeBatch(db: D1Database, rows: ScopeRow[], options: {
   request: RequestJudgments
   apply: boolean
 }) {
   if (options.apply && rows.some(row => row.scope !== null)) {
     // Retire decisions from an older rule even if the provider fails to replace them.
-    await db.prepare(`UPDATE events SET scope = NULL, scope_reason = NULL, scope_judged_at = NULL, scope_version = NULL
+    await db.prepare(`UPDATE events SET ${retireJudgment}
       WHERE id IN (SELECT value FROM json_each(?)) AND scope IS NOT NULL AND scope_version IS NOT ?`)
       .bind(JSON.stringify(rows.filter(row => row.scope !== null).map(row => row.id)), SCOPE_VERSION).run()
   }
@@ -57,12 +65,13 @@ export async function processScopeBatch(db: D1Database, rows: ScopeRow[], option
   const report = rows.map(({ id, name, venue, source }, index): ScopeReportRow => ({ id, name, venue, source, ...decisions[index]! }))
   if (!options.apply || !rows.length) return { report, failed: 0, applied: 0 }
   const judgedAt = new Date().toISOString()
-  const write = db.prepare(`UPDATE events SET scope = ?, scope_reason = ?, scope_judged_at = ?, scope_version = ?, scope_invalidated_at = NULL
+  const write = db.prepare(`UPDATE events SET ${applyJudgment}
     WHERE id = ? AND status = 'scheduled' AND (scope IS NULL OR scope_version IS NOT ?)
       AND EXISTS (SELECT 1 FROM event_scope_inputs s WHERE s.id = events.id AND s.input = ?)`)
   const results = await db.batch(rows.map((row, index) => {
     const { scope, reason } = decisions[index]!
-    return write.bind(scope, reason, judgedAt, SCOPE_VERSION, row.id, SCOPE_VERSION, row.input)
+    const judgment = { scope, scope_reason: reason, scope_judged_at: judgedAt, scope_version: SCOPE_VERSION }
+    return write.bind(...judgmentColumns.map(column => judgment[column]), row.id, SCOPE_VERSION, row.input)
   }))
   return { report, failed: 0, applied: results.reduce((total, result) => total + result.meta.changes, 0) }
 }

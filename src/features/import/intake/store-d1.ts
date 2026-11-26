@@ -13,6 +13,7 @@
 import type { D1Database, R2Bucket, Vectorize } from '@cloudflare/workers-types'
 import { Effect } from 'effect'
 import { batchAssert, intakeCommitBatch } from '#shared/lib/db/d1.server.ts'
+import { eventColumnsWith } from '#shared/lib/db/event-columns.ts'
 import type { EventInsert } from '#shared/lib/types.ts'
 import { importTry, ImportOperationError } from '../core/effect-utils.ts'
 import { mostSimilarVenue, similarIntakeVenues } from '../core/venue-similarity-d1.ts'
@@ -69,9 +70,22 @@ function canonical(value: unknown): unknown {
 }
 const sameJson = (a: unknown, b: unknown) => JSON.stringify(canonical(a)) === JSON.stringify(canonical(b))
 
-const PROTECTED_FIELDS = ['name', 'starts_at', 'ends_at', 'time_tba', 'venue_id', 'price', 'is_free', 'status', 'image_url', 'image_width',
-  'image_height', 'description_es', 'description_en', 'description_display_es', 'description_display_en', 'description_summary_es',
-  'description_summary_en', 'categories', 'ticket_url', 'facets', 'embedding', 'embedding_version', 'search_document']
+// Keep the legacy protection marker in the ledger. D1 stores vectors in Vectorize, not an events.embedding column.
+const PROTECTED_FIELDS = [...eventColumnsWith('protectOnCommit', true), 'embedding']
+const detailProtectionColumns = eventColumnsWith('protection', 'details')
+
+// Keep these lists next to their positional VALUES and SET expressions; event-columns.test.ts checks their membership.
+export const INSERT_INTAKE_EVENT = `INSERT INTO events (id, name, starts_at, ends_at, time_tba, venue_id, description_es, description_en,
+            description_display_es, description_display_en, description_summary_es, description_summary_en, categories, price, is_free,
+            image_url, image_width, image_height, link, ticket_url, source, external_id, status, search_document, embedding_version,
+            enrichment_status, description_unavailable, organizer_name, organizer_url, performers, offers_valid_from, doors_at)
+          VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'instagram', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+export const UPDATE_INTAKE_EVENT = `UPDATE events SET name = ?, starts_at = ?, ends_at = ?, time_tba = ?, venue_id = ?, description_es = ?,
+            description_en = ?, description_display_es = ?, description_display_en = ?, description_summary_es = ?, description_summary_en = ?,
+            categories = ?, price = ?, is_free = ?, image_url = COALESCE(?, image_url), image_width = ?, image_height = ?,
+            ticket_url = COALESCE(?, ticket_url), status = ?, search_document = ?, embedding_version = ?, enrichment_status = ?,
+            description_unavailable = ?, organizer_name = ?, organizer_url = ?, performers = ?, offers_valid_from = ?, doors_at = ?
+          WHERE id = ?`
 
 export function d1Intake({ db, evidence, artwork, vectors }: IntakeBindings, siteOrigin = SITE_ORIGIN): IntakeStore {
   const planRow = (id: string) => first<IntakePlanRow>(db.prepare('SELECT * FROM intake_plans WHERE id = ?').bind(id))
@@ -429,30 +443,18 @@ export function d1Intake({ db, evidence, artwork, vectors }: IntakeBindings, sit
         e.organizer_url ?? (e.organizer_name === undefined || e.organizer_name === previous?.organizer_name ? previous?.organizer_url ?? null : null),
         performers ? JSON.stringify(performers) : null, e.offers_valid_from ?? (replacedTicket ? null : previous?.offers_valid_from ?? null),
         e.doors_at ?? retainedDoors] as const
-      const protects = [...PROTECTED_FIELDS,
-        ...(e.organizer_name !== undefined ? ['organizer_name', 'organizer_url'] : []),
-        ...(e.performers !== undefined ? ['performers'] : []),
-        ...(e.offers_valid_from !== undefined ? ['offers_valid_from'] : []),
-        ...(e.doors_at !== undefined ? ['doors_at'] : [])]
+      const protects = [...PROTECTED_FIELDS, ...detailProtectionColumns.filter(column =>
+        e[column === 'organizer_url' ? 'organizer_name' : column] !== undefined)]
       const writes = []
       if (plan.action === 'create') {
-        writes.push(db.prepare(`INSERT INTO events (id, name, starts_at, ends_at, time_tba, venue_id, description_es, description_en,
-            description_display_es, description_display_en, description_summary_es, description_summary_en, categories, price, is_free,
-            image_url, image_width, image_height, link, ticket_url, source, external_id, status, search_document, embedding_version,
-            enrichment_status, description_unavailable, organizer_name, organizer_url, performers, offers_valid_from, doors_at)
-          VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'instagram', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(
+        writes.push(db.prepare(INSERT_INTAKE_EVENT).bind(
           plan.event_id, e.name, startsAt, bit(e.time_tba) ?? 0, e.venue_id ?? null, e.description_es ?? null, e.description_en ?? null,
           e.description_display_es ?? null, e.description_display_en ?? null, e.description_summary_es ?? null, e.description_summary_en ?? null,
           JSON.stringify(e.categories ?? []), e.price ?? null, bit(e.is_free) ?? 0, e.image_url ?? null, e.image_width ?? null, e.image_height ?? null,
           e.link ?? null, e.ticket_url ?? null, plan.candidate_id, e.status ?? 'scheduled', e.search_document ?? null, e.embedding_version ?? 1,
           e.enrichment_status ?? 'pending', bit(e.description_unavailable) ?? 0, ...details))
       } else if (plan.action === 'update') {
-        writes.push(db.prepare(`UPDATE events SET name = ?, starts_at = ?, ends_at = ?, time_tba = ?, venue_id = ?, description_es = ?,
-            description_en = ?, description_display_es = ?, description_display_en = ?, description_summary_es = ?, description_summary_en = ?,
-            categories = ?, price = ?, is_free = ?, image_url = COALESCE(?, image_url), image_width = ?, image_height = ?,
-            ticket_url = COALESCE(?, ticket_url), status = ?, search_document = ?, embedding_version = ?, enrichment_status = ?,
-            description_unavailable = ?, organizer_name = ?, organizer_url = ?, performers = ?, offers_valid_from = ?, doors_at = ?
-          WHERE id = ?`).bind(e.name, startsAt, !moved && typeof previous?.ends_at === 'string' ? iso(previous.ends_at) : null,
+        writes.push(db.prepare(UPDATE_INTAKE_EVENT).bind(e.name, startsAt, !moved && typeof previous?.ends_at === 'string' ? iso(previous.ends_at) : null,
           bit(e.time_tba) ?? 0, e.venue_id ?? null, e.description_es ?? null,
           e.description_en ?? null, e.description_display_es ?? null, e.description_display_en ?? null, e.description_summary_es ?? null,
           e.description_summary_en ?? null, JSON.stringify(e.categories ?? []), e.price ?? null, bit(e.is_free) ?? 0, e.image_url ?? null,

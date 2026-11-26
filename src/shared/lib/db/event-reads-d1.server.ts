@@ -3,7 +3,10 @@ import type { D1Database } from '@cloudflare/workers-types'
 import type { ChatEventPayload, EventCredit, Venue } from '../types.ts'
 import { isPayWhatYouCan } from '#features/events/lib/admission.ts'
 import { HOME_DOORS_ONLY_DURATION_MS, HOME_EVENT_DEFAULT_DURATION_MS, HOME_FALLBACK_LIMIT, type HomeAgendaEvent, type HomeWindow } from '#features/events/lib/home-feed.ts'
+import { eventColumnsWith } from './event-columns.ts'
 import { EVENT_COLUMNS, FROM_EVENTS, toPayload } from './search-d1.server.ts'
+
+const DETAIL_COLUMNS = eventColumnsWith('public', 'detail').map(column => `e.${column}`).join(', ')
 
 /** Events visible to the public. */
 const DISPLAYABLE = `e.status IN ('scheduled', 'past')`
@@ -17,7 +20,7 @@ const PRICE_NOTE = `(SELECT json_extract(r.payload, '$.price_note') FROM event_s
 /** One event with its venue, or null. `displayableOnly` keeps it to scheduled and past events. */
 export async function eventByIdD1(db: D1Database, id: string, displayableOnly = false) {
   const row = await db.prepare(`SELECT ${EVENT_COLUMNS},
-    ${PRICE_NOTE} AS priceNote, e.organizer_name, e.organizer_url, e.performers, e.offers_valid_from
+    ${PRICE_NOTE} AS priceNote, ${DETAIL_COLUMNS}
     FROM ${FROM_EVENTS} WHERE e.id = ?${displayableOnly ? ` AND ${DISPLAYABLE}` : ''}`)
     .bind(id).first<{ priceNote: string | null; organizer_name: string | null; organizer_url: string | null;
       performers: string | null; offers_valid_from: string | null }>()
