@@ -83,10 +83,10 @@ The Reel MUST be one 1080 × 1920 H.264/AAC MP4 at 30 fps, drafted Thursday 18:0
 - **THEN** the draft fails with an alert that names the install command
 
 ### Requirement: Slack previews request approval only when needed
-While approval is open, a rendered draft MUST request approval in a top-level Slack preview when an enabled publication needs Hanif's ✅. This includes manual mode, a missing or failed review, and review problems that an automatic investigation or rebuild cannot resolve. If Threads later needs approval and the current preview did not show its text, a replacement preview MUST show it before a ✅ can approve Threads. The preview MUST attach every frame (for a Reel, the video, and a last line naming the track). It MUST use `slack.channel` from publisher config, defaulting to #alerts (`C0CG3EGKKP1`), and save that channel with the preview. Existing previews without a stored channel MUST keep using #ba-eventos (`C0CHBCSEV3R`). Only Hanif's ✅ and ❌ reactions on an existing preview count; thread replies do not. Routine outcomes MUST only reply under an existing preview. Failures continue through the alert path.
+While approval is open, a rendered draft MUST request approval in a top-level Slack preview when an enabled publication needs Hanif's ✅. This includes manual mode, a missing or failed review, and review problems that an automatic investigation or rebuild cannot resolve. If Threads later needs approval and its text was not shown, the new preview MUST show its text and request only the missing approval. A ✅ applies only to the destinations and content revision it showed and does not replace approval for unchanged Instagram content. The preview MUST attach every frame (for a Reel, the video, and a last line naming the track). It MUST use `slack.channel` from publisher config, defaulting to #alerts (`C0CG3EGKKP1`), and save that channel with the preview. Existing previews without a stored channel MUST keep using #ba-eventos (`C0CHBCSEV3R`). Only Hanif's ✅ and ❌ reactions on an existing preview count; thread replies do not. Routine outcomes MUST only reply under an existing preview. Failures continue through the alert path.
 
 #### Scenario: Hanif reacts ❌
-- **WHEN** Hanif's ❌ is on the preview before the post goes out
+- **WHEN** Hanif's ❌ is on any preview of the draft before the post goes out, including an earlier revision or a preview for only one destination
 - **THEN** the draft is skipped, even if it later qualified for auto mode, and the thread gets "Skipped: you reacted ❌"
 
 #### Scenario: No ✅ by the cutoff
@@ -119,12 +119,17 @@ While approval is open, a rendered draft MUST request approval in a top-level Sl
 
 #### Scenario: Auto mode
 - **WHEN** every eligible publication allows auto mode in both the saved revision and current config, and the revision meets the review requirement
-- **THEN** no new preview is sent; if a preview already exists the publisher checks its reactions, but a Slack failure MUST NOT stop an otherwise eligible automatic publication unless a known ❌ applies
+- **THEN** no new preview is sent; if none has been shown, the publisher can publish without contacting Slack
 - **AND** if either setting is false or the revision predates saved modes, a ✅ is required for that publication; if the live flag turns off while approval is still open, a previously silent draft sends a preview
 
 #### Scenario: One publication awaits an approval preview and the other is automatic
-- **WHEN** Slack cannot deliver a preview needed by one publication, and the other meets its automatic publishing requirements
-- **THEN** the automatic publication proceeds subject to its catalog checks, deadline, and any known ❌; the manual publication waits for approval
+- **WHEN** a preview needed by one publication definitely has not been sent, and the other meets its automatic publishing requirements
+- **THEN** the automatic publication proceeds subject to its catalog checks, deadline, and the decisions on any earlier previews; the manual publication waits for approval
+
+#### Scenario: A preview's decision is unknown
+- **WHEN** any preview's reactions cannot be read or a Slack share has an unclear outcome
+- **THEN** the publisher retries the read or share lookup without replacing the preview, rebuilding, or starting new publication writes that depend on those reactions, including in auto mode
+- **AND** a readable ❌ still vetoes the draft, and a publish already dispatched can still be reconciled
 
 #### Scenario: The publisher rebuilds without sending a replacement preview
 - **WHEN** an earlier revision already has a preview, and the new revision can publish automatically
@@ -260,7 +265,7 @@ The job MUST log every failed attempt, persist failure streaks across ticks, and
 
 ### Requirement: Eligible drafts share any Slack preview and approval with Threads
 
-With Threads enabled, the draft MUST save the exact Threads text for Hoy, Este finde, or Gratis esta semana. If the job sends a preview for either publication, it MUST append that text in a quote block while Threads is still eligible in that revision and distinguish manual approval from auto mode. Publishing without ✅ requires both the saved Threads mode and the current config to allow auto mode, and the revision must meet the review requirement. The Reel MUST NOT preview or publish to Threads. If there is a Slack preview, ❌ skips both posts, including in auto mode. Its ✅ approves Threads only if it showed the saved Threads text for the current revision. Threads auto mode is separate per format.
+With Threads enabled, the draft MUST save the exact Threads text for Hoy, Este finde, or Gratis esta semana. A preview that offers Threads MUST display that text in a quote block and distinguish manual approval from auto mode. Publishing without ✅ requires both the saved Threads mode and the current config to allow auto mode, and the revision must meet the review requirement. The Reel MUST NOT preview or publish to Threads. If there is a Slack preview, ❌ skips both posts, including in auto mode. Its ✅ approves Threads only if it showed the saved Threads text for the current revision. Threads auto mode is separate per format.
 
 #### Scenario: Publishing window
 - **WHEN** the job considers a new Threads write
@@ -312,11 +317,12 @@ Threads MUST save its own state, retries, container ID, media ID, permalink, and
 
 #### Scenario: Slack approval cannot be read
 - **WHEN** a Slack reaction read fails at or after the Threads slot
-- **THEN** manual Threads waits for a successful read without counting a Threads API failure; automatic Threads may proceed unless a known ❌ applies
+- **THEN** manual and automatic Threads wait without counting a Threads API failure
 
 #### Scenario: Threads finds a catalog problem before Instagram's slot
 - **WHEN** a current event check holds Threads before it sends
 - **THEN** the draft saves the affected event and reason, and the job raises a Threads hold alert through the shared alert path even if there was no Slack preview
+- **AND** if a later revision publishes Threads, the job resolves that hold alert and retries the resolution if needed
 
 #### Scenario: The Threads token needs attention
 - **WHEN** a live tick uses Threads and the long-lived token is over seven days old and not yet expired

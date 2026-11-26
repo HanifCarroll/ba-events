@@ -442,6 +442,9 @@ export async function reviewPush(body: string, runner: Runner = run) {
 
 // Slack, through Hermes' slack_api.py (it reads the bot token itself).
 
+/** Slack explicitly rejected the request. A lost response is not a rejection. */
+export class SlackRejected extends Error {}
+
 export async function slack(method: string, args: Record<string, string>): Promise<any> {
   // The args file holds only message text and ids; the bot token stays inside slack_api.py.
   const dir = join(STATE_DIR, 'tmp')
@@ -451,7 +454,12 @@ export async function slack(method: string, args: Record<string, string>): Promi
   try {
     const { out, err } = await run(['python3', '-I', SLACK_API, '--form', method, `@file=${argsFile}`], 60_000)
     const body = (() => { try { return JSON.parse(out) } catch { return null } })()
-    if (!body?.ok) throw new Error(`Slack ${method} failed: ${body?.error ?? err.trim().slice(0, 200)}`)
+    if (!body?.ok) {
+      const message = `Slack ${method} failed: ${body?.error ?? err.trim().slice(0, 200)}`
+      // A timeout or an internal Slack error does not prove a write failed.
+      if (body?.ok === false && !['internal_error', 'fatal_error', 'request_timeout', 'service_unavailable'].includes(body.error)) throw new SlackRejected(message)
+      throw new Error(message)
+    }
     return body
   } finally {
     rmSync(argsFile, { force: true })
@@ -492,7 +500,8 @@ export const slackPost = (text: string, threadTs: string, channel: string) =>
 
 export async function slackReactions(ts: string, channel: string) {
   const { message } = await slack('reactions.get', { channel, timestamp: ts, full: 'true' })
-  return message?.reactions as Array<{ name: string; users?: string[] }> | undefined
+  if (!message) throw new Error('Slack reactions.get returned no preview message')
+  return message.reactions as Array<{ name: string; users?: string[] }> | undefined
 }
 
 // R2, through the Cloudflare API with the same token file bin/ba-d1-read.sh reads.

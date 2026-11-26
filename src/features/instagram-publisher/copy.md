@@ -199,6 +199,8 @@ Threads (se publica con el mismo ✅, {HH:MM}):
 {the exact Threads text, as a quote block}
 ```
 
+When Instagram already has its own preview, say `This preview only asks about Threads. Use the earlier preview to approve Instagram.` Use `Threads (se publica con un ✅ en este mensaje, {HH:MM}):` instead of `el mismo ✅`. A ❌ on either preview still stops the draft.
+
 With auto mode on, use this heading instead: `Threads (se publica solo a las {HH:MM} salvo que reacciones ❌):`.
 
 On an Instagram rebuild after Threads has published, use `Threads ya se publicó con la versión anterior.` instead of the quote. If the send is still unclear, Threads was skipped or failed, or the Threads cutoff has passed without a publish, omit the Threads section.

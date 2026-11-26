@@ -261,6 +261,7 @@ describe('tick: draft review', () => {
     const w = await previewed()
     const draft = w.draft()
     delete draft.slack.channel
+    delete draft.slack.previews
     writeFileSync(w.job().draftFile(draft.id), JSON.stringify(draft))
     w.slackCalls = []
     w.approve()
@@ -401,6 +402,7 @@ describe('tick: draft review', () => {
     await w.job().tick()
     const saved = w.draft()
     delete saved.slack.channel
+    delete saved.slack.previews
     delete saved.threads!.threadChannel
     saved.slack.auto = w.config.auto.finde = true
     if (scenario === 'legacy') delete saved.review
@@ -539,6 +541,13 @@ describe('tick: publisher investigation', () => {
     const job = w.job()
     if (action === 'slack-down') job.s.slackReactions = async () => { throw new Error('Slack down') }
     await job.tick()
+    if (action === 'slack-down') {
+      expect(w.draft()).toMatchObject({ state: 'previewed', threads: { state: 'waiting' } })
+      expect(w.ig.published).toEqual([])
+      expect(w.threads.posts).toEqual([])
+      w.at('2026-11-19', 12, 10)
+      await w.job().tick()
+    }
     const expected = action === 'reject' ? 'skipped' : 'published'
     expect(w.draft()).toMatchObject({ state: expected, threads: { state: expected } })
     if (action === 'publish') {
@@ -546,6 +555,80 @@ describe('tick: publisher investigation', () => {
         .toEqual([expect.objectContaining({ ts, channel, text: expect.stringContaining('Posted:') }),
           expect.objectContaining({ ts, channel, text: expect.stringContaining('Threads: publicado') })])
     }
+  })
+
+  it('never delivers or saves an earlier revision after a second rebuild publishes', async () => {
+    const { w, runs, finish } = world(wrong)
+    const review = w.reviewer
+    w.at('2026-11-19', 11, 20)
+    w.reviewer = async () => { throw new Error('Review temporarily unavailable') }
+    await w.job().tick()
+    w.reviewer = review
+    w.at('2026-11-19', 11, 30)
+    await w.job().tick()
+    w.at('2026-11-19', 11, 40)
+    finish(exclude)
+    w.verdict = id => id === uuid(2) ? wrong : OK
+    w.slackFailPrefix = 'Rebuilt:'
+    w.slackFails = 20
+    await w.job().tick()
+    expect(runs).toHaveLength(2)
+    expect(w.draft()).toMatchObject({ revision: 2, notify: { rebuilt: true } })
+    w.at('2026-11-19', 11, 55)
+    finish(exclude, uuid(2))
+    w.verdict = () => OK
+    w.slackFails = 0
+    slot(w)
+    await w.job().tick()
+    expect(w.replies().some(text => text.startsWith('Rebuilt: revision 2'))).toBe(false)
+    expect(w.draft()).toMatchObject({ revision: 3, state: 'published' })
+    w.at('2026-11-19', 12, 10)
+    await w.job().tick()
+    expect(w.ig.published).toHaveLength(1)
+  })
+
+  it('reads the inherited veto before offering a different preview', async () => {
+    const { w, finish } = world(wrong)
+    const review = w.reviewer
+    w.reviewer = async () => { throw new Error('Review temporarily unavailable') }
+    await w.job().tick()
+    const oldTs = w.draft().slack.ts
+    w.reviewer = review
+    during(w)
+    await w.job().tick()
+    finish(exclude)
+    w.verdict = () => OK
+    await w.job().tick()
+    expect(w.draft()).toMatchObject({ revision: 2, slack: { ts: oldTs } })
+    w.config.threads.auto.finde = false
+    w.reject()
+    slot(w)
+    const job = w.job()
+    job.s.slackReactions = async ts => ts === oldTs ? w.reactions : []
+    await job.tick()
+    expect(w.slackPosts.filter(post => !post.threadTs)).toHaveLength(1)
+    expect(w.draft()).toMatchObject({ state: 'skipped', threads: { state: 'skipped' } })
+    expect(w.ig.published).toEqual([])
+  })
+
+  it('defers an investigator rebuild while the existing vote cannot be read', async () => {
+    const { w, finish } = world(wrong)
+    w.config.auto.finde = false
+    await w.job().tick()
+    const oldTs = w.draft().slack.ts
+    during(w)
+    finish(exclude)
+    w.reject()
+    const job = w.job()
+    job.s.slackReactions = async ts => { if (ts === oldTs) throw new Error('Slack rate limited the vote read'); return [] }
+    await job.tick()
+    expect(w.draft()).toMatchObject({ revision: 1, slack: { ts: oldTs } })
+    expect(w.slackPosts.filter(post => !post.threadTs)).toHaveLength(1)
+    job.s.slackReactions = async ts => ts === oldTs ? w.reactions : []
+    slot(w)
+    await job.tick()
+    expect(w.draft()).toMatchObject({ state: 'skipped', threads: { state: 'skipped' } })
+    expect(w.threads.posts).toEqual([])
   })
 
   it('queues once and lets an all-ok investigation clear only that exact preview for both channels', async () => {
@@ -1118,7 +1201,7 @@ describe('tick: approval and publishing', () => {
     const draft = await job.createDraft('hoy', '2026-11-20', [], 1)
     w.at('2026-11-20', 17)
     job.s.slackReactions = async () => [{ name: w.ig.published.length ? 'x' : 'white_check_mark', users: [HANIF] }]
-    await job.advance(draft, new TickFailures(job.s))
+    await job.advance(draft.id, new TickFailures(job.s))
     expect(w.ig.published).toHaveLength(1)
     expect(w.alerts[0]).toMatchObject({ key: 'draft/hoy-2026-11-20', text: [
       '🚨 *The Hoy story for Nov 20 stopped part-way*: 1 of 8 frames went out. {triage}',
@@ -1190,7 +1273,7 @@ describe('Hoy link stickers', () => {
     const load = () => w.job().loadDraft(draft.id)!
     const advance = async () => {
       const fresh = w.job() // Re-read state like a new tick, not the in-memory draft.
-      await fresh.advance(load(), new TickFailures(fresh.s))
+      await fresh.advance(load().id, new TickFailures(fresh.s))
     }
     return { w, load, advance }
   }
@@ -1495,6 +1578,19 @@ describe('tick: Slack replies', () => {
 })
 
 describe('regenerate', () => {
+  it('does not save a delivery result over a newer persisted revision', async () => {
+    const w = await previewed()
+    const draft = w.draft()
+    draft.notify = { text: 'Rebuilt: revision 1', threadTs: draft.slack.ts, rebuilt: true }
+    const job = w.job()
+    writeFileSync(job.draftFile(draft.id), JSON.stringify(draft))
+    job.s.slackPost = async () => {
+      writeFileSync(job.draftFile(draft.id), JSON.stringify({ ...draft, revision: 2, notify: null }))
+    }
+    await job.tick()
+    expect(w.draft()).toMatchObject({ revision: 2, notify: null })
+  })
+
   it('clears approval, previews a new revision, and needs a new ✅', async () => {
     const w = await previewed()
     w.approve()
@@ -1561,7 +1657,30 @@ describe('regenerate', () => {
     expect(w.alerts).toEqual([])
   })
 
-  it('recovers a lost handoff from an older revision and keeps its veto on a silent rebuild', async () => {
+  it('keeps an unconfirmed Slack handoff until it can read the veto', async () => {
+    const w = new World()
+    w.config.auto.finde = true
+    const review = w.reviewer
+    w.reviewer = async () => { throw new Error('Review unavailable') }
+    const job = w.job()
+    job.s.slackShareTs = async () => null
+    await job.tick()
+    expect(w.slackPosts.filter(post => !post.threadTs)).toHaveLength(1)
+    w.reviewer = review
+    w.at('2026-11-19', 12)
+    await job.tick()
+    expect(w.ig.published).toEqual([])
+    expect(w.draft().slack.pending).toBeDefined()
+    w.reject()
+    job.s.slackShareTs = async () => '1.0'
+    w.at('2026-11-19', 12, 10)
+    await job.tick()
+    expect(w.draft()).toMatchObject({ state: 'skipped', slack: { ts: '1.0' } })
+    expect(w.ig.published).toEqual([])
+    expect(w.slackPosts.filter(post => !post.threadTs)).toHaveLength(1)
+  })
+
+  it('recovers a lost handoff before rebuilding and keeps its veto', async () => {
     const w = new World()
     w.config.auto.finde = true
     const review = w.reviewer
@@ -1927,13 +2046,22 @@ describe('Threads in the publisher tick', () => {
     expect(w.slackPosts[0]?.text).not.toContain('Threads (')
     expect(w.draft().threads?.threadTs).toBeUndefined()
     w.approve()
-    w.config.threads.enabled = true
     const services = w.services()
     services.slackReactions = async ts => ts === instagramTs ? w.reactions : []
     const job = new Job(services)
+    w.at('2026-11-19', 11, 50)
+    await job.tick()
+    const instagramApprovedAt = w.draft().approvedSeenAt
+    expect(instagramApprovedAt).toBeTruthy()
+    w.config.threads.enabled = true
     w.at('2026-11-19', 12)
     await job.tick()
+    expect(w.draft().approvedSeenAt).toBe(instagramApprovedAt)
+    expect(w.ig.published).toHaveLength(1)
     expect(w.threads.posts).toEqual([])
+    expect(w.slackPosts.filter(post => !post.threadTs).at(-1)?.text).toContain('This preview only asks about Threads.')
+    expect(w.slackPosts.filter(post => !post.threadTs).at(-1)?.text).toContain('un ✅ en este mensaje')
+    expect(w.slackPosts.find(post => post.text.startsWith('Posted:'))?.threadTs).toBe(instagramTs)
     const threadsTs = w.draft().threads?.threadTs
     expect(threadsTs).toBeTruthy()
     expect(threadsTs).not.toBe(instagramTs)
@@ -1941,6 +2069,32 @@ describe('Threads in the publisher tick', () => {
     services.slackReactions = async ts => ts === threadsTs ? w.reactions : []
     await job.tick()
     expect(w.threads.posts).toHaveLength(1)
+  })
+
+  it.each(['reject', 'unreadable'])('checks every shown preview even after a replacement (%s)', async action => {
+    const w = await threadsPreviewed()
+    const originalTs = w.draft().slack.ts
+    const job = w.job()
+    const rebuilt = await job.regenerate(w.draft().id, [uuid(1)])
+    expect(rebuilt.slack.ts).not.toBe(originalTs)
+    w.approve()
+    job.s.slackReactions = async ts => {
+      if (ts !== originalTs) return w.reactions
+      if (action === 'unreadable') throw new Error('Slack reactions.get failed: ratelimited')
+      return [{ name: 'x', users: [HANIF] }]
+    }
+    w.at('2026-11-19', 12)
+    await job.tick()
+    expect(w.ig.published).toEqual([])
+    expect(w.threads.posts).toEqual([])
+    if (action === 'reject') expect(w.draft().state).toBe('skipped')
+    else {
+      job.s.slackReactions = async ts => ts === originalTs ? [] : w.reactions
+      w.at('2026-11-19', 12, 10)
+      await job.tick()
+      expect(w.ig.published).toHaveLength(1)
+      expect(w.threads.posts).toHaveLength(1)
+    }
   })
 
   it.each(['Instagram', 'Threads'])('publishes automatic %s when the other destination cannot get a preview', async automatic => {
@@ -1961,11 +2115,11 @@ describe('Threads in the publisher tick', () => {
     expect(w.slackCalls).toEqual([])
   })
 
-  it('persists and alerts an unthreaded Threads hold before the Instagram cutoff', async () => {
+  it('alerts an unthreaded Threads hold and resolves it after the replacement publishes', async () => {
     const w = new World()
     const date = '2026-11-17'
     w.config.threads.enabled = w.config.threads.auto.hoy = w.config.auto.hoy = true
-    w.catalog = weekend().slice(0, 2).map(event => ({ ...event, startsAt: baInstant(date, 20).toISOString() }))
+    w.catalog = weekend().slice(0, 3).map(event => ({ ...event, startsAt: baInstant(date, 20).toISOString() }))
     w.at(date, 11)
     const job = w.job()
     await job.tick()
@@ -1978,6 +2132,19 @@ describe('Threads in the publisher tick', () => {
     expect(w.alerts[0]?.text).toContain('regenerate')
     expect(w.threads.posts).toEqual([])
     expect(w.slackCalls).toEqual([])
+    const key = `draft/${draft.id}/threads`
+    w.at(date, 11, 40)
+    await job.regenerate(draft.id, [uuid(1)])
+    const resolve = job.s.resolveAlert
+    job.s.resolveAlert = async (id, text) => id === key ? false : resolve(id, text)
+    await job.tick()
+    expect(w.threads.posts).toHaveLength(1)
+    expect(w.openAlerts.has(key)).toBe(true)
+    job.s.resolveAlert = resolve
+    w.at(date, 11, 50)
+    await job.tick()
+    expect(w.threads.posts).toHaveLength(1)
+    expect(w.openAlerts.has(key)).toBe(false)
   })
   it('appends the saved text to one preview and publishes both channels from that same later approval', async () => {
     const w = await threadsPreviewed()
@@ -2109,6 +2276,8 @@ describe('Threads in the publisher tick', () => {
       w.reject()
       await job.tick()
       expect(w.draft().threads?.state).toBe('skipped')
+      await expect(job.regenerate(id, [])).rejects.toThrow('a Slack reaction stopped the rebuild')
+      w.reactions = [] // A manual rebuild is possible only after Hanif removes the veto.
     } else {
       w.config.r2 = null
       w.threads.atLimit = true
