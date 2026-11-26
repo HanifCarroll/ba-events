@@ -40,6 +40,7 @@ export interface ReviewState {
   reelHoldMids?: number[]
   result?: ReviewResult
   replied?: boolean
+  /** Legacy notification reservation. Saved drafts with this flag must not broadcast a decision again. */
   homeAttempted?: boolean
   unavailableAlert?: boolean
   investigatorEnabled?: boolean

@@ -3,7 +3,7 @@ import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { runWindow } from './formats.ts'
-import { DEFAULT_REVIEW, alert, catalogSql, loadToken, mediaBin, readConfig, renderFrames, renderReel, reviewPush, toCatalogEvent, type Runner } from './runtime.ts'
+import { DEFAULT_REVIEW, alert, catalogSql, loadToken, mediaBin, readConfig, renderFrames, renderReel, slackPost, toCatalogEvent, type Runner } from './runtime.ts'
 import { reelTiming } from './reel/project.ts'
 
 describe('publisher config', () => {
@@ -64,14 +64,16 @@ describe('alert command', () => {
   })
 })
 
-it('uses the Home options interface with Slack as the decision source', async () => {
-  const body = 'Is the show at 21:00? React on the Slack preview.'
-  const runner: Runner = async argv => {
-    expect(argv.slice(1)).toEqual(['--from', 'BA Eventos', 'A BA Eventos preview needs your decision',
-      '--options', 'Publicar', 'No publicar', '--body', body])
-    return { code: 0, out: '', err: '' }
+it.each([undefined, true])('posts a reply in the preview thread (broadcast: %s)', async broadcast => {
+  const text = 'Is the show at 21:00? React on the Slack preview.'
+  const call = async (method: string, payload: Record<string, string>) => {
+    expect(method).toBe('chat.postMessage')
+    expect(payload).toEqual({ channel: 'C_APPROVALS', text, thread_ts: '1.0', unfurl_links: 'false',
+      ...(broadcast ? { reply_broadcast: 'true' } : {}),
+    })
+    return { ts: '2.0' }
   }
-  await reviewPush(body, runner)
+  expect(await slackPost(text, '1.0', 'C_APPROVALS', broadcast, call)).toEqual({ ts: '2.0' })
 })
 
 describe('catalog read', () => {
