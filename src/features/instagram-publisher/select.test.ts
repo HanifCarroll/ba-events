@@ -260,3 +260,17 @@ describe('the Reel: still running or upcoming at its Friday 18:00 deadline', () 
     expect(selectEvents([...early, ...late], 'reel', reel).map(e => e.id)).toEqual(late.map(e => e.id))
   })
 })
+
+it.each([true, false])('keeps a Friday flyer only when Saturday coverage remains possible (alternate venue: %s)', alternate => {
+  const friday = (hour: number) => baInstant('2026-11-20', hour).toISOString()
+  const saturday = (hour: number) => baInstant('2026-11-21', hour).toISOString()
+  const free = event({ venue: 'Sala F', startsAt: friday(19), isFree: true })
+  const flyer = event({ venue: 'Sala X', startsAt: friday(20), imageUrl: 'https://imagenes.passline.com/eventos/a.jpg' })
+  const plain = event({ venue: 'Sala W', startsAt: friday(21) })
+  const sharedVenue = event({ venue: 'Sala X', startsAt: saturday(19) })
+  const otherVenue = event({ venue: 'Sala Y', startsAt: alternate ? saturday(20) : friday(22) })
+  const pool = [free, flyer, plain, sharedVenue, otherVenue]
+  const expected = alternate ? [free, flyer, plain, otherVenue] : [free, plain, otherVenue, sharedVenue]
+  expect(selectEvents(pool, 'finde', finde).map(p => p.id)).toEqual(expected.map(e => e.id))
+  expect(selectEvents(pool.toReversed(), 'finde', finde).map(p => p.id)).toEqual(expected.map(e => e.id))
+})

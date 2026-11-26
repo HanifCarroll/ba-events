@@ -37,6 +37,7 @@ export interface Investigation {
   findings?: Findings
   /** Findings synthesized from the quick review, not questions returned by the investigator. */
   fallback?: boolean
+  repairAlertQueued?: boolean
   failure?: string
   failureAlerted?: boolean
   replied?: boolean

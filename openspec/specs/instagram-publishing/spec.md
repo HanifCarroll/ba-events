@@ -27,7 +27,7 @@ A post MUST show only events from the Instagram intake that are scheduled, marke
 #### Scenario: The format covers multiple days
 - **WHEN** a format spans more than one day
 - **THEN** the pick covers as many qualifying Buenos Aires start dates as possible within the format's size, free-event, and one-event-per-venue rules
-- **AND** within those constraints it prefers artwork and lists the picks in start order; dates with no qualifying event do not get a pick
+- **AND** it can prefer an event with artwork on a date already picked if the remaining slots and unused venues can still cover the other dates. It lists the picks in start order; dates with no qualifying event do not get a pick
 
 ### Requirement: Frames show each event's own artwork in the website's look
 Every event card MUST show that event's own artwork whole, uncropped, above a solid panel that holds every word, so no text depends on the artwork's colors. Before a render the job MUST download each picked event's `image_url` over https and only from the catalog's known image origins (the R2 artwork route and the listed CDN hosts and paths), following at most three redirects and requesting no address or redirect hop outside those origins, with one 10 second limit for the whole download and a 15 MB limit, and MUST use it only if it decodes as a raster image. No format may use a stock photo. Among qualifying events the pick MUST prefer events that have artwork.
@@ -150,7 +150,7 @@ After rendering, the publisher MUST review the still frames (for a Reel, its cov
 - **THEN** the job saves the result, model, and timestamps, uses the normal auto rules without running that successful review again, and reports the result in Slack only if a preview exists
 
 #### Scenario: The quick review flags events
-- **WHEN** a new review reports any event as `wrong` or `question` and Hanif has not reacted ✅ or ❌
+- **WHEN** a new review reports any event as `wrong` or `question`, an open destination still needs review, and Hanif has not vetoed the draft
 - **THEN** the job queues a detached investigation once for that revision without requiring a Slack preview, holds automatic publishing in both channels, and checks the result on subsequent ticks
 - **AND** an event-only flag can wait for the investigation without sending an approval preview unless a destination is already in manual mode
 - **AND** the investigator has at most 30 minutes and stops at least 20 minutes before the earliest applicable approval cutoff; at most two revisions of a draft may be investigated
@@ -163,10 +163,14 @@ After rendering, the publisher MUST review the still frames (for a Reel, its cov
 - **AND** if both public search endpoints fail for a query containing straight or curly double quotes, the tool retries once in the same order with the quotes removed and whitespace collapsed, provided keywords remain
 - **AND** if public search is still unavailable, the tool tells the investigator to research a known URL instead
 
+#### Scenario: The investigator false-positive release
+- **WHEN** the investigator resolves a quick-review `wrong` as `ok` with evidence for the same revision, frames hash, and saved content
+- **THEN** that flag no longer blocks automatic publishing. The post verdict and every other event must still pass. An unresolved `wrong` never auto-publishes; a repair needs a rebuilt revision that passes review
+
 #### Scenario: The investigation completes
 - **WHEN** every flagged event is resolved as `ok` with evidence, or the investigator returns `fixed`, `exclude`, or `ask` entries
 - **THEN** the job replies with one line per event if a preview exists or if the findings require one
-- **AND** all `ok` clears the event gate for that exact revision only; a `fixed` or `exclude` result without any `ask` rebuilds with cumulative exclusions and a fresh review, at most twice per draft per Buenos Aires day before the cutoff; if too few qualify it skips in the old thread
+- **AND** all `ok` clears the event gate for that exact revision only; a `fixed` or `exclude` result without any `ask` rebuilds with cumulative exclusions and a fresh review when the approval and cutoff rules allow it. It rebuilds at most twice per draft per Buenos Aires day; if too few qualify it skips in the old thread
 - **AND** a confirmed error the investigator cannot correct is excluded and the evidence and requested correction go to Hermes without blocking the rebuild
 - **AND** an investigator's `ask` or an unresolved quick-review question after the investigation limit requires ✅, even when Hermes also gets a fix request
 
@@ -176,8 +180,14 @@ After rendering, the publisher MUST review the still frames (for a Reel, its cov
 - **AND** the publisher sends confirmed errors requiring follow-up to Hermes through review-fix alerts. Without an approved or passing revision, the publication skips at cutoff or deadline under the normal rules
 - **AND** a rebuilt revision that passes review can auto-publish without a new preview or ✅
 
+#### Scenario: Only one destination has been approved
+- **WHEN** Hanif approves just one destination of a revision with a review flag
+- **THEN** the ✅ overrides review only for that destination. The publisher continues processing findings for the other open destination and sends confirmed errors on its automatic publication to Hermes through review-fix alerts
+- **AND** if only Threads has been approved, a bounded rebuild of Instagram may proceed once the original Threads send is dispatched or its publication window closes or holds. The publisher does not replace Threads content while that approved send can still start
+- **AND** a ❌ on any preview continues to veto both destinations
+
 #### Scenario: An unresolved review needs Hanif's decision
-- **WHEN** a current Slack preview has an unresolved review question, including a post-wide question or an investigator's `ask`, and Hanif has not reacted ✅ or ❌ and approval remains open
+- **WHEN** a current Slack preview has an unresolved review question, including a post-wide question or an investigator's `ask`, and at least one destination it showed still needs a decision while approval remains open and Hanif has not vetoed the draft
 - **THEN** the job sends the question and any investigation evidence to #alerts (`C0CG3EGKKP1`) regardless of `slack.channel`: it broadcasts the preview thread reply when the preview is already there, or posts a top-level message quoting the question and linking to the preview without replying in the other channel
 - **AND** for a preview in another channel, the job uses Slack's permalink when available and builds a link from the preview's channel and timestamp if the lookup fails
 - **AND** the job reserves one notice per draft before sending it and skips it if the older notification was already reserved. An explicit Slack refusal releases the reservation for a later tick; an unclear response keeps it

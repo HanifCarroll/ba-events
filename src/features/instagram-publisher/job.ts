@@ -578,8 +578,7 @@ export class Job {
     if (wrong.length && this.canRebuildAfterReview(draft, window)) {
       const decision = await reactions()
       const day = baLocal(this.s.now()).date
-      if (!anyApproval(decision) && !decision.rejected && this.s.now() < window.cutoff
-        && (draft.reviewRebuilds?.day !== day || draft.reviewRebuilds.count < MAX_REVIEW_REBUILDS)) {
+      if (this.canAutoRebuild(draft, window, decision)) {
         return this.regenerate(draft.id, wrong.map(event => event.id), null, { day, count: draft.reviewRebuilds?.day === day ? draft.reviewRebuilds.count + 1 : 1 })
       }
     }
@@ -597,6 +596,27 @@ export class Job {
   private canRebuildAfterReview(draft: Draft, window: RunWindow) {
     return ['previewing', 'previewed'].includes(draft.state) && !draft.publish && !draft.storyShare && this.s.now() < window.cutoff
       && (draft.reviewRebuilds?.day !== baLocal(this.s.now()).date || draft.reviewRebuilds.count < MAX_REVIEW_REBUILDS)
+  }
+
+  private threadsApprovalOpen(draft: Draft) {
+    const window = this.openThreadsWindow(draft)
+    return Boolean(window && this.s.now() < window.cutoff)
+  }
+
+  private investigationOverridden(draft: Draft, window: RunWindow, decision: DraftDecision) {
+    if (decision.rejected || !anyApproval(decision)) return decision.rejected
+    const instagramNeedsReview = !decision.approved && !SETTLED.includes(draft.state) && this.s.now() < window.deadline
+    const threadsNeedsReview = !decision.threadsApproved && this.threadsApprovalOpen(draft)
+    return !instagramNeedsReview && !threadsNeedsReview
+  }
+
+  private rebuildBlockedByReaction(draft: Draft, decision: DraftDecision) {
+    // An unsent Threads approval is tied to the old text. Wait for dispatch or closure rather than replacing it.
+    return decision.rejected || decision.approved || (decision.threadsApproved && this.threadsApprovalOpen(draft))
+  }
+
+  private canAutoRebuild(draft: Draft, window: RunWindow, decision: DraftDecision) {
+    return this.canRebuildAfterReview(draft, window) && !this.rebuildBlockedByReaction(draft, decision)
   }
 
   private reviewPreviewRouting(draft: Draft, result: ReviewResult | null, reviewed: boolean): 'normal' | 'investigating' | 'fix-only' {
@@ -621,6 +641,20 @@ export class Job {
 
   private queueReviewFix(draft: Draft, id: string, finding: Verdict) {
     draft.pendingReviewFixes = [...(draft.pendingReviewFixes ?? []), alerts.reviewFix(draft, id, finding)]
+  }
+
+  private queueInvestigationRepairAlert(draft: Draft, investigation: Investigation) {
+    if (investigation.repairAlertQueued) return
+    for (const [id, item] of Object.entries(investigation.findings ?? {})) {
+      if (item.verdict === 'exclude' && !item.hermes) {
+        this.queueReviewFix(draft, id, { verdict: 'wrong', field: 'investigator', reason: item.reason, question: null })
+      } else if (item.verdict === 'fixed') {
+        this.queueReviewFix(draft, id, { verdict: 'wrong', field: 'investigator', question: null,
+          reason: 'The catalog was corrected but this revision still shows the old information. Rebuild before publishing.' })
+      }
+    }
+    investigation.repairAlertQueued = true
+    this.save(draft)
   }
 
   private keepQuickReviewFindings(draft: Draft, investigation: Investigation, reason: string) {
@@ -674,13 +708,14 @@ export class Job {
     const current = this.currentThreads(draft)
     const thread = this.s.config().threads.enabled && isThreadsFormat(draft.format) && current && !retainThreads(current)
       ? threadsWindow(draft.format, draft.from) : null
-    const plan = this.investigationPlan(draft, result, runWindow(draft.format, draft.from), thread)
+    const window = runWindow(draft.format, draft.from)
+    const plan = this.investigationPlan(draft, result, window, thread)
     if (draft.review?.investigation) return { existing: true, ...draft.review.investigation }
     if (dryRun) return plan
     if (plan.why) throw new Error(plan.why)
     await this.recoverPreview(draft)
     const decision = await this.readDecision(draft)
-    if (anyApproval(decision) || decision.rejected) throw new Error('Hanif already decided on this preview.')
+    if (this.investigationOverridden(draft, window, decision)) throw new Error('Hanif already decided on this preview.')
     draft.review!.investigatorEnabled = true
     return this.queueInvestigation(draft, plan)
   }
@@ -736,7 +771,7 @@ export class Job {
     }
     if (investigation) await alertFailure(investigation)
     const decision = await reactions()
-    const overridden = anyApproval(decision) || decision.rejected
+    const overridden = this.investigationOverridden(draft, window, decision)
     if (overridden && (!investigation || (!investigation.findings && !hasCompleted(location(this.s.stateDir, investigation.request))))) {
       if (investigation) {
         await this.stopInvestigation(draft, 'reaction')
@@ -782,12 +817,8 @@ export class Job {
           return item.verdict !== 'ok' || !fixes.length
         })) {
           investigation.findings = findings
-          const needsHermes = !overridden && (!this.canRebuildAfterReview(draft, window)
-            || Object.values(findings).some(item => item.verdict === 'ask'))
-          for (const [id, item] of Object.entries(findings)) {
-            const reason = 'hermes' in item && item.hermes ? item.hermes : needsHermes && item.verdict === 'exclude' ? item.reason
-              : needsHermes && item.verdict === 'fixed' ? 'The catalog was corrected but this revision still shows the old information. Rebuild before publishing.' : null
-            if (reason) this.queueReviewFix(draft, id, { verdict: 'wrong', field: 'investigator', reason, question: null })
+          for (const [id, item] of Object.entries(findings)) if ('hermes' in item && item.hermes) {
+            this.queueReviewFix(draft, id, { verdict: 'wrong', field: 'investigator', reason: item.hermes, question: null })
           }
           this.collectCatalogFixes(draft)
           this.save(draft)
@@ -803,9 +834,11 @@ export class Job {
     const repair = exclusions.length > 0 || Object.values(findings).some(item => item.verdict === 'fixed')
     const day = baLocal(this.s.now()).date
     const count = draft.reviewRebuilds?.day === day ? draft.reviewRebuilds.count : 0
-    const canRebuild = !overridden && this.canRebuildAfterReview(draft, window)
+    const canRebuild = !overridden && this.canAutoRebuild(draft, window, decision)
     const hasAsk = request.events.some(event => this.investigationAsks(investigation, event))
     const willRebuild = repair && canRebuild && !hasAsk
+    // A split approval does not resolve the other destination's error, even if it can be rebuilt later.
+    if (!overridden && repair && (anyApproval(decision) || !willRebuild)) this.queueInvestigationRepairAlert(draft, investigation)
     if (!hadFindings && !willRebuild && !overridden && open) await this.trySendPreview(draft, window, failures)
     const ts = draft.slack.ts
     const fieldLabel = { description_display_es: 'Spanish description', description_display_en: 'English description',
@@ -830,33 +863,30 @@ export class Job {
       !willRebuild && !overridden && ((hasAsk && !investigation.failure) || hasQuestion))
     if (willRebuild) {
       const latest = await reactions()
-      if (!anyApproval(latest) && !latest.rejected && this.s.now() < window.cutoff) {
+      if (this.canAutoRebuild(draft, window, latest)) {
         return this.regenerate(draft.id, exclusions, null, { day, count: count + 1 })
       }
-      return
+      if (!this.investigationOverridden(draft, window, latest)) this.queueInvestigationRepairAlert(draft, investigation)
     }
   }
 
   private async postReviewReply(draft: Draft, ts: string, text: string, reply: ReviewState | Investigation, window: RunWindow, needsDecision: boolean) {
     const review = draft.review!
     const channel = previewChannel(draft)
-    const approvalOpen = () => {
-      const now = this.s.now()
-      const threads = this.openThreadsWindow(draft)
-      return (!SETTLED.includes(draft.state) && now < window.cutoff) || Boolean(threads && now < threads.cutoff)
-    }
+    const preview = this.previewThreads(draft).find(preview => preview.ts === ts && preview.channel === channel && preview.revision === draft.revision)
+    const approvalOpen = (decision = undecided) => (preview?.instagram && !decision.approved && !SETTLED.includes(draft.state) && this.s.now() < window.cutoff)
+      || (preview?.threads && !decision.threadsApproved && this.threadsApprovalOpen(draft))
     const broadcast = channel === runtime.SLACK_ALERTS_CHANNEL
     let notice = text
     let sendNotice = false
-    if (needsDecision && !draft.decisionBroadcastAttempted && !review.homeAttempted && approvalOpen()
-      && this.previewThreads(draft).some(preview => preview.ts === ts && preview.channel === channel && preview.revision === draft.revision)) {
+    if (needsDecision && !draft.decisionBroadcastAttempted && !review.homeAttempted && approvalOpen()) {
       if (!broadcast) {
         const permalink = await this.s.slackPermalink(ts, channel).catch(() => `https://app.slack.com/archives/${channel}/p${ts.replace('.', '')}`)
         notice = `<${permalink}|Abrí la vista previa en Slack>\n\n${text.split('\n').map(line => `> ${line}`).join('\n')}`
       }
       // Read reactions after the permalink lookup so it can't leave the decision check stale.
       const decision = await this.readDecision(draft)
-      sendNotice = !anyApproval(decision) && !decision.rejected && approvalOpen()
+      sendNotice = !decision.rejected && Boolean(approvalOpen(decision))
     }
     const markReplied = () => {
       reply.replied = true
@@ -1338,11 +1368,12 @@ export class Job {
       throw new Error(`${id} has started publishing; it can't be rebuilt`)
     }
     const now = this.s.now()
-    if (now >= runWindow(format, from).cutoff) throw new Error(`${id} is past its cutoff`)
+    const { cutoff } = runWindow(format, from)
+    if (now >= cutoff) throw new Error(`${id} is past its cutoff`)
     await this.recoverPreview(old)
     const decision = await this.readDecision(old)
-    if (decision.rejected || (reviewRebuilds && anyApproval(decision))) throw new DecisionUnknown(`${id}: a Slack reaction stopped the rebuild`)
-    if (this.s.now() >= runWindow(format, from).cutoff) throw new Error(`${id} is past its cutoff`)
+    if (decision.rejected || (reviewRebuilds && this.rebuildBlockedByReaction(old, decision))) throw new DecisionUnknown(`${id}: a Slack reaction stopped the rebuild`)
+    if (this.s.now() >= cutoff) throw new Error(`${id} is past its cutoff`)
     this.assertCurrent(old)
     const exclude = [...new Set([...old.exclude, ...excludeIds])]
     const revision = (old.revision ?? 1) + 1

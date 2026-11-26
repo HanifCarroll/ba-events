@@ -647,7 +647,7 @@ describe('tick: publisher investigation', () => {
   const during = (w: World, minute = 15) => w.at('2026-11-18', 18, minute)
   const slot = (w: World) => w.at('2026-11-19', 12)
 
-  it('verifies a flagged fact automatically without sending a decision preview', async () => {
+  it('releases a quick-review false positive with investigator evidence for the same revision and no preview', async () => {
     const { w, runs, finish } = world(wrong)
     await w.job().tick()
     expect(runs).toHaveLength(1)
@@ -814,6 +814,70 @@ describe('tick: publisher investigation', () => {
     slot(w)
     await w.job().tick()
     expect(w.draft()).toMatchObject({ state: 'published', threads: { state: 'published' } })
+  })
+
+  it.each(['before findings', 'while investigating', 'during the findings reply'] as const)('Threads-only approval %s still routes a confirmed Instagram fix to Hermes', async approval => {
+    const { w, runs, finish } = world(wrong)
+    w.config.threads.auto.finde = false
+    w.at('2026-11-19', 11, 35)
+    await w.job().tick()
+    const original = w.draft()
+    expect(original.slack.previews).toEqual([expect.objectContaining({ instagram: false, threads: true })])
+    if (approval !== 'during the findings reply') w.approve()
+    if (approval === 'while investigating') {
+      w.at('2026-11-19', 11, 45)
+      await w.job().tick()
+      expect(w.draft().review?.investigation?.findings).toBeUndefined()
+    }
+    w.at('2026-11-19', 11, 50)
+    const name = 'Montaje de teatro físico'
+    const receipt = { operation: uuid(20), id: flaggedId, field: 'name', from: w.catalog[0]!.name, to: name,
+      allOccurrences: true, at: w.clock.toISOString(), evidence: 'Flyer: Montaje de teatro físico.', changes: [{ id: flaggedId, from: w.catalog[0]!.name, to: name }] }
+    w.catalog[0]!.name = name
+    w.verdict = () => OK
+    writeFileSync(join(runs[0]!.dir, 'fixes.jsonl'), `${JSON.stringify({ state: 'applied', receipt })}\n`)
+    finish({ verdict: 'fixed', fixes: [receipt.operation] })
+    const job = w.job()
+    if (approval === 'during the findings reply') {
+      const post = job.s.slackPost
+      job.s.slackPost = async (...args) => {
+        const reply = await post(...args)
+        if (args[0].startsWith('Revisión: investigación')) w.approve()
+        return reply
+      }
+    }
+    await job.tick()
+    expect(w.alerts).toContainEqual(expect.objectContaining({ key: `review-fix/${flaggedId}`, text: expect.stringContaining('Rebuild before publishing.') }))
+    expect(w.draft()).toMatchObject({ revision: 1, threads: { text: original.threads!.text } })
+
+    slot(w)
+    await w.job().tick()
+    expect(w.draft()).toMatchObject({ revision: 1, state: 'previewed', threads: { state: 'published', text: original.threads!.text } })
+    expect(w.ig.published).toEqual([])
+
+    w.at('2026-11-19', 12, 10)
+    await w.job().tick()
+    expect(w.draft()).toMatchObject({ revision: 2, state: 'published', catalogFixes: [receipt],
+      threads: { revision: 1, state: 'published', text: original.threads!.text, threadTs: original.slack.ts } })
+    expect(w.draft().events.find(event => event.id === flaggedId)?.title).toBe(name)
+    expect(w.threads.posts).toHaveLength(1)
+    expect(w.slackCalls.filter(call => call.method === 'files.completeUploadExternal')).toHaveLength(1)
+  })
+
+  it('Instagram-only approval does not silence a confirmed error on automatic Threads', async () => {
+    const { w, finish } = world(wrong)
+    w.config.auto.finde = false
+    await w.job().tick()
+    expect(w.draft().slack.previews).toEqual([expect.objectContaining({ instagram: true, threads: false })])
+    w.approve()
+    during(w)
+    finish(exclude)
+    await w.job().tick()
+    expect(w.alerts).toContainEqual(expect.objectContaining({ key: `review-fix/${flaggedId}`, text: expect.stringContaining(exclude.reason) }))
+    slot(w)
+    await w.job().tick()
+    expect(w.draft()).toMatchObject({ revision: 1, state: 'published', threads: { state: 'waiting' } })
+    expect(w.threads.posts).toEqual([])
   })
 
   it.each([false, true])('excludes a settled event and applies the minimum (below minimum: %s)', async tooFew => {

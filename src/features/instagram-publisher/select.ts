@@ -193,8 +193,9 @@ function pick(pool: CatalogEvent[], spec: FormatSpec): CatalogEvent[] {
   }
   while (picked.length < spec.max) {
     const missing = remainingCoverage()
-    const best = ranked(candidates.filter(({ venue, date }) => !venues.has(venue) && (!missing || !dates.has(date))))
-      .find(candidate => !missing || remainingCoverage(candidate) >= missing - 1)
+    // A pick on a covered date is fine if the remaining slots and venues can still cover the missing dates.
+    const best = ranked(candidates.filter(({ venue }) => !venues.has(venue)))
+      .find(candidate => !missing || remainingCoverage(candidate) + Number(!dates.has(candidate.date)) >= missing)
     if (!best) break
     take(best)
   }
