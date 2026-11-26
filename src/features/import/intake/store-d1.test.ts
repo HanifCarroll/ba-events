@@ -303,7 +303,7 @@ describe.skipIf(bun)('the operator flow on D1', () => {
     id: candidate, expected_revision: 0, intent: 'create', target_event_id: null, name: 'Synthetic Jazz', date: shiftDay(baToday(), 5), time: '21:00',
     venue_name: 'Synthetic Venue', venue_id: venueId, description_es: null, description_en: null, categories: ['music'], status: 'scheduled',
     price_kind: 'unknown', price_ars: null, price_note: null, ticket_url: null, artwork_media_id: null, artwork_note: 'No suitable retained image', issues: [], notes: '',
-    evidence: [{ observation_id: post, fields: ['name', 'date', 'time', 'venue'], excerpt: 'Synthetic Jazz', media_id: null }], ...fields })
+    evidence: [{ observation_id: post, fields: ['name', 'date', 'time', 'venue'], excerpt: 'Synthetic Jazz 20/11 21:00 Synthetic Venue', media_id: null }], ...fields })
   const publishers = {
     embed: async () => ({ embedding: Array(1536).fill(0.2), searchDocument: 'Synthetic Jazz | Synthetic Venue' }),
     presentation: async () => ({ description_display_es: null, description_display_en: null, description_summary_es: null, description_summary_en: null }),
@@ -435,7 +435,278 @@ describe.skipIf(bun)('the operator flow on D1', () => {
     const obs = { observation_id: id(), fields: ['name'], excerpt: 'Synthetic Jazz', media_id: null }
     const evidence = [obs, obs, { kind: 'official_page', fields: ['ticket_url'], excerpt: 'Entradas disponibles', url: 'https://example.org/show' }]
     expect(await fails(submitCandidateEffect(store, candidateInput(id(), obs.observation_id, null, { evidence }))))
-      .toBe('Invalid candidate: evidence[2].fields[0]: expected one of name, date, time, venue, price, status, description, ticket; got "ticket_url"')
+      .toBe('Invalid candidate: evidence[2].fields[0]: expected one of name, date, time, venue, price, status, description, ticket, organizer, performers, offers_valid_from, doors_time; got "ticket_url"')
+  })
+
+  it('publishes credited people, then adds next-day doors to an existing event without inventing a start', async () => {
+    await source()
+    const venueId = await venue()
+    const ticket = 'https://tickets.example/first'
+    const excerpt = `Synthetic Jazz — organiza Nube, toca Trío Sol. Entradas a la venta desde el 20/11 a las 15:00: ${ticket}\nPuerta: 00.30 hs.`
+    const runId = (await run(store.reserveCollection)).id
+    const post = await observation(runId, excerpt)
+    const candidate = id(), day = shiftDay(baToday(), 5), doorsDate = shiftDay(day, 1)
+    const evidence = (fields: string[]) => [{ observation_id: post, fields: ['name', 'date', 'venue', ...fields], excerpt, media_id: null }]
+    const base = { date: day, time: null }
+    const validFrom = '2026-11-20T18:00:00.000Z'
+    await run(submitCandidateEffect(store, candidateInput(candidate, post, venueId, { ...base, organizer: { name: 'Nube' },
+      performers: [{ name: 'Trío Sol' }], offers_valid_from: validFrom,
+      evidence: evidence(['organizer', 'performers', 'offers_valid_from']) })))
+    const create = await run(previewCandidateEffect(store, candidate))
+    expect(create).toMatchObject({ action: 'create', reasons: [] })
+    await run(commitPlanEffect(store, create.id, publishers))
+
+    await run(submitCandidateEffect(store, candidateInput(candidate, post, venueId, { ...base, expected_revision: 1, intent: 'update',
+      target_event_id: create.event_id, doors_time: '00:30', doors_date: doorsDate, ticket_url: ticket, evidence: evidence(['doors_time', 'ticket']) })))
+    const correction = await run(previewCandidateEffect(store, candidate))
+    expect(correction).toMatchObject({ action: 'update', reasons: [], event_id: create.event_id })
+    await run(commitPlanEffect(store, correction.id, publishers))
+    await db.prepare('UPDATE events SET doors_at = NULL, organizer_name = NULL WHERE id = ?').bind(create.event_id).run()
+    expect(await db.prepare('SELECT starts_at, time_tba, doors_at, organizer_name, performers, offers_valid_from, ticket_url FROM events WHERE id = ?').bind(create.event_id).first())
+      .toEqual({ starts_at: `${day}T03:00:00.000Z`, time_tba: 1, doors_at: `${doorsDate}T03:30:00.000Z`, organizer_name: 'Nube',
+        performers: JSON.stringify([{ name: 'Trío Sol' }]), offers_valid_from: validFrom, ticket_url: ticket })
+
+    const newDate = shiftDay(day, 7), newTicket = 'https://tickets.example/replacement'
+    const updateExcerpt = `Synthetic Jazz, reprogramado al ${newDate}. Nueva reserva: ${newTicket}`
+    const updatePost = await observation(runId, updateExcerpt, 'synthetic-reschedule')
+    await run(submitCandidateEffect(store, candidateInput(candidate, updatePost, venueId, { ...base, date: newDate, expected_revision: 2,
+      intent: 'update', target_event_id: create.event_id, ticket_url: newTicket,
+      evidence: [{ observation_id: updatePost, fields: ['name', 'date', 'venue', 'ticket'], excerpt: updateExcerpt, media_id: null }] })))
+    const reschedule = await run(previewCandidateEffect(store, candidate))
+    expect(reschedule).toMatchObject({ action: 'update', reasons: [] })
+    await run(commitPlanEffect(store, reschedule.id, publishers))
+    expect(await db.prepare('SELECT starts_at, ticket_url, offers_valid_from, doors_at, organizer_name FROM events WHERE id = ?').bind(create.event_id).first())
+      .toEqual({ starts_at: `${newDate}T03:00:00.000Z`, ticket_url: newTicket, offers_valid_from: null, doors_at: null, organizer_name: 'Nube' })
+  })
+
+  it.each(['20:00', '21:00', '22:00'])('checks doors at %s against a kept verified start and end', async doors_time => {
+    await source()
+    const runId = (await run(store.reserveCollection)).id
+    const venueId = await venue(), candidate = id(), event = id(), date = shiftDay(baToday(), 5)
+    const starts_at = new Date(`${date}T21:00:37-03:00`).toISOString()
+    const ends_at = new Date(`${date}T23:30:00-03:00`).toISOString()
+    await db.prepare(`INSERT INTO events (id, name, starts_at, ends_at, venue_id, source, categories, search_document) VALUES
+      (?, 'Synthetic Jazz', ?, ?, ?, 'instagram', '["music"]', 'Existing search')`).bind(event, starts_at, ends_at, venueId).run()
+    const excerpt = `Synthetic Jazz — Puerta ${doors_time}`
+    const post = await observation(runId, excerpt)
+    await run(submitCandidateEffect(store, candidateInput(candidate, post, venueId, { intent: 'update', target_event_id: event, date, time: null,
+      doors_time, evidence: [{ observation_id: post, fields: ['name', 'date', 'venue', 'doors_time'], excerpt, media_id: null }] })))
+    const preview = await run(previewCandidateEffect(store, candidate))
+    if (doors_time === '22:00') {
+      expect(preview).toMatchObject({ action: 'held', reasons: ['Doors cannot follow the known start time'] })
+    } else if (doors_time === '21:00') {
+      expect(preview).toMatchObject({ action: 'held', reasons: ['Equal doors and start times need two separate clocks in the doors excerpt'] })
+    } else {
+      expect(preview).toMatchObject({ action: 'update', payload: { starts_at, ends_at, time_tba: false } })
+      const noProvider = async () => { throw new Error('A doors-only update must not call a provider') }
+      await run(commitPlanEffect(store, preview.id, { embed: noProvider, presentation: noProvider }))
+    }
+    expect(await db.prepare('SELECT starts_at, ends_at, time_tba, doors_at FROM events WHERE id = ?').bind(event).first()).toEqual({
+      starts_at, ends_at, time_tba: 0, doors_at: doors_time === '20:00' ? new Date(`${date}T20:00:00-03:00`).toISOString() : null,
+    })
+  })
+
+  it.each([false, true])('checks a new start against retained doors (two clocks quoted: %s)', async both => {
+    await source()
+    const venueId = await venue(), candidate = id(), event = id(), date = shiftDay(baToday(), 5)
+    const oldStart = new Date(`${date}T00:00:00-03:00`).toISOString()
+    const doors = new Date(`${date}T21:00:00-03:00`).toISOString()
+    await db.prepare(`INSERT INTO events (id, name, starts_at, time_tba, doors_at, venue_id, source, categories)
+      VALUES (?, 'Synthetic Jazz', ?, 1, ?, ?, 'instagram', '["music"]')`).bind(event, oldStart, doors, venueId).run()
+    const excerpt = both ? 'Synthetic Jazz — Puertas 21 hs. Show 21 hs.' : 'Synthetic Jazz — Puertas 21 hs.'
+    const post = await observation((await run(store.reserveCollection)).id, excerpt)
+    await run(submitCandidateEffect(store, candidateInput(candidate, post, venueId, { intent: 'update', target_event_id: event, date,
+      evidence: [{ observation_id: post, fields: ['name', 'date', 'time', 'venue'], excerpt, media_id: null }] })))
+    const preview = await run(previewCandidateEffect(store, candidate))
+    if (both) {
+      expect(preview).toMatchObject({ action: 'update', reasons: [] })
+      await run(commitPlanEffect(store, preview.id, publishers))
+    } else {
+      const reason = 'Equal retained doors and start times need two separate clocks in one excerpt'
+      expect(preview).toMatchObject({ action: 'held', reasons: [reason] })
+      const bypass = await run(store.insertPlan({ candidate_id: candidate, revision: 1, action: 'update', event_id: event,
+        expected_event_updated_at: (await db.prepare('SELECT updated_at FROM events WHERE id = ?').bind(event).first<string>('updated_at'))!,
+        payload: preview.payload, artwork_media_id: null, artwork_note: 'No retained image', evidence: preview.evidence, reasons: [] }))
+      expect(await fails(store.commitPlan(bypass.id))).toContain(reason)
+    }
+    expect(await db.prepare('SELECT starts_at, time_tba, doors_at FROM events WHERE id = ?').bind(event).first())
+      .toEqual({ starts_at: both ? doors : oldStart, time_tba: both ? 0 : 1, doors_at: doors })
+  })
+
+  it('refuses a prepared ticket replacement without direct ticket evidence and keeps the protected opening time', async () => {
+    await source()
+    const runId = (await run(store.reserveCollection)).id
+    const venueId = await venue(), candidate = id(), date = shiftDay(baToday(), 5)
+    const ticket_url = 'https://tickets.example/original', offers_valid_from = '2026-11-20T18:00:00.000Z'
+    const excerpt = `Synthetic Jazz. Entradas a la venta desde el 20/11 a las 15:00: ${ticket_url}`
+    const post = await observation(runId, excerpt)
+    const evidence = [{ observation_id: post, fields: ['name', 'date', 'venue', 'ticket', 'offers_valid_from'], excerpt, media_id: null }]
+    await run(submitCandidateEffect(store, candidateInput(candidate, post, venueId, { date, time: null, ticket_url, offers_valid_from, evidence })))
+    const create = await run(previewCandidateEffect(store, candidate))
+    await run(commitPlanEffect(store, create.id, publishers))
+    await run(submitCandidateEffect(store, candidateInput(candidate, post, venueId, { date, time: null, expected_revision: 1,
+      intent: 'update', target_event_id: create.event_id, evidence: [{ ...evidence[0], fields: ['name', 'date', 'venue'] }] })))
+    const update = await run(previewCandidateEffect(store, candidate))
+    expect(update.action).toBe('update')
+    await run(store.preparePlan(update.id, { ...update.payload, ticket_url: 'https://tickets.example/unsupported' }))
+    expect(await fails(store.commitPlan(update.id))).toContain('Correction field lacks current direct evidence: ticket')
+    expect(await db.prepare('SELECT ticket_url, offers_valid_from FROM events WHERE id = ?').bind(create.event_id).first()).toEqual({ ticket_url, offers_valid_from })
+  })
+
+  it.each([
+    ['http://www.tickets.example/replacement/?utm_source=instagram&fbclid=synthetic', 'https://tickets.example/replacement', true, null],
+    ['https://tickets.example/original', 'https://tickets.example/replacement', false, null],
+    ['https://tickets.example/replacement-extra', 'https://tickets.example/replacement', false, null],
+    ['https://tickets.example/replacement-extra', 'https://tickets.example/replacement', false, 'https://tickets.example/replacement'],
+    ['https://tickets.example/replacement?id=2', 'https://tickets.example/replacement?id=1', false, null],
+    ['https://tickets.example/replacement', 'https://tickets.example/original', false, null],
+  ])('requires the exact destination in %s when writing %s (%s, quote %s)', async (citedUrl, proposedUrl, supported, ticketQuote) => {
+    await source()
+    const runId = (await run(store.reserveCollection)).id
+    const venueId = await venue(), candidate = id(), event = id(), date = shiftDay(baToday(), 5)
+    const starts_at = new Date(`${date}T00:00:00-03:00`).toISOString()
+    const ticket_url = 'https://tickets.example/original', offers_valid_from = '2026-11-20T18:00:00.000Z'
+    const replacementOpening = '2026-11-21T18:00:00.000Z'
+    await db.prepare(`INSERT INTO events (id, name, venue_id, starts_at, time_tba, ticket_url, offers_valid_from, source, categories)
+      VALUES (?, 'Synthetic Jazz', ?, ?, 1, ?, ?, 'instagram', '["music"]')`).bind(event, venueId, starts_at, ticket_url, offers_valid_from).run()
+    const excerpt = `Synthetic Jazz. Entradas a la venta desde el 21/11 a las 15:00: ${citedUrl}.`
+    const post = await observation(runId, excerpt)
+    const evidence = [
+      { observation_id: post, fields: ['name', 'date', 'venue', 'offers_valid_from'], excerpt, media_id: null },
+      { observation_id: post, fields: ['ticket'], excerpt: ticketQuote ?? excerpt, media_id: null },
+    ]
+    await run(submitCandidateEffect(store, candidateInput(candidate, post, venueId, { date, time: null, intent: 'update',
+      target_event_id: event, ticket_url: proposedUrl, offers_valid_from: replacementOpening, evidence })))
+    const preview = await run(previewCandidateEffect(store, candidate))
+    if (supported) {
+      expect(preview.action).toBe('update')
+      await run(commitPlanEffect(store, preview.id, publishers))
+    } else {
+      expect(preview.action).toBe('held')
+      // Even a prepared update with a direct ticket tag cannot bypass the destination check.
+      const bypass = await run(store.insertPlan({ candidate_id: candidate, revision: 1, action: 'update', event_id: event,
+        expected_event_updated_at: (await db.prepare('SELECT updated_at FROM events WHERE id = ?').bind(event).first<string>('updated_at'))!,
+        payload: { ...preview.payload, starts_at }, artwork_media_id: null, artwork_note: 'No retained image', evidence: preview.evidence, reasons: [] }))
+      expect(await fails(store.commitPlan(bypass.id))).toContain('Correction field lacks current direct evidence: ticket')
+    }
+    expect(await db.prepare('SELECT ticket_url, offers_valid_from FROM events WHERE id = ?').bind(event).first())
+      .toEqual(supported ? { ticket_url: proposedUrl, offers_valid_from: replacementOpening } : { ticket_url, offers_valid_from })
+  })
+
+  it.each([['www.passline.com/evento/sintetico', 'https://passline.com/evento/sintetico'],
+    ['passline.com/evento/sintetico', 'https://passline.com/evento/sintetico'], ['link en bio', null]])(
+    'creates from a caption with %s and stores %s', async (text, ticket_url) => {
+      await source()
+      const venueId = await venue(), candidate = id()
+      const excerpt = `Synthetic Jazz. Entradas: ${text}`
+      const post = await observation((await run(store.reserveCollection)).id, excerpt)
+      await run(submitCandidateEffect(store, candidateInput(candidate, post, venueId, { time: null, ticket_url, evidence: [
+        { observation_id: post, fields: ['name', 'date', 'venue', ...(ticket_url ? ['ticket'] : [])], excerpt, media_id: null },
+      ] })))
+      const preview = await run(previewCandidateEffect(store, candidate))
+      expect(preview).toMatchObject({ action: 'create', reasons: [] })
+      await run(commitPlanEffect(store, preview.id, publishers))
+      expect(await db.prepare('SELECT ticket_url FROM events WHERE id = ?').bind(preview.event_id).first()).toEqual({ ticket_url })
+    })
+
+  it.each([true, false])('requires a verified official ticket page to match the create destination (matches: %s)', async matches => {
+    await source()
+    const venueId = await venue(), candidate = id()
+    const excerpt = 'Synthetic Jazz en Synthetic Venue', pageExcerpt = 'Reservas para Synthetic Jazz'
+    const post = await observation((await run(store.reserveCollection)).id, excerpt)
+    const url = 'https://passline.com/evento/sintetico'
+    const ticket_url = matches ? 'https://www.passline.com/evento/sintetico/' : `${url}-otro`
+    await run(submitCandidateEffect(store, candidateInput(candidate, post, venueId, { time: null, ticket_url, evidence: [
+      { observation_id: post, fields: ['name', 'date', 'venue'], excerpt, media_id: null },
+      { kind: 'official_page', url, fields: ['ticket'], excerpt: pageExcerpt },
+    ] })))
+    const readPage = async () => ({ visible: pageExcerpt, h1: 'Synthetic Jazz', title: null })
+    const preview = await run(previewCandidateEffect(store, candidate, new Date(), readPage))
+    if (matches) {
+      expect(preview).toMatchObject({ action: 'create', reasons: [] })
+      const unverifiedPage = async () => ({ visible: 'Otras reservas', h1: 'Synthetic Jazz', title: null })
+      expect(await fails(commitPlanEffect(store, preview.id, { ...publishers, readPage: unverifiedPage }))).toContain("must be an excerpt of the page's visible text")
+      await run(commitPlanEffect(store, preview.id, { ...publishers, readPage }))
+      expect(await db.prepare('SELECT ticket_url FROM events WHERE id = ?').bind(preview.event_id).first()).toEqual({ ticket_url })
+    } else {
+      expect(preview).toMatchObject({ action: 'held', reasons: ['Ticket evidence must quote the complete destination URL'] })
+    }
+  })
+
+  it.each([
+    { scenario: 'rejects a tag-only unrelated host', ticketUrl: 'https://unrelated.example/sintetico', allowed: false },
+    { scenario: 'accepts a quoted whole seller link', ticketUrl: 'https://passline.com/evento/sintetico', quote: 'www.passline.com/evento/sintetico', allowed: true },
+    { scenario: 'accepts an unquoted known seller', ticketUrl: 'https://passline.com/evento/sintetico', allowed: true },
+    { scenario: 'accepts an unquoted venue site', ticketUrl: 'https://sala.example.org/sintetico', website: 'https://www.sala.example.org', allowed: true },
+  ])('$scenario in preview and commit', async ({ ticketUrl: ticket_url, quote = 'link en bio', website, allowed }) => {
+    await source()
+    const venueId = await venue(), candidate = id()
+    if (website) await db.prepare('UPDATE venues SET website = ? WHERE id = ?').bind(website, venueId).run()
+    const showExcerpt = 'Synthetic Jazz en Synthetic Venue', pageExcerpt = 'Reservas para Synthetic Jazz'
+    const post = await observation((await run(store.reserveCollection)).id, `${showExcerpt}\n${quote}`)
+    await run(submitCandidateEffect(store, candidateInput(candidate, post, venueId, { time: null, ticket_url, evidence: [
+      { observation_id: post, fields: ['name', 'date', 'venue'], excerpt: showExcerpt, media_id: null },
+      { observation_id: post, fields: ['ticket'], excerpt: quote, media_id: null },
+      { kind: 'official_page', url: ticket_url, fields: ['ticket'], excerpt: pageExcerpt },
+    ] })))
+    const readPage = vi.fn(async () => ({ visible: pageExcerpt, h1: 'Synthetic Jazz', title: null }))
+    const preview = await run(previewCandidateEffect(store, candidate, new Date(), readPage))
+    if (allowed) {
+      expect(preview).toMatchObject({ action: 'create', reasons: [] })
+      await run(commitPlanEffect(store, preview.id, { ...publishers, readPage }))
+      expect(readPage).toHaveBeenCalledTimes(2)
+      expect(await db.prepare('SELECT ticket_url FROM events WHERE id = ?').bind(preview.event_id).first()).toEqual({ ticket_url })
+    } else {
+      const reason = "Official page must be on the venue's website"
+      expect.soft(preview).toMatchObject({ action: 'held', reasons: [expect.stringContaining(reason)] })
+      // Commit must reject a prepared plan independently of the preview outcome.
+      const bypass = await run(store.insertPlan({ candidate_id: candidate, revision: 1, action: 'create', event_id: preview.event_id,
+        expected_event_updated_at: null, payload: preview.payload, artwork_media_id: null, evidence: preview.evidence, reasons: [] }))
+      await expect(run(commitPlanEffect(store, bypass.id, { ...publishers, readPage }))).rejects.toThrow(reason)
+      expect(readPage).not.toHaveBeenCalled()
+      expect(await db.prepare('SELECT id FROM events WHERE id = ?').bind(preview.event_id).first()).toBeNull()
+    }
+  })
+
+  it('holds a new ticket link when its caption excerpt cuts the URL short', async () => {
+    await source()
+    const venueId = await venue(), candidate = id()
+    const ticket_url = 'https://tickets.example/replacement'
+    const caption = `Synthetic Jazz. Entradas: ${ticket_url}-extra`
+    const post = await observation((await run(store.reserveCollection)).id, caption)
+    await run(submitCandidateEffect(store, candidateInput(candidate, post, venueId, { time: null, ticket_url, evidence: [
+      { observation_id: post, fields: ['name', 'date', 'venue'], excerpt: caption, media_id: null },
+      { observation_id: post, fields: ['ticket'], excerpt: ticket_url, media_id: null },
+    ] })))
+    expect(await run(previewCandidateEffect(store, candidate))).toMatchObject({ action: 'held',
+      reasons: ['Ticket evidence must quote the complete destination URL'] })
+  })
+
+  it('preserves the sale opening when rewriting only the www prefix on a ticket', async () => {
+    await source()
+    const venueId = await venue(), candidate = id(), event = id(), date = shiftDay(baToday(), 5)
+    const startsAt = new Date(`${date}T21:00:00-03:00`).toISOString()
+    const post = await observation((await run(store.reserveCollection)).id)
+    const opening = '2026-11-20T18:00:00.000Z'
+    await db.prepare(`INSERT INTO events (id, name, starts_at, venue_id, source, categories, ticket_url, offers_valid_from)
+      VALUES (?, 'Synthetic Jazz', ?, ?, 'instagram', '["music"]', 'https://tickets.example/original', ?)`).bind(event, startsAt, venueId, opening).run()
+    const input = candidateInput(candidate, post, venueId, { intent: 'update', target_event_id: event, date, ticket_url: 'https://www.tickets.example/original' })
+    await run(submitCandidateEffect(store, { ...input, evidence: [{ ...input.evidence[0], fields: [...input.evidence[0].fields, 'ticket'] }] }))
+    const preview = await run(previewCandidateEffect(store, candidate))
+    expect(preview.action).toBe('update')
+    await run(commitPlanEffect(store, preview.id, publishers))
+    expect(await db.prepare('SELECT offers_valid_from FROM events WHERE id = ?').bind(event).first('offers_valid_from')).toBe(opening)
+  })
+
+  it('holds a venue credit using the looked-up venue name even when the candidate omits it', async () => {
+    await source()
+    const venueId = await venue(), candidate = id()
+    const excerpt = 'Synthetic Jazz — presenta Synthetic Venue'
+    const post = await observation((await run(store.reserveCollection)).id, excerpt)
+    await run(submitCandidateEffect(store, candidateInput(candidate, post, venueId, { venue_name: null, time: null,
+      organizer: { name: 'Synthetic Venue' }, evidence: [{ observation_id: post, fields: ['name', 'date', 'venue', 'organizer'], excerpt, media_id: null }] })))
+    expect(await run(previewCandidateEffect(store, candidate))).toMatchObject({ action: 'held',
+      reasons: ['A ticket seller or the venue itself cannot be credited as organizer: Synthetic Venue'] })
   })
 
   it('refuses a candidate whose venue_id or target_event_id is not in the catalog, naming the ID, and stores nothing', async () => {

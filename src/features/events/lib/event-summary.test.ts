@@ -135,7 +135,7 @@ describe('buildEventJsonLd', () => {
 		{ basis: 'a zero price', price: 0, is_free: false, expectedPrice: 0 },
 		{ basis: 'a paid price', price: 9000, is_free: false, expectedPrice: 9000 }
 	])('keeps the price without a ticket link when admission is known from $basis', ({ price, is_free, expectedPrice }) => {
-		const jsonLd = jsonLdFor({ price, is_free, ticket_url: null });
+		const jsonLd = jsonLdFor({ price, is_free, ticket_url: null, offers_valid_from: '2026-08-12T19:00:00.000Z' });
 		expect(jsonLd.url).toBe('https://baeventos.com/events/evt-1');
 		expect(jsonLd.isAccessibleForFree).toBe(expectedPrice === 0 ? true : undefined);
 		expect(jsonLd.offers).toStrictEqual({ '@type': 'Offer', price: expectedPrice, priceCurrency: 'ARS' });
@@ -151,6 +151,26 @@ describe('buildEventJsonLd', () => {
 		const jsonLd = jsonLdFor({ source: 'ba-tourism' });
 		expect(jsonLd.offers).toStrictEqual({ '@type': 'Offer', price: 0, priceCurrency: 'ARS' });
 		expect(jsonLdFor({ source: 'ba-tourism', is_free: false }).offers).toBeUndefined();
+	});
+
+	it('uses credited organizer, performers, sale date, and doors without inventing a start', () => {
+		const facts = {
+			description_es: 'Solista Ana Nube, acompañada por Trío Sol.',
+			organizer_name: 'Asociación Sur', organizer_url: 'https://asociacion.example/',
+			performers: [{ name: 'Ana Nube' }, { name: 'Trío Sol', url: 'https://trio.example/' }],
+			offers_valid_from: '2026-08-12T19:00:00.000Z', doors_at: '2026-08-16T03:30:00.000Z',
+			time_tba: true, location_hidden: true,
+		};
+		const jsonLd = jsonLdFor(facts);
+		expect(jsonLd).toMatchObject({
+			startDate: '2026-08-15', doorTime: facts.doors_at,
+			organizer: { '@type': 'Organization', name: facts.organizer_name, url: facts.organizer_url },
+			performer: [{ '@type': 'Person', name: 'Ana Nube' }, { '@type': 'PerformingGroup', ...facts.performers[1] }],
+			offers: { validFrom: facts.offers_valid_from },
+		});
+		expect(jsonLdFor({ ...facts, ticket_url: null }).offers).toStrictEqual({ '@type': 'Offer', price: 0, priceCurrency: 'ARS' });
+		expect(jsonLdFor().offers).not.toHaveProperty('validFrom');
+		expect(jsonLdFor()).not.toHaveProperty('doorTime');
 	});
 
 	it('preserves explicit hours on Luma events spanning multiple days', () => {

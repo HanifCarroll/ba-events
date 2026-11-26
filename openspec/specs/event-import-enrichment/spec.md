@@ -36,6 +36,38 @@ Each source SHALL use its registered transformer and enrichment capabilities. So
 - **AND** a venue named only after a barrio is identified by its street address: the event must carry its own numbered address, a same-name venue is reused only at the same street and number, and otherwise a new venue is created; an event without its own numbered address gets no venue, and a catalog venue's address is never evidence for another event. Barrios named after a park ("Parque Chacabuco") are not area names
 - **AND** batch settlement keys every input by name plus normalized street and number, and importers send one input per event, so events in one import never share a venue by name alone
 
+### Requirement: The catalog stores source-backed people and ticket-sale dates
+The catalog SHALL keep source-stated organizer names and URLs, performer lineups, and ticket-sale opening times as separate event fields. Missing or unstated facts SHALL remain unknown. The scope classifier and search document SHALL NOT depend on these fields.
+
+#### Scenario: A source names the organizer
+- **WHEN** Luma identifies an event host or Meetup identifies its group
+- **THEN** the catalog stores the source-backed identity and any associated public profile URL without treating the venue, promoter's social account, or ticket seller as evidence by itself
+- **AND** BA Tourism import, enrichment, and description backfill do not assign an organizer on BA Tourism rows
+
+#### Scenario: Intake sees a credit or a ticket-sale opening time
+- **WHEN** an Instagram intake candidate supplies an organizer, a lineup, or a ticket-sale opening time
+- **THEN** the fact needs a corresponding retained source excerpt or image, and accepted explicit intake facts are protected against later importer or enrichment writes
+- **AND** the operator identifies credits for this occurrence, not posting accounts, sellers, sponsors, or after-party artists. Code checks complete caption lines, names as quoted ignoring accents and case, and excludes the selected venue and known seller names (ignoring spaces and punctuation for sellers), not role wording
+- **AND** a sale opening needs its quoted calendar date and clock. A new event's ticket URL needs a complete cited URL token (including `www.` or known seller links without a scheme) or a verified official page at that destination. If there is no link to quote, the event may publish without a ticket URL. Changing the destination or opening of an existing event requires current direct ticket evidence. Matching and change detection use the same normalization for scheme, leading `www.`, trailing slash, and tracking parameters. An unsupported correction changes neither field
+- **AND** a proposed ticket host qualifies for official-page verification via a post only when the `ticket` excerpt quotes the full destination. A tag or `link en bio` alone does not establish the host, and independently allowed hosts still qualify
+- **AND** an omitted field leaves the prior fact untouched unless a verified door date or ticket destination has changed
+
+#### Scenario: An Instagram flyer gives only doors
+- **WHEN** the flyer explicitly states a door time but no performance start
+- **THEN** the operator distinguishes doors from the show start; intake checks complete caption lines for the quoted door clock and requires a submitted start to match its own quote. A quote must include the complete clock token from the retained caption, including AM/PM when present. Equal doors and start clocks require two separate clock tokens in one excerpt, including when the correction keeps a previously stored clock. A doors clock before 06:00 requires an explicit local `doors_date`
+- **AND** the door clock does not become the start; when an update adds doors to the same date with no new start, it keeps the existing verified start and end and checks doors against that start
+- **AND** a reschedule to another date clears stale doors when the revision has no new door evidence
+
+#### Scenario: An ordinary official page states doors and show time
+- **WHEN** a candidate cites an official-page excerpt for `doors_time`
+- **THEN** preview and commit require the same complete, standalone dated doors/show line as for the start time and verify each clock against its own label
+- **AND** the doors clock is stored separately from the show start; a doors-only official-page line does not qualify
+
+#### Scenario: A scheduled event has descriptions but lacks people fields
+- **WHEN** facet enrichment reads the descriptions or an operator runs the bounded people backfill
+- **THEN** the model identifies people explicitly credited as organizing or performing, never names inferred from the venue or title. Code checks for a verbatim source excerpt (ignoring whitespace differences), a quoted name, and exact known seller names after removing spaces and punctuation, and a retry does not overwrite stored facts
+- **AND** the backfill defaults to a dry run, records successful apply decisions so empty results are not repeatedly billed, and never updates unscheduled rows
+
 ### Requirement: Venue settlement is deterministic and reviewable
 Venue matching SHALL prefer valid existing identities and SHALL leave ambiguous or invalid candidates for review rather than silently attach an unrelated venue.
 
@@ -90,7 +122,7 @@ Enrichment SHALL use the registered source strategy, retain available source dat
 #### Scenario: Model expresses an unknown optional facet as null
 - **WHEN** an otherwise valid model facet object uses null for unknown energy or social interaction
 - **THEN** the model boundary normalizes those scalars to omitted canonical values while retaining supported array facets
-- **AND** invalid non-null enum values still fail validation
+- **AND** invalid non-null enum values still fail validation, but malformed credit fields are validated separately and do not erase valid facets
 
 ### Requirement: Enrichment selects each event once and skips retired sources
 Enrichment SHALL move an imported `pending` event to a terminal status in the pass that processes it, so reselection and step retries do not repeat model or embedding calls. Events from the retired `passline`, `eventbrite`, and `venti` sources SHALL be excluded from enrichment selection and counts without changing or deleting them.
