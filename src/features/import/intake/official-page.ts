@@ -3,6 +3,7 @@ import { load, type CheerioAPI } from 'cheerio/slim'
 import { es } from 'date-fns/locale'
 import { formatInTimeZone } from 'date-fns-tz'
 import { Effect } from 'effect'
+import { clockTokens } from './clock-evidence.ts'
 import { normalizeTitle } from './planning.ts'
 import { isOfficialPage, validPublicUrl, type Evidence } from './schema.ts'
 import { TICKET_SELLERS } from '#shared/lib/ticket-sellers.ts'
@@ -368,8 +369,13 @@ const MONTH_NAME = new RegExp(String.raw`\b(?:${MONTHS.join('|')})\b`, 'g')
 const monthNumber = (name: string) => MONTH_PREFIXES.indexOf(name.slice(0, 3).replace('set', 'sep')) + 1
 const DATE = new RegExp(String.raw`\b(?<!\d[./-])(?:(?<isoYear>\d{4})-(?<isoMonth>\d{2})-(?<isoDay>\d{2})|(?<day>\d{1,2})(?:(?<sep>[./-])(?<month>\d{1,2})(?:\k<sep>(?<numericYear>\d{4}|\d{2}))?| (?:de )?(?<monthName>${MONTHS.join('|')})(?:[.,]? (?:del? )?(?<year>\d{4}))?))\b(?![./-]\d)`, 'g')
 const CLOCK_VALUE = String.raw`\d{1,2}(?:[:.]\d{2})?`
-const CLOCK_LIST = new RegExp(String.raw`\b(?<!\d[:./-])(?:a las? ${CLOCK_VALUE}(?:,| (?:y|o|e|u)) ${CLOCK_VALUE}\b|${CLOCK_VALUE} (?:y|o|e|u) ${CLOCK_VALUE} ?(?:hs?|horas|[ap]\.? ?m)\b)`)
+const LIST_JOIN = String.raw`(?: *[,;/|&+] *| (?:y|o|e|u) )`
+// A final unit can qualify two or more clocks. Slashes also support compact lists such as 16/18/20 hs.
+const CLOCK_LIST = new RegExp(String.raw`\b(?<!\d[:./-])(?:a las? ${CLOCK_VALUE}${LIST_JOIN}${CLOCK_VALUE}\b|` +
+  String.raw`${CLOCK_VALUE}(?:${LIST_JOIN}${CLOCK_VALUE}|(?: */ *${CLOCK_VALUE})+) ?(?:hs?|horas|[ap]\.? ?m)\b)`)
 const MULTIPLE_OCCURRENCES = "lists multiple dates or start times; cite the single occurrence's line"
+const RUN_END = 'states the end of a run, not a performance date'
+const CUT_CLOCK = 'cuts a clock token; quote the complete date and time'
 const BARE_START_RANGE = new RegExp(String.raw`\b(?<!\d[:./-])(de )?(\d{1,2})(?: *[-–—] *| (?:a|hasta) (las? )?)(${CLOCK_VALUE})(?: ?(hs?|horas|[ap]\.? ?m))?\b(?![:.]\d)`, 'g')
 const CLOCK = /\b(?<!\d[:./])(?:(?<!\d-)|(?=\d{1,2}:))(?:(a las?) )?(\d{1,2})(?:([:.])(\d{2}))?(?: ?(?:([ap])\.? ?m\b\.?|(hs?|horas)\b\.?))?(?![\w:]|\.\d)/g
 const DOORS_WORD = /\b(?:puertas?|apertura|abren|abre|ingreso|acceso|doors?|open)\b/
@@ -380,7 +386,8 @@ const DOORS_PAIR = new RegExp(String.raw`^(.*?)\b(?:puertas?|apertura(?: de puer
   ` *[|/–—-] *(?:show|inicio|funcion|comienza)${LABEL_GAP}${PAIR_CLOCK}$`)
 type Clock = { hour: number; minute: number }
 const validClock = ({ hour, minute }: Clock) => hour >= 0 && hour <= 23 && minute <= 59
-const WEEKDAYS = 'lun(?:es)?|mar(?:tes)?|mie(?:rcoles)?|jue(?:ves)?|vie(?:rnes)?|sab(?:ado)?|dom(?:ingo)?'
+const WEEKDAYS = 'lun(?:es)?|mar(?:tes)?|mie(?:r(?:c(?:oles)?)?)?|jue(?:v(?:es)?)?|vie(?:r(?:nes)?)?|sab(?:ado)?|dom(?:ingo)?'
+const RUN_END_PREFIX = new RegExp(String.raw`\b(?:hasta|al|del? \d{1,2} a)(?: (?:el|dia|(?:${WEEKDAYS})[.,]?))* $`)
 const PLURAL_WEEKEND_DAYS = 'sabados|domingos'
 const WEEKDAY_NAME = new RegExp(String.raw`\b(?:${WEEKDAYS}|${PLURAL_WEEKEND_DAYS})\b`, 'g')
 const PAIR_DATE_SEPARATOR = '[ .,:|–-]'
@@ -398,9 +405,18 @@ const EXPLICIT_DAY_PREFIX = new RegExp(String.raw`\b(?:dia|${WEEKDAYS})[.,:]? (?
 const DAY_ONLY = new RegExp(String.raw`\b(?:el|dia|${WEEKDAYS}|${MONTHS.join('|')})[.,:]? (\d{1,2})\b(?![./-]\d)`, 'g')
 const JOINED_DAYS = /\b\d{1,2}\b *(?:[,–—-]|y\b|o\b|al\b) *#|# *(?:[,–—-]|\by\b|\bo\b|\bal\b) *\d{1,2}\b(?! [a-z])/
 
+/** Strip separated display text, not text that can state or qualify a time. */
+function doorsTimingText(excerpt: string, name: string): string {
+  const title = normalizePageText(name)
+  const prefixEnd = title && excerpt.startsWith(title) && !/\d/.test(title) && !DOORS_WORD.test(title)
+    ? /^ *[|•] */.exec(excerpt.slice(title.length))?.[0] : undefined
+  const timing = prefixEnd ? excerpt.slice(title.length + prefixEnd.length) : excerpt
+  return timing.replace(/ *[|•] *(?:comprar entradas|entradas)$/, '')
+}
+
 /** Doors mentions use one complete shape; never infer clock roles from nearby words. */
-function doorsAndShow(excerpt: string) {
-  const match = DOORS_PAIR.exec(excerpt)
+function doorsAndShow(excerpt: string, name: string) {
+  const match = DOORS_PAIR.exec(doorsTimingText(excerpt, name))
   if (!match) return null
   const [, dateText, doorsHour, doorsMinute = '00', showHour, showMinute = '00'] = match
   if (Number(showHour) * 60 + Number(showMinute) < Number(doorsHour) * 60 + Number(doorsMinute)) return null
@@ -428,7 +444,7 @@ export function excerptFactsReason(excerpt: string, fields: readonly string[], f
   if (!citesTiming(fields)) return null
   const citesDoors = fields.includes('doors_time')
   if (citesDoors || DOORS_WORD.test(excerpt)) {
-    const pair = doorsAndShow(excerpt)
+    const pair = doorsAndShow(excerpt, facts.name)
     if (!pair) return citesDoors ? "must quote one date followed by labeled doors and show times" : DOORS_REASON
     const wrongDate = pairDateReason(pair.dateText, facts.date)
     if (wrongDate) return wrongDate
@@ -467,6 +483,8 @@ export function excerptFactsReason(excerpt: string, fields: readonly string[], f
   // Mark recognized dates so a shorthand list such as "20 y 21 de noviembre" also holds.
   const joinedDays = JOINED_DAYS.test(partialCalendar.replace(DAY_ONLY, '#'))
   if (starts.length > 1 || dateCount > 1 || joinedDays) return MULTIPLE_OCCURRENCES
+  const dateIndex = dates[0]?.index ?? contextualDays[0]?.index
+  if (dateIndex !== undefined && RUN_END_PREFIX.test(calendar.slice(0, dateIndex))) return RUN_END
   const groups = dates[0]?.groups
   const statedDay = groups?.isoDay ?? groups?.day ?? contextualDays[0]?.[1]
   if (Number(statedDay) !== day) return `does not state the day ${day}`
@@ -496,7 +514,7 @@ export function excerptFactsReason(excerpt: string, fields: readonly string[], f
 }
 
 /** Check every occurrence, including cross-line excerpts, against the complete lines it touches. */
-function matchedDoorsReason(visible: string, quoted: RegExp, fields: readonly string[], facts: PageFacts): string | null {
+function matchedTimingReason(visible: string, quoted: RegExp, fields: readonly string[], facts: PageFacts): string | null {
   const lines = visible.split(/\r\n?|\n/).map(normalizePageText).filter(Boolean)
   let first = 0, offset = 0
   // Lookahead includes overlapping matches so an unmarked copy of a quote never masks a marked one.
@@ -508,6 +526,13 @@ function matchedDoorsReason(visible: string, quoted: RegExp, fields: readonly st
     if (DOORS_WORD.test(context)) {
       const reason = excerptFactsReason(context, fields, facts)
       if (reason) return reason
+    } else {
+      if (CLOCK_LIST.test(context)) return MULTIPLE_OCCURRENCES
+      if (RUN_END_PREFIX.test(context.slice(0, index - offset))) return RUN_END
+    }
+    const start = index - offset, stop = start + text.length
+    for (const clock of clockTokens(context, { allowIntroducedHour: true })) {
+      if (clock.start < stop && clock.end > start && (clock.start < start || clock.end > stop)) return CUT_CLOCK
     }
   }
   return null
@@ -544,8 +569,8 @@ function pageReason({ visible, title, titleName, ogTitle, h1, h1WithoutRating, h
   } else if (!quoted.test(normalizedVisible)) {
     return MISSING_EXCERPT
   }
-  if (timingEvidence && DOORS_WORD.test(normalizedVisible)) {
-    const reason = matchedDoorsReason(visible, quoted, fields, facts)
+  if (timingEvidence) {
+    const reason = matchedTimingReason(visible, quoted, fields, facts)
     if (reason) return `Official page excerpt ${reason}`
   }
   if (identityNeedsRender) return UNCONFIRMED_HEADING

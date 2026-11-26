@@ -1,20 +1,24 @@
-// Dots are also date separators: a dotted clock needs an explicit hours or AM/PM suffix.
-const clock = /(?<![\p{L}\d])(?<!\d[.:/])(?<hour>[01]?\d|2[0-3])(?:(?<separator>[:.])(?<minute>[0-5]\d))?(?:[ \t\u00a0\u202f]*(?<suffix>[ap]\.?[ \t\u00a0\u202f]*m\b\.?|(?:horas|hs?)\b))?(?![\p{L}\d]|[.:/]\d)/giu
+// Dots are also date separators: a dotted clock needs a suffix or an explicit introduction.
+const clock = /(?<![\p{L}\d])(?<!\d[.:/])(?<introduced>a las? )?(?<hour>[01]?\d|2[0-3])(?:(?<separator>[:.])(?<minute>[0-5]\d))?(?:[ \t\u00a0\u202f]*(?<suffix>[ap]\.?[ \t\u00a0\u202f]*m\b\.?|(?:horas|hs?)\b))?(?![\p{L}\d]|[.:/]\d)/giu
+
+export function* clockTokens(source: string, { allowIntroducedHour = false } = {}) {
+  for (const { 0: token, index, groups } of source.matchAll(clock)) {
+    if (!groups || !(groups.suffix || groups.separator === ':' || allowIntroducedHour && groups.introduced)) continue
+    const period = groups.suffix?.[0].toLowerCase()
+    let hours = Number(groups.hour)
+    if (period === 'a' || period === 'p') {
+      if (hours < 1 || hours > 12) continue
+      hours = hours % 12 + (period === 'p' ? 12 : 0)
+    }
+    const start = index + (groups.introduced?.length ?? 0)
+    yield { start, end: index + token.length, time: `${String(hours).padStart(2, '0')}:${groups.minute ?? '00'}` }
+  }
+}
 
 /** Match clocks in the source first, then check that a single quote contains the complete tokens. */
 export function citesClock(excerpt: string, time: string, source = excerpt, count = 1): boolean {
   if (!excerpt) return false
-  const tokens = [...source.matchAll(clock)].flatMap(({ 0: token, index, groups }) => {
-    if (!groups || (!groups.suffix && groups.separator !== ':')) return []
-    const period = groups.suffix?.[0].toLowerCase()
-    let hours = Number(groups.hour)
-    if (period === 'a' || period === 'p') {
-      if (hours < 1 || hours > 12) return []
-      hours = hours % 12 + (period === 'p' ? 12 : 0)
-    }
-    const value = `${String(hours).padStart(2, '0')}:${groups.minute ?? '00'}`
-    return value === time ? [{ start: index, end: index + token.length }] : []
-  })
+  const tokens = [...clockTokens(source)].filter(token => token.time === time)
   for (let start = source.indexOf(excerpt); start !== -1; start = source.indexOf(excerpt, start + 1)) {
     if (tokens.filter(token => token.start >= start && token.end <= start + excerpt.length).length >= count) return true
   }
