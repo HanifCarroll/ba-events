@@ -1,5 +1,10 @@
-import { describe, expect, it } from 'vitest'
+import type { D1Database } from '@cloudflare/workers-types'
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { Effect } from 'effect'
+import { freshD1 } from '../../../../tests/support/d1.ts'
+import { fakeR2 } from '../../../../tests/support/r2.ts'
+import { fakeVectorize } from '../../../../tests/support/vectorize.ts'
+import { d1Intake } from './store-d1.ts'
 import { collectInstagramEffect, type ApifyRequest } from './collection.ts'
 import { commitPlanEffect, readEvidenceEffect, previewCandidateEffect } from './service.ts'
 import { readOfficialPage } from './official-page.ts'
@@ -26,10 +31,98 @@ function collectionStore(reservation: Partial<Reservation>, overrides: Partial<C
     policy: Effect.succeed({ collection_enabled: true, publishing_enabled: false, max_sources: 10,
       posts_per_source: 20, run_cap_usd: 2, monthly_cap_usd: 10, actor_build: '0.0.679', data_detail_level: 'basic' }),
     reserveCollection: Effect.succeed({ id: 'run', fresh: false, apify_run_id: null, reserved_usd: 1.5,
-      input: { username: ['a'], resultsLimit: 20 }, ...reservation }),
+      created_at: '2026-11-26T12:00:00.000Z', input: { username: ['a'], resultsLimit: 20 }, ...reservation }),
     updateRun: () => Effect.void, ...overrides,
   } as unknown as CollectionStore
 }
+
+describe('Instagram collection budget on D1', () => {
+  let db: D1Database
+  let dispose: () => Promise<void>
+  let store: CollectionStore
+  beforeAll(async () => {
+    ({ db, dispose } = await freshD1())
+    await db.batch([
+      db.prepare('UPDATE intake_policy SET collection_enabled = 1, run_cap_usd = 1.5, monthly_cap_usd = 1.5'),
+      db.prepare("INSERT INTO instagram_sources (username, authority, enabled, qualification) VALUES ('synthetic_venue', 'venue', 1, 'Synthetic')"),
+    ])
+    store = d1Intake({ db, evidence: fakeR2(), artwork: fakeR2(), vectors: fakeVectorize().index })
+  }, 60_000)
+  beforeEach(async () => { await db.prepare('DELETE FROM intake_runs').run() })
+  afterAll(async () => { await dispose?.() })
+
+  const usedBudget = () => db.prepare('SELECT COALESCE(SUM(COALESCE(charged_usd, reserved_usd)), 0) AS used FROM intake_runs').first('used')
+  const limits = (maxMonthlyUsageUsd: number) => ({ data: { limits: { maxMonthlyUsageUsd }, current: { monthlyUsageUsd: 17.6 } } })
+
+  it('leaves the monthly budget unchanged when Apify refuses credit', async () => {
+    const calls: string[] = []
+    const api: ApifyRequest = async (method, path) => { calls.push(`${method} ${path}`); return limits(19) }
+    const before = await usedBudget()
+    await expect(Effect.runPromise(collectInstagramEffect(store, api))).rejects.toThrow('Apify monthly usage limit reached; no run started')
+    expect(calls).toEqual(['GET users/me/limits'])
+    expect(await usedBudget()).toBe(before)
+    expect(await db.prepare('SELECT * FROM intake_runs').first()).toMatchObject({
+      state: 'failed', charged_usd: 0, apify_run_id: null, completed_at: expect.any(String),
+    })
+  })
+
+  it.each([
+    ['unavailable', async () => { throw new Error('Limits read unavailable') }, 'Limits read unavailable'],
+    ['null limit', async () => ({ data: { limits: { maxMonthlyUsageUsd: null }, current: { monthlyUsageUsd: 3 } } }), 'Could not verify the Apify monthly usage limit'],
+    ['non-finite limit', async () => limits(Infinity), 'Could not verify the Apify monthly usage limit'],
+  ] as const)('releases the reservation when the Apify limits read gives %s', async (_name, read, message) => {
+    const calls: string[] = []
+    const api: ApifyRequest = async (method, path) => { calls.push(`${method} ${path}`); return read() }
+    await expect(Effect.runPromise(collectInstagramEffect(store, api))).rejects.toThrow(message)
+    expect(calls).toEqual(['GET users/me/limits'])
+    expect(await usedBudget()).toBe(0)
+    expect(await db.prepare('SELECT state, completed_at FROM intake_runs').first()).toEqual({
+      state: 'failed', completed_at: expect.any(String),
+    })
+  })
+
+  it('reuses a released day to check raised credit and starts only one paid run', async () => {
+    let limit = 19
+    const calls: string[] = []
+    const api: ApifyRequest = async (method, path) => {
+      calls.push(`${method} ${path}`)
+      return path === 'users/me/limits' ? limits(limit)
+        : { data: { id: 'new-run', status: 'RUNNING', defaultDatasetId: 'dataset' } }
+    }
+    const collect = () => Effect.runPromise(collectInstagramEffect(store, api))
+    await expect(collect()).rejects.toThrow('Apify monthly usage limit reached; no run started')
+    const id = await db.prepare('SELECT id FROM intake_runs').first('id')
+    expect(id).toEqual(expect.any(String))
+    limit = 24
+    expect(await collect()).toEqual({ state: 'running', run_id: 'new-run' })
+    expect(await collect()).toEqual({ state: 'running', run_id: 'new-run' })
+    expect(calls).toEqual(['GET users/me/limits', 'GET users/me/limits', 'POST actors/apify~instagram-post-scraper/runs',
+      'GET actor-runs/new-run', 'GET actor-runs/new-run'])
+    expect((await db.prepare('SELECT id, state, apify_run_id, charged_usd, completed_at FROM intake_runs').all()).results).toEqual([
+      { id, state: 'started', apify_run_id: 'new-run', charged_usd: null, completed_at: null },
+    ])
+    expect(await usedBudget()).toBe(1.5)
+  })
+
+  it.each([
+    ['missing run identity', async () => ({ data: { status: 'RUNNING' } }), 'Unknown Apify start result; reconcile the reserved run before retrying'],
+    ['lost response', async () => { throw new Error('Apify start connection lost') }, 'Apify start connection lost'],
+  ] as const)('keeps the reservation and blocks a retry after a POST with %s', async (_name, start, message) => {
+    const calls: string[] = []
+    const api: ApifyRequest = async (method, path) => {
+      calls.push(`${method} ${path}`)
+      return path === 'users/me/limits' ? limits(24) : start()
+    }
+    const collect = () => Effect.runPromise(collectInstagramEffect(store, api))
+    await expect(collect()).rejects.toThrow(message)
+    await expect(collect()).rejects.toThrow('A previous run has an unknown start outcome; do not start another paid run')
+    expect(calls).toEqual(['GET users/me/limits', 'POST actors/apify~instagram-post-scraper/runs'])
+    expect(await usedBudget()).toBe(1.5)
+    expect(await db.prepare('SELECT state, apify_run_id, charged_usd, completed_at FROM intake_runs').first()).toEqual({
+      state: 'reserved', apify_run_id: null, charged_usd: null, completed_at: null,
+    })
+  })
+})
 
 describe('intake failure and retry orchestration', () => {
   it('loads media alongside observations and does not block the dependent source read on media', async () => {
@@ -246,65 +339,6 @@ describe('intake failure and retry orchestration', () => {
       presentation: async () => ({ description_display_es: null, description_display_en: null, description_summary_es: null, description_summary_en: null }),
     }
     expect(await Effect.runPromise(commitPlanEffect(db, 'plan', publishers))).toEqual(receipt)
-  })
-  it('never starts a second paid run after an uncertain start', async () => {
-    const db = collectionStore({})
-    const api: ApifyRequest = async () => { throw new Error('No API call is allowed') }
-    await expect(Effect.runPromise(collectInstagramEffect(db, api))).rejects.toThrow('unknown start outcome')
-  })
-  it('starts a fresh paid run only within the Apify monthly usage limit', async () => {
-    const reservation = { fresh: true, id: 'run', reserved_usd: 1.5, actor_build: '0.0.679', input: { username: ['a'], resultsLimit: 20 }, apify_run_id: null }
-    const calls: string[] = []
-    const limited: ApifyRequest = async (method, path) => {
-      calls.push(`${method} ${path}`)
-      if (path === 'users/me/limits') return { data: { limits: { maxMonthlyUsageUsd: 19 }, current: { monthlyUsageUsd: 17.6 } } }
-      throw new Error(`Unexpected ${method} ${path}`)
-    }
-    const refused = collectionStore(reservation)
-    await expect(Effect.runPromise(collectInstagramEffect(refused, limited))).rejects.toThrow('usage limit reached')
-    expect(calls).toEqual(['GET users/me/limits'])
-
-    const raised: ApifyRequest = async (method, path) => {
-      calls.push(`${method} ${path}`)
-      if (path === 'users/me/limits') return { data: { limits: { maxMonthlyUsageUsd: 24 }, current: { monthlyUsageUsd: 17.6 } } }
-      if (method === 'POST') return { data: { id: 'new-run', status: 'RUNNING', defaultDatasetId: 'dataset' } }
-      return { data: { id: 'new-run', status: 'RUNNING', defaultDatasetId: 'dataset' } }
-    }
-    const allowed = collectionStore(reservation)
-    expect(await Effect.runPromise(collectInstagramEffect(allowed, raised))).toEqual({ state: 'running', run_id: 'new-run' })
-    expect(calls).toContain('POST actors/apify~instagram-post-scraper/runs')
-  })
-  it.each([null, Infinity])('refuses a paid run when Apify reports %s as the monthly usage limit', async (limit) => {
-    const reservation = { fresh: true, id: 'run', reserved_usd: 1.5, actor_build: '0.0.679', input: { username: ['a'], resultsLimit: 20 }, apify_run_id: null }
-    const db = collectionStore(reservation)
-    const calls: string[] = []
-    const api: ApifyRequest = async (method, path) => {
-      calls.push(`${method} ${path}`)
-      if (method === 'GET' && path === 'users/me/limits') return { data: { limits: { maxMonthlyUsageUsd: limit }, current: { monthlyUsageUsd: 3 } } }
-      throw new Error(`Unexpected ${method} ${path}`)
-    }
-    await expect(Effect.runPromise(collectInstagramEffect(db, api))).rejects.toThrow('Could not verify the Apify monthly usage limit')
-    expect(calls).toEqual(['GET users/me/limits'])
-  })
-  it('requires reconciliation when Apify starts a run but returns no valid run identity', async () => {
-    const calls: string[] = []
-    const writes: string[] = []
-    const db = collectionStore({ fresh: true }, {
-      updateRun: (_, patch) => Effect.sync(() => { writes.push(patch.state) }),
-    })
-    const api: ApifyRequest = async (method, path) => {
-      calls.push(`${method} ${path}`)
-      if (path === 'users/me/limits') {
-        return { data: { limits: { maxMonthlyUsageUsd: 19 }, current: { monthlyUsageUsd: 3 } } }
-      }
-      return { data: { status: 'RUNNING' } }
-    }
-    await expect(Effect.runPromise(collectInstagramEffect(db, api))).rejects.toMatchObject({
-      _tag: 'ImportOperationError', operation: 'instagram.collection',
-      message: 'Unknown Apify start result; reconcile the reserved run before retrying',
-    })
-    expect(calls).toEqual(['GET users/me/limits', 'POST actors/apify~instagram-post-scraper/runs'])
-    expect(writes).toEqual([])
   })
   it('returns the collection summary when the image retry fails after the run is marked succeeded', async () => {
     const calls: string[] = []

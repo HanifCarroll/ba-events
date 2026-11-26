@@ -36,7 +36,8 @@ const TABLES = ['vector_sync', 'event_intake_protection', 'event_source_evidence
 beforeEach(async () => {
   if (bun) return
   await db.batch([...TABLES.map(table => db.prepare(`DELETE FROM ${table}`)),
-    db.prepare('UPDATE intake_policy SET collection_enabled = 1, publishing_enabled = 1, data_detail_level = ?').bind('detailedData')])
+    db.prepare(`UPDATE intake_policy SET collection_enabled = 1, publishing_enabled = 1, data_detail_level = 'detailedData',
+      run_cap_usd = 1.5, monthly_cap_usd = 18, posts_per_source = 20`)])
   evidence = fakeR2(); artwork = fakeR2(); vectors = fakeVectorize()
   store = d1Intake({ db, evidence, artwork, vectors: vectors.index })
 })
@@ -97,6 +98,41 @@ describe.skipIf(bun)('reserve_instagram_collection on D1', () => {
     const second = await run(store.reserveCollection)
     expect(second).toMatchObject({ fresh: false, id: first.id })
     expect((await db.prepare('SELECT count(*) AS n FROM intake_runs').first<{ n: number }>())!.n).toBe(1)
+  })
+
+  it('lets only one concurrent retry reclaim a released day and refuses a stale release', async () => {
+    await source()
+    const first = await run(store.reserveCollection)
+    await run(store.releaseCollection(first.id, first.created_at))
+    await db.prepare('UPDATE intake_policy SET run_cap_usd = 2, monthly_cap_usd = 2, posts_per_source = 10').run()
+
+    const retries = await Promise.all([run(store.reserveCollection), run(store.reserveCollection)])
+    expect(retries.filter(row => row.fresh)).toHaveLength(1)
+    const winner = retries.find(row => row.fresh)!
+    expect(winner).toMatchObject({ id: first.id, state: 'reserved', reserved_usd: 2, charged_usd: null,
+      completed_at: null, input: { resultsLimit: 10 } })
+    expect(winner.created_at > first.created_at).toBe(true)
+    expect(retries.find(row => !row.fresh)).toMatchObject({ id: first.id, created_at: winner.created_at })
+    expect(await fails(store.releaseCollection(first.id, first.created_at))).toBe('Collection reservation is no longer eligible for release')
+    expect(await run(store.reserveCollection)).toMatchObject({ id: first.id, state: 'reserved', fresh: false, charged_usd: null })
+  })
+
+  it('rechecks the calendar-month cap before renewing a released day', async () => {
+    await source()
+    const first = await run(store.reserveCollection)
+    await run(store.releaseCollection(first.id, first.created_at))
+    await db.prepare('UPDATE intake_policy SET monthly_cap_usd = 1').run()
+    expect(await fails(store.reserveCollection)).toBe('Monthly collection budget exhausted')
+    expect(await db.prepare('SELECT id, state, charged_usd FROM intake_runs').first()).toEqual({ id: first.id, state: 'failed', charged_usd: 0 })
+  })
+
+  it('does not release or reclaim a paid run even if Apify reported zero charges', async () => {
+    await source()
+    const first = await run(store.reserveCollection)
+    await run(store.updateRun(first.id, { state: 'started', apify_run_id: 'paid-run', dataset_id: 'dataset' }))
+    expect(await fails(store.releaseCollection(first.id, first.created_at))).toBe('Collection reservation is no longer eligible for release')
+    await run(store.updateRun(first.id, { state: 'failed', charged_usd: 0 }))
+    expect(await run(store.reserveCollection)).toMatchObject({ id: first.id, state: 'failed', fresh: false, apify_run_id: 'paid-run' })
   })
 
   it('refuses a disabled switch, an exhausted month, and an empty or oversized watchlist', async () => {

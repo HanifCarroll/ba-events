@@ -48,6 +48,7 @@ describe('intake API boundary', () => {
     expect(refused.status).toBe(503)
     expect(await db.prepare('SELECT count(*) AS n FROM instagram_sources').first('n')).toBe(0)
     expect((await call('collection/reserve', {}, frozen)).status).toBe(503)
+    expect((await call('collection/release', {}, frozen)).status).toBe(503)
     expect((await call('preflight', {}, { ...frozen, INTAKE_API_TOKEN: 'wrong-token-0123456789abcdef0123456789' })).status).toBe(401)
   })
 
@@ -70,6 +71,8 @@ describe('intake API boundary', () => {
     expect(await error(await call('preflight', { body: 'not json' }))).toMatchObject({ status: 400 })
     expect(await error(await call('preflight', { headers: { authorization: `Bearer ${TOKEN}` }, body: '{}' }))).toMatchObject({ status: 400 })
     expect(await error(await call('collection/run', body({ id: crypto.randomUUID(), patch: { state: 'succeeded', charged_usd: -1, completed_at: 'x' } })))).toMatchObject({ status: 400 })
+    expect(await error(await call('collection/release', body({ id: crypto.randomUUID(), created_at: 'invalid' })))).toMatchObject({ status: 400 })
+    expect(await error(await call('collection/release', body({ id: crypto.randomUUID(), created_at: new Date().toISOString(), extra: true })))).toMatchObject({ status: 400 })
     expect(await error(await call('nope'))).toMatchObject({ status: 404 })
     expect((await call('media/x.jpg', { method: 'GET', body: undefined })).status).toBe(400)
     expect((await call(`collection/media?observation_id=${crypto.randomUUID()}&position=0`, { method: 'PUT', body: 'GIF89a' })).status).toBe(400)
@@ -209,6 +212,19 @@ describe('Worker image fallback', () => {
 })
 
 describe('collect through the CLI client', () => {
+  it('persists a zero-charge credit refusal through the API before returning the same error', async () => {
+    await db.prepare("INSERT INTO instagram_sources (username, authority, enabled, qualification) VALUES ('synthetic_venue', 'venue', 1, 'Synthetic')").run()
+    const store = remoteCollection(client())
+    const apify: ApifyRequest = async (method, path) => {
+      if (method === 'GET' && path === 'users/me/limits') return { data: { limits: { maxMonthlyUsageUsd: 19 }, current: { monthlyUsageUsd: 19 } } }
+      throw new Error(`Unexpected ${method} ${path}`)
+    }
+    await expect(Effect.runPromise(collectInstagramEffect(store, apify))).rejects.toThrow('Apify monthly usage limit reached; no run started')
+    const released = await db.prepare('SELECT id, state, charged_usd, completed_at FROM intake_runs').first()
+    expect(released).toMatchObject({ state: 'failed', charged_usd: 0, completed_at: expect.any(String) })
+    expect(await Effect.runPromise(store.reserveCollection)).toMatchObject({ id: released?.id, state: 'reserved', fresh: true })
+  })
+
   it('reserves, retains posts and evidence images in R2, and resumes without a second paid run', async () => {
     await db.prepare("INSERT INTO instagram_sources (username, authority, enabled, qualification) VALUES ('synthetic_venue', 'venue', 1, 'Synthetic')").run()
     const flyer = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 9, 9, 9])
