@@ -28,6 +28,65 @@ describe('intake clock tokens', () => {
     expect(citesClock(excerpt, '20:00')).toBe(false)
   })
 
+  it.each([
+    ['de 9 a 13 horas', '09:00', '13:00', '13 horas'],
+    ['20:00–23:30', '20:00', '23:30', '23:30'],
+    ['de 8 pm a 11 pm', '20:00', '23:00', '11 pm'],
+    ['20 a 00 h', '20:00', '00:00', '00 h'],
+  ])('only uses the opening clock in %s', (range, start, end, endQuote) => {
+    expect(citesClock(range, start)).toBe(true)
+    expect(citesClock(range, end)).toBe(false)
+    expect(citesClock(endQuote, end, range)).toBe(false)
+    const independent = `${range}. Show: ${endQuote}`
+    expect(citesClock(independent, end)).toBe(true)
+    expect(citesClock(endQuote, end, independent)).toBe(true)
+    expect(citesClock(independent, end, independent, 2)).toBe(false)
+  })
+
+  it.each([
+    ['día 21 - 18:00 hs', '21:00', '18:00'],
+    ['Del 18 al 20 - 21 hs', '20:00', '21:00'],
+    ['Viernes 20 - 23 hs', '20:00', '23:00'],
+    ['vie 20 – 23 hs', '20:00', '23:00'],
+    ['sábado 15 - 21 hs', '15:00', '21:00'],
+    ['Miérc. el 15 - 21 hs', '15:00', '21:00'],
+    ['noviembre 20 - 21 hs', '20:00', '21:00'],
+    ['+18 - 23 hs', '18:00', '23:00'],
+    ['20/11 - 21 hs', '11:00', '21:00'],
+    ['20 / 11 - 21 hs', '11:00', '21:00'],
+  ])('does not turn the day or rating in %s into a clock', (excerpt, day, time) => {
+    expect(citesClock(excerpt, day)).toBe(false)
+    expect(citesClock(excerpt, time)).toBe(true)
+  })
+
+  it.each([
+    'Viernes de 20 - 23 hs', 'Viernes desde 20 – 23 hs', 'Viernes de las 20 a las 23 hs',
+    'Viernes. Horario: 20 - 23 hs', 'Viernes\n20 - 23 hs', 'Viernes 20 hs - 23 hs',
+  ])('accepts a real range start in %s', excerpt => {
+    expect(citesClock(excerpt, '20:00')).toBe(true)
+    expect(citesClock(excerpt, '23:00')).toBe(false)
+  })
+
+  it.each([
+    ['10–15.50', '10:00'], ['Precios: 10–15.50 USD', '15:50'], ['10–15.50 USD', '10:00'],
+    ['10–15:50 ARS', '10:00'], ['10 a 15 hs pesos', '10:00'], ['10 a 15 hs $', '15:00'],
+    ['10:00–15:50 (USD)', '10:00'], ['Precios: 10–15:50', '10:00'],
+    ['10–15:50 $', '15:50'], ['$10–15 hs', '15:00'],
+  ])('does not infer or cite a price as a clock in %s', (excerpt, time) => {
+    expect(citesClock(excerpt, time)).toBe(false)
+  })
+
+  it('still reads a clock range when the end has a colon or a time unit and the price is separate', () => {
+    expect(citesClock('Precios: 10–15.50 USD. Horario: 20–23:30', '20:00')).toBe(true)
+    expect(citesClock('Horario: 20–23.30 hs; precio $10', '20:00')).toBe(true)
+  })
+
+  it.each(['Duración: de 2 a 3 horas', 'dura 2 a 3 hs', 'Duración estimada: 02:00 a 03:00', 'de 2 a 3 horas de duración'])('does not use either duration bound in %s', duration => {
+    expect(citesClock(duration, '02:00')).toBe(false)
+    expect(citesClock(duration, '03:00')).toBe(false)
+    expect(citesClock(`${duration}. Show de 2 a 3 hs`, '02:00')).toBe(true)
+  })
+
   it('does not join range endpoints across a separately cited sale date', () => {
     expect(citesDateAndClock('20 a 15/11 24 h', '2026-11-15', '20:00')).toBe(false)
     expect(citesDateAndClock('15/11 de 20 a 24 h', '2026-11-15', '20:00')).toBe(true)

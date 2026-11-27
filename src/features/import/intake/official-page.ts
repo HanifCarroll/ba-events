@@ -3,7 +3,7 @@ import { load, type CheerioAPI } from 'cheerio/slim'
 import { es } from 'date-fns/locale'
 import { formatInTimeZone } from 'date-fns-tz'
 import { Effect } from 'effect'
-import { clockTokens, isClockRangeGap, normalizeEvidenceText } from './clock-evidence.ts'
+import { clockTokens, normalizeEvidenceText, SPANISH_WEEKDAYS as WEEKDAYS } from './clock-evidence.ts'
 import { normalizeTitle } from './planning.ts'
 import { isOfficialPage, validPublicUrl, type Evidence } from './schema.ts'
 import { TICKET_SELLERS } from '#shared/lib/ticket-sellers.ts'
@@ -376,8 +376,7 @@ const MULTIPLE_OCCURRENCES = "lists multiple dates or start times; cite the sing
 const RUN_END = 'states the end of a run, not a performance date'
 const RUN_SCHEDULE = 'states a run schedule, not a performance date'
 const CUT_CLOCK = 'cuts a clock token; quote the complete date and time'
-const BARE_START_RANGE = new RegExp(String.raw`\b(?<!\d[:./-])(de )?(\d{1,2})(?: *[-–—] *| (?:a|hasta) (las? )?)(${CLOCK_VALUE})(?: ?(hs?|horas|[ap]\.? ?m))?\b(?![:.]\d)`, 'g')
-const WEEKDAYS = 'lun(?:es)?|mar(?:tes)?|mie(?:r(?:c(?:oles)?)?)?|jue(?:v(?:es)?)?|vie(?:r(?:nes)?)?|sab(?:ado)?|dom(?:ingo)?'
+
 const RUN_END_PREFIX = new RegExp(String.raw`\b(?:hasta|al|del? \d{1,2} a)(?: (?:el|dia|(?:${WEEKDAYS})[.,]?))* $`)
 const RUN_SCHEDULE_PREFIX = new RegExp(String.raw`\b(?:desde(?: (?:el|dia|${WEEKDAYS}))*|(?:cada|(?:todos )?los) (?:${WEEKDAYS}|sabados|domingos)) $`)
 const PLURAL_WEEKEND_DAYS = 'sabados|domingos'
@@ -388,14 +387,13 @@ function matchesWeekday(text: string, date: Date): boolean {
   const expected = WEEKDAY_PREFIX[date.getUTCDay()]
   return [...normalizePageText(text).replace(DATE, ' ').matchAll(WEEKDAY_NAME)].every(([day]) => day.slice(0, 3) === expected)
 }
-const EXPLICIT_DAY_PREFIX = new RegExp(String.raw`\b(?:dia|${WEEKDAYS})[.,:]? (?:el )?$`)
 const DAY_ONLY = new RegExp(String.raw`\b(?:el|dia|${WEEKDAYS}|${MONTHS.join('|')})[.,:]? (\d{1,2})\b(?![./-]\d)`, 'g')
 const JOINED_DAYS = /\b\d{1,2}\b *(?:[,–—-]|y\b|o\b|al\b) *#|# *(?:[,–—-]|\by\b|\bo\b|\bal\b) *\d{1,2}\b(?! [a-z])/
 
 const ADJACENT_CLOCKS = new RegExp(String.raw`^${LIST_JOIN}(?:a las? )?$`)
 
-// Page timing handles bare ranges separately so calendar days keep their context.
-const pageClockTokens = (text: string) => clockTokens(text, { inferRangeStarts: false })
+// Page occurrences cannot be verified by the lone marked end of an ambiguous AM/PM range.
+const pageClockTokens = (text: string) => clockTokens(text, { keepAmbiguousMeridiemEnd: false })
 
 function pageClocks(text: string) {
   const clocks = [...pageClockTokens(text)]
@@ -407,25 +405,19 @@ function pageClocks(text: string) {
 
 /** Read clock tokens without mistaking a range's end for another performance. */
 function pageTiming(text: string) {
-  const bareStarts: string[] = []
-  const withoutBareRanges = text.replace(BARE_START_RANGE, (token, from: string, start: string, at: string, end: string, unit: string, offset: number) => {
-    // Keep a calendar day before a dash, and don't infer a meridiem from the end.
-    if (!from && (at || EXPLICIT_DAY_PREFIX.test(text.slice(0, offset))) || !unit && !/[.:]/.test(end)) return token
-    if (Number(start) <= 23 && !/^[ap]/.test(unit ?? '')) bareStarts.push(start.padStart(2, '0') + ':00')
-    return ' '.repeat(token.length)
-  })
-  const clocks = pageClocks(withoutBareRanges)
+  const clocks = pageClocks(text)
   let multipleTimes = CLOCK_LIST.test(text)
   const starts = clocks.filter((clock, index) => {
-    if (!index) return true
-    const gap = text.slice(clocks[index - 1].end, clock.start)
-    // Parenthetical notes don't turn a list of alternatives into one occurrence.
-    multipleTimes ||= ADJACENT_CLOCKS.test(gap.replace(/ *\([^()]*\)/g, ''))
-    return !isClockRangeGap(gap)
+    if (index) {
+      const gap = text.slice(clocks[index - 1].end, clock.start)
+      // Parenthetical notes don't turn a list of alternatives into one occurrence.
+      multipleTimes ||= ADJACENT_CLOCKS.test(gap.replace(/ *\([^()]*\)/g, ''))
+    }
+    return !clock.closesRange
   })
-  let calendar = withoutBareRanges
+  let calendar = text
   for (const { start, end } of clocks.toReversed()) calendar = calendar.slice(0, start) + ' ' + calendar.slice(end)
-  return { times: [...bareStarts, ...starts.map(clock => clock.time)], calendar, multipleTimes }
+  return { times: starts.map(clock => clock.time), calendar, multipleTimes }
 }
 
 function occurrenceDateReason(calendar: string, date: string, required: boolean): string | null {
@@ -479,7 +471,8 @@ function matchedTimingReason(lines: readonly string[], quoted: RegExp, date: str
     const context = lines.slice(first, last + 1).join(' ')
     const start = index - offset, stop = start + text.length
     const tokens = pageClocks(context)
-    if (tokens.some(clock => clock.start < stop && clock.end > start && (clock.start < start || clock.end > stop))) return CUT_CLOCK
+    if (tokens.some(clock => clock.start < stop && clock.evidenceEnd > start &&
+      (clock.start < start || clock.evidenceEnd > stop))) return CUT_CLOCK
     const { times, calendar, multipleTimes } = pageTiming(context)
     if (multipleTimes) return MULTIPLE_OCCURRENCES
     const prefix = context.slice(0, start)

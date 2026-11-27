@@ -30,6 +30,21 @@ describe('official-page evidence', () => {
     })
 
   it.each([
+    ['Lunes 23 de noviembre, de 20 a 24 h', '20:00', '00:00'],
+    ['Lunes 23 - 21 hs', '21:00', '23:00'],
+    ['Precios: 10–15:50 USD. Show: 21 hs', '21:00', '10:00'],
+    ['Duración: de 2 a 3 horas. Show: 21 hs', '21:00', '02:00'],
+    ['de 9 a 13 horas. Show: 13 horas', '13:00', '12:00'],
+    ['de 8 a 11 pm. Puerta: 21 hs', '21:00', '23:00'],
+  ])('uses shared clock rules without losing the page date in %s', async (excerpt, time, invalid) => {
+    const read = readHtml(`<h1>${facts.name}</h1><p>${excerpt}</p>`)
+    const citation = evidence(officialUrl, excerpt, ['time'])
+    const verify = (time: string) => Effect.runPromise(verifyOfficialPagesEffect([citation], { ...facts, time }, read))
+    expect(await verify(time)).toEqual([])
+    expect(await verify(invalid)).toEqual([`Official page excerpt does not state the time ${invalid}: ${officialUrl}`])
+  })
+
+  it.each([
     ['Viernes', 'states a weekday that does not match 2026-11-23'],
     ['Diciembre', 'does not state the month 11'],
     ['2027', 'does not state the year 2026'],

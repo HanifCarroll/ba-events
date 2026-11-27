@@ -1,5 +1,5 @@
 // A bare dotted token with a possible month is ambiguous; an introducer or unit makes it a clock.
-const clock = /(?:(?<introduced>(?<![\p{L}\d])a las? )|(?<delimiter>(?<=\p{L})[ \t\u00a0\u202f]*:[ \t\r\n\u00a0\u202f]*))?(?<![\p{L}\d])(?<!\d[.:/])(?<!(?:\p{Sc}|\b(?:ars|usd|u\$s))[ \t\u00a0\u202f]*)(?<hour>[01]?\d|2[0-4])(?:(?<separator>[:.])(?<minute>[0-5]\d))?(?:[ \t\u00a0\u202f]*(?<suffix>[ap]\.?[ \t\u00a0\u202f]*m\b\.?|(?:horas|hs?)\b))?(?![\p{L}\d]|[.:/]\d)/giu
+const clock = /(?:(?<introduced>(?<![\p{L}\d])a las? )|(?<delimiter>(?<=\p{L})[ \t\u00a0\u202f]*:[ \t\r\n\u00a0\u202f]*))?(?<![\p{L}\d])(?<!\d[.:/])(?<hour>[01]?\d|2[0-4])(?:(?<separator>[:.])(?<minute>[0-5]\d))?(?:[ \t\u00a0\u202f]*(?<suffix>[ap]\.?[ \t\u00a0\u202f]*m\b\.?|(?:horas|hs?)\b))?(?![\p{L}\d]|[.:/]\d)/giu
 
 export const normalizeEvidenceText = (text: string) => text.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replace(/\s+/gu, ' ').trim()
 
@@ -8,59 +8,74 @@ export const isClockRangeGap = (gap: string) => /^\s*(?:[-–—]|(?:a|hasta)(?:
 const explicitMinutes = (separator: string | undefined, minute: string | undefined) =>
   separator === ':' || separator === '.' && (minute === '00' || Number(minute) > 12)
 
-type ClockOptions = { inferRangeStarts?: boolean }
+const months = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
+const shortMonths = months.map(month => month.slice(0, 3)).join('|')
+const namedMonth = months.map(month => `${month.slice(0, 3)}(?:${month.slice(3)})?`).join('|')
+export const SPANISH_WEEKDAYS = 'lun(?:es)?|mar(?:tes)?|mie(?:r(?:c(?:oles)?)?)?|jue(?:v(?:es)?)?|vie(?:r(?:nes)?)?|sab(?:ado)?|dom(?:ingo)?'
+const shortWeekdays = 'lun|mar|mie(?:r(?:c)?)?|juev?|vier?|sab|dom'
+const dayPrefix = new RegExp(String.raw`\b(?:(?:el|dia|al|del|${SPANISH_WEEKDAYS}|${namedMonth}|sept|set(?:iembre)?)[,:]?|(?:${shortWeekdays}|${shortMonths}|sept|set)\.)(?: el)?$`)
+const currency = String.raw`\p{Sc}|\b(?:ars|usd|u\$s|pesos?|dolar(?:es)?)\b`
+const nonClockPrefix = new RegExp(String.raw`(?:${currency}|\b(?:precios?|costos?|tarifas?|duran?|duracion)(?: (?:estimad[ao]|aproximad[ao]|aproximadamente))? *[:=]?(?: (?:de|desde|entre)(?: las?)?)?)$`, 'u')
+const nonClockSuffix = new RegExp(String.raw`^(?:(?:\( *)?(?:en )?(?:${currency})|\.? *de duracion\b)`, 'u')
 
-function sharedRangeEnd(source: string, start: number, end: number, closing: RegExpMatchArray | undefined): number | undefined {
-  if (!closing?.groups || closing.index === undefined) return
-  const { introduced, delimiter, hour, separator, minute, suffix } = closing.groups
-  const closingStart = closing.index + (introduced ?? delimiter ?? '').length
-  if (!isClockRangeGap(source.slice(end, closingStart))) return
-  const prefix = source.slice(0, start)
-  // Don't read a numeric date fragment or "viernes 20 a las 21" as a range start.
-  if (/\d[-–—]$/.test(prefix) || introduced && !/\b(?:de|desde)\s+$/i.test(prefix)) return
-  if (hour === '24' && minute && minute !== '00') return
-  // The end needs its own hour unit or unambiguous minutes. Never borrow AM/PM.
-  if (suffix ? !/^h/i.test(suffix) : !explicitMinutes(separator, minute)) return
-  return closing.index + closing[0].length
-}
-
-export function* clockTokens(source: string, { inferRangeStarts = true }: ClockOptions = {}) {
-  const matches = [...source.matchAll(clock)]
-  for (const [i, { 0: token, index, groups }] of matches.entries()) {
-    if (!groups || groups.hour === '24') continue
-    const { introduced, delimiter, separator, minute, suffix } = groups
+function clockLexemes(source: string) {
+  return [...source.matchAll(clock)].flatMap(({ 0: token, index, groups }) => {
+    if (!groups) return []
+    const { introduced, delimiter, hour, separator, minute, suffix } = groups
     const start = index + (introduced ?? delimiter ?? '').length
     const end = index + token.length
+    // Context labels are local to the number and cannot extend onto another line.
+    const prefix = normalizeEvidenceText(source.slice(Math.max(0, start - 80), start).split(/[\r\n]/u).at(-1) ?? '')
+    const tail = normalizeEvidenceText(source.slice(end, end + 80).split(/[\r\n]/u, 1)[0])
+    const nonClock = nonClockPrefix.test(prefix) || nonClockSuffix.test(tail)
+    const dayOrRating = dayPrefix.test(prefix) || /(?:\+|\d *[./–—-])$/.test(prefix)
     // A bare field value ("Puertas:21") needs a delimiter, not a particular label.
     const bareAfterColon = !!delimiter && !separator && !suffix && /^[ \t\u00a0\u202f]*(?:$|[\r\n.,;|/!?()])/u.test(source.slice(end))
-    const standalone = suffix || introduced || explicitMinutes(separator, minute) || bareAfterColon
-    const rangeEnd = !standalone && !separator && inferRangeStarts ? sharedRangeEnd(source, start, end, matches[i + 1]) : undefined
-    if (!standalone && rangeEnd === undefined) continue
     const period = suffix?.[0].toLowerCase()
-    let hours = Number(groups.hour)
-    if (period === 'a' || period === 'p') {
-      if (hours < 1 || hours > 12) continue
-      hours = hours % 12 + (period === 'p' ? 12 : 0)
-    }
-    // Keep the token's own end for range-gap checks even when citing it requires the closing clock.
-    yield { start, end, rangeEnd, bareAfterColon, time: `${String(hours).padStart(2, '0')}:${minute ?? '00'}` }
+    const meridiem = period === 'a' || period === 'p'
+    const hours = Number(hour)
+    const validStart = hours < 24 && (!meridiem || hours >= 1 && hours <= 12)
+    const localHour = meridiem ? hours % 12 + (period === 'p' ? 12 : 0) : hours
+    return [{ start, end, bareAfterColon, nonClock, meridiem,
+      time: `${String(localHour).padStart(2, '0')}:${minute ?? '00'}`,
+      standalone: validStart && Boolean(suffix || introduced || explicitMinutes(separator, minute) || bareAfterColon),
+      sharedStart: validStart && !separator && !suffix && !dayOrRating,
+      sharedEnd: (!meridiem && (period === 'h' || separator === ':')) && (hours < 24 || !minute || minute === '00'),
+    }]
+  })
+}
+
+type ClockOptions = { keepAmbiguousMeridiemEnd?: boolean }
+
+export function* clockTokens(source: string, { keepAmbiguousMeridiemEnd = true }: ClockOptions = {}) {
+  const tokens = clockLexemes(source)
+  const ranges = tokens.map((left, index) => {
+    const right = tokens[index + 1]
+    if (!right || !isClockRangeGap(source.slice(left.end, right.start))) return
+    if (left.nonClock || right.nonClock) return 'non-clock'
+    if (left.standalone && (right.standalone || right.sharedEnd) || left.sharedStart && right.sharedEnd) return 'clock'
+    if (left.sharedStart && right.standalone && right.meridiem) return 'ambiguous-meridiem'
+  })
+  for (const [index, { start, end, time, standalone, bareAfterColon, nonClock }] of tokens.entries()) {
+    const previousRange = ranges[index - 1]
+    if (nonClock || previousRange === 'non-clock' || ranges[index] === 'non-clock') continue
+    const borrowsEnd = !standalone && ranges[index] === 'clock'
+    if (!standalone && !borrowsEnd) continue
+    const evidenceEnd = borrowsEnd ? tokens[index + 1].end : end
+    const closesRange = previousRange === 'clock' || !keepAmbiguousMeridiemEnd && previousRange === 'ambiguous-meridiem'
+    yield { start, end, time, evidenceEnd, bareAfterColon, closesRange }
   }
 }
 
 /** Match clocks in the source first so a quote cannot cut the minutes, unit or meridiem. */
 export function citesClock(excerpt: string, time: string, source = excerpt, count = 1, options?: ClockOptions): boolean {
   if (!excerpt) return false
-  const tokens = [...clockTokens(source, options)]
-  const matching = tokens.filter((token, index) => token.time === time && (count === 1 || index === 0 ||
-    !isClockRangeGap(source.slice(tokens[index - 1].end, token.start))))
+  const matching = [...clockTokens(source, options)].filter(token => token.time === time && !token.closesRange)
   for (let start = source.indexOf(excerpt); start !== -1; start = source.indexOf(excerpt, start + 1)) {
-    if (matching.filter(token => token.start >= start && (token.rangeEnd ?? token.end) <= start + excerpt.length).length >= count) return true
+    if (matching.filter(token => token.start >= start && token.evidenceEnd <= start + excerpt.length).length >= count) return true
   }
   return false
 }
-
-const months = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
-const namedMonth = months.map(month => `${month.slice(0, 3)}(?:${month.slice(3)})?`).join('|')
 const calendarDate = new RegExp(String.raw`(?<![\p{L}\d])(?<!\d[./-])(?:` +
   String.raw`(?<isoYear>\d{4})-(?<isoMonth>\d{2})-(?<isoDay>\d{2})|(?<day>\d{1,2})(?:(?<sep>[./])(?<month>\d{1,2})(?:\k<sep>(?<year>\d{4}))?| +(?:de +)?(?<monthName>${namedMonth})(?: +(?:de(?:l)? +)?(?<namedYear>\d{4}))?))(?![\p{L}\d]|[./-]\d)`, 'gu')
 
