@@ -12,7 +12,7 @@ import type { FixReceipt } from './catalog-fix.ts'
 import { PublishStop, checkWrite, decide, readReactions, type Reactions } from './approval.ts'
 import * as alerts from './alerts.ts'
 import { fetchArtwork, type Artwork } from './artwork.ts'
-import { caption as captionFor, footerHandle, heldText, postedText, skippedMentionsText, skipText, slackPreview, tooFewText, type SkipReason } from './copy.ts'
+import { caption as captionFor, delegatedReply, footerHandle, heldText, postedText, skippedMentionsText, skipText, slackPreview, tooFewText, type SkipReason } from './copy.ts'
 import { baLocal } from './format.ts'
 import { FORMATS, activeRuns, draftId, parseDraftId, runWindow, type FormatKey, type RunWindow } from './formats.ts'
 import { FRAME, LAYOUT_VERSION, framesHtml } from './html.ts'
@@ -70,6 +70,8 @@ export interface Draft {
   /** The active preview can outlive its revision. A pending share does not replace it until confirmed. */
   slack: { fileIds: string[]; ts: string | null; auto?: boolean; channel?: string; revision?: number; previews?: PreviewThread[]; pending?: PreviewShare }
   approvedSeenAt: string | null
+  delegatedApprovals?: DelegatedDecision[]
+  delegatedVeto?: DelegatedDecision
   r2Uploaded: string | null
   publish: PublishState | null
   /** Present only when a new preview was built with Threads enabled. It owns its own outcome and Slack reply. */
@@ -170,6 +172,8 @@ const REVIEW_ALERT_LEAD_MS = 30 * 60_000
 const SETTLED: DraftState[] = ['published', 'skipped', 'failed', 'held']
 
 type PreviewThread = { ts: string; channel: string; revision: number; instagram: boolean; threads: boolean }
+type DelegatedAction = keyof typeof delegatedReply
+type DelegatedDecision = { actor: 'hermes'; at: string; reason: string; preview: PreviewThread }
 type PreviewShare = { fileIds: string[]; channel: string; revision: number; includesThreads: boolean; includesInstagram?: boolean }
 type DraftDecision = Reactions & { threadsApproved: boolean }
 const undecided: DraftDecision = { approved: false, rejected: false, threadsApproved: false }
@@ -468,8 +472,17 @@ export class Job {
       && (threads.state === 'waiting' || threads.state === 'publishing') ? threadsWindow(draft.format, draft.from) : null
   }
 
+  private delegatedApproval(draft: Draft, destination: 'instagram' | 'threads') {
+    return draft.delegatedApprovals?.find(({ preview }) => preview.revision === draft.revision && preview[destination])
+  }
+
   private async readDecision(draft: Draft): Promise<DraftDecision> {
-    const decision = { ...undecided }
+    if (draft.delegatedVeto) {
+      this.assertCurrent(draft)
+      return { ...undecided, rejected: true }
+    }
+    const decision = { approved: Boolean(this.delegatedApproval(draft, 'instagram')), rejected: false,
+      threadsApproved: Boolean(this.delegatedApproval(draft, 'threads')) }
     let failure = this.pendingPreview(draft) ? new DecisionUnknown('Slack preview lookup failed: the upload has no message yet') : undefined
     for (const preview of this.previewThreads(draft)) {
       try {
@@ -1131,12 +1144,57 @@ export class Job {
   }
 
   private async skip(draft: Draft, reason: SkipReason) {
-    if (reason.kind === 'rejected' && draft.threads && this.s.config().threads.enabled) stopThreads(draft.threads, 'rejected')
-    const text = skipText(reason)
-    await this.settle(draft, 'skipped', text, { skipReason: text })
-    if (draft.publishFailures && reason.kind !== 'too-few') {
-      await this.s.resolveAlert(alerts.draftKey(draft), alerts.publishSkipped(draft, reason, this.s.now()))
+    const outcome = reason.kind === 'rejected' && draft.delegatedVeto ? { kind: 'delegated-skip' as const } : reason
+    if (draft.threads && outcome.kind === 'rejected' && this.s.config().threads.enabled) stopThreads(draft.threads, 'rejected')
+    const text = skipText(outcome)
+    await this.settle(draft, 'skipped', outcome.kind === 'delegated-skip' ? null : text, { skipReason: text })
+    if (draft.publishFailures && outcome.kind !== 'too-few') {
+      await this.s.resolveAlert(alerts.draftKey(draft), alerts.publishSkipped(draft, outcome, this.s.now()))
     }
+  }
+
+  /** The CLI calls this under the tick lock. The acknowledgment never changes the saved decision. */
+  async delegateDecision(action: DelegatedAction, id: string, revision: number, reason: string): Promise<boolean> {
+    const { format, from } = parseDraftId(id)
+    const draft = this.loadDraft(id)
+    if (!draft) throw new Error(`No draft ${id}; see \`status\``)
+    if (revision !== draft.revision) throw new Error(`${id}: current revision is r${draft.revision}, not r${revision}.`)
+    reason = reason.trim()
+    if (!reason) throw new Error('Give the source of Hanif’s instruction in --reason.')
+    const now = this.s.now()
+    const { cutoff } = runWindow(format, from)
+    if (action === 'skip' && draft.delegatedVeto) return false
+    if (action === 'approve' ? draft.state !== 'previewed' : !['previewed', 'publishing', 'held'].includes(draft.state)) {
+      throw new Error(`${id}: cannot ${action} a draft in state ${draft.state}; it needs a current preview.`)
+    }
+    if (action === 'approve' && now >= cutoff) throw new Error(`${id}: the Instagram approval cutoff has passed.`)
+    const preview = this.previewThreads(draft).findLast(item => item.revision === revision && item.ts === draft.slack.ts && item.channel === previewChannel(draft))
+    if (!preview || (action === 'approve' && this.pendingPreview(draft))) {
+      throw new Error(`${id}: no confirmed current preview for r${revision}.`)
+    }
+    const receipt: DelegatedDecision = { actor: 'hermes', at: now.toISOString(), reason, preview }
+    if (action === 'approve') {
+      if (draft.delegatedApprovals?.some(entry => entry.preview.revision === revision && entry.preview.ts === preview.ts && entry.preview.channel === preview.channel)) return false
+      const needsInstagram = preview.instagram && !this.instagramAuto(draft)
+      const needsThreads = preview.threads && this.threadsApprovalOpen(draft) && !this.threadsAuto(draft)
+      if (!needsInstagram && !needsThreads) throw new Error(`${id}: no destination on the current preview needs approval.`)
+      ;(draft.delegatedApprovals ??= []).push(receipt)
+    } else {
+      draft.delegatedVeto = receipt
+      if (draft.threads) stopThreads(draft.threads, 'delegated-skip')
+      if (draft.state !== 'publishing') {
+        draft.state = 'skipped'
+        draft.skipReason = delegatedReply.skip
+        draft.notify = null
+      }
+    }
+    this.save(draft)
+    try {
+      await this.s.slackPost(delegatedReply[action], preview.ts, preview.channel)
+    } catch {
+      this.s.log(`${id}: could not send the delegated ${action} Slack reply`)
+    }
+    return true
   }
 
   /** Deliver a pending Slack message. A failure leaves it pending for the next tick. */
@@ -1251,6 +1309,9 @@ export class Job {
   /** Returns true only when the draft is published. A pending Business Suite Share takes precedence over all gates. */
   private async publishDraft(draft: Draft, window: RunWindow): Promise<boolean> {
     if (draft.storyShare) return this.reconcileStory(draft, window)
+    if (draft.delegatedVeto && !draft.publish?.units.some(unit => unit.pendingSince)) {
+      throw new PublishStop('rejected', delegatedReply.skip)
+    }
     const config = this.s.config()
     const token = await this.s.loadToken(this.s.now())
     if (token.state === 'missing') { this.s.log(`${draft.id}: no Instagram token file; skipping publishing`); return false }
@@ -1259,6 +1320,7 @@ export class Job {
     // Reconciling an earlier unclear publish never calls this, so it isn't blocked by any of these checks.
     let eventsChecked = false
     const beforeWrite = async () => {
+      if (draft.delegatedVeto) throw new PublishStop('rejected', delegatedReply.skip)
       if (this.s.now() >= window.deadline) throw new PublishStop('deadline', 'The publishing deadline has passed')
       checkWrite(window, await this.readDecision(draft), this.instagramAuto(draft), this.s.now())
       if (!eventsChecked) { await this.checkEvents(draft); eventsChecked = true }
@@ -1380,8 +1442,10 @@ export class Job {
       })
       const checkedAt = this.s.now()
       if (!reactions) return this.skip(draft, { kind: 'late', by: window.deadline })
-      if (reactions.approved && !draft.approvedSeenAt) { draft.approvedSeenAt = checkedAt.toISOString(); this.save(draft) }
-      const decision = decide(window, reactions, draft.approvedSeenAt ? new Date(draft.approvedSeenAt) : null, this.instagramAuto(draft), checkedAt)
+      const delegatedAt = this.delegatedApproval(draft, 'instagram')?.at
+      if (reactions.approved && !delegatedAt && !draft.approvedSeenAt) { draft.approvedSeenAt = checkedAt.toISOString(); this.save(draft) }
+      const approvedAt = delegatedAt ?? draft.approvedSeenAt
+      const decision = decide(window, reactions, approvedAt ? new Date(approvedAt) : null, this.instagramAuto(draft), checkedAt)
       if (decision.action === 'skip') {
         // Hoy's auto window stays open after its approval cutoff. An unavailable review can still recover in that window.
         if (decision.reason.kind === 'no-approval' && checkedAt < window.deadline && draft.review && !this.matchingReview(draft)
@@ -1567,6 +1631,7 @@ export class Job {
     const { format, from } = parseDraftId(id)
     const old = this.loadDraft(id)
     if (!old) throw new Error(`No draft ${id}; see \`status\``)
+    if (old.delegatedVeto) throw new Error(`${id}: Hermes recorded a veto; it can't be rebuilt.`)
     if (old.storyShare || old.publish || ['publishing', 'published'].includes(old.state)) {
       throw new Error(`${id} has started publishing; it can't be rebuilt`)
     }
@@ -1601,6 +1666,7 @@ export class Job {
     const previousPreview = { fileIds: old.slack.ts ? old.slack.fileIds : [], ts: old.slack.ts, channel: old.slack.channel,
       revision: old.slack.revision ?? old.revision, previews: this.previewThreads(old) }
     const decisionBroadcastAttempted = old.decisionBroadcastAttempted || old.review?.homeAttempted || undefined
+    delete old.delegatedApprovals
     Object.assign(old, { decisionBroadcastAttempted, reviewHistory, reviewRebuilds: reviewRebuilds ?? old.reviewRebuilds, review: { unavailableAlert },
       revision, state: 'rebuilding', exclude, track: savedTrack, approvedSeenAt: null, slack: previousPreview, notify: null, r2Uploaded: null, threads, threadsHoldOpen })
     this.save(old)

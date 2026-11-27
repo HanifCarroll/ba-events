@@ -191,7 +191,8 @@ export function storyUnconfirmed(draft: Draft, now: Date, error?: string) {
 
 export function publishSkipped(draft: Draft, reason: Exclude<SkipReason, { kind: 'too-few' }>, now: Date) {
   const why = reason.kind === 'late' ? `its deadline passed at ${when(reason.by, now)}`
-    : reason.kind === 'no-approval' ? `it didn't have a ✅ by ${when(reason.by, now)}` : 'you reacted ❌'
+    : reason.kind === 'no-approval' ? `it didn't have a ✅ by ${when(reason.by, now)}`
+      : reason.kind === 'delegated-skip' ? 'Hermes vetoed it at your request' : 'you reacted ❌'
   return `⚠️ *The ${label(draft)} wasn't posted*: ${why}. No action needed.`
 }
 

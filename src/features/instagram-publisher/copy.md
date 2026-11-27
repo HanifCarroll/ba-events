@@ -158,6 +158,10 @@ Once the post is published, reply in that message's thread with "Posted: {permal
 - "only {n} events qualified"
 - "not published by {HH:MM}" (approved, but nothing could go out before the deadline: 19:00 for Hoy, the cutoff for a carousel)
 
+When Hermes records a decision at Hanif's request, reply once in the current preview thread:
+- Approval: "Aprobado por Hermes a pedido de Hanif."
+- Veto: "Descartado por Hermes a pedido de Hanif." (instead of "Skipped: you reacted ❌")
+
 If an event in an approved draft is cancelled before the post goes out, the draft is held, not published, and the thread gets "Held: {title} was cancelled. Ask Hermes to regenerate it."
 
 If an event in the draft is no longer marked in scope, the thread gets "Held: {title} is no longer marked in scope. Ask Hermes to regenerate it."

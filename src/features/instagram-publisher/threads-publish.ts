@@ -42,15 +42,16 @@ const isOpen = (draft: ThreadsDraft) => draft.state === 'waiting' || draft.state
 export const retainThreads = (draft: ThreadsDraft) => Boolean(draft.attemptedAt || draft.mediaId)
   || ['published', 'skipped', 'failed'].includes(draft.state)
 
-function settle(draft: ThreadsDraft, state: 'skipped' | 'held' | 'failed' | 'published', notify: string) {
+function settle(draft: ThreadsDraft, state: 'skipped' | 'held' | 'failed' | 'published', notify: string | null) {
   draft.state = state
   draft.notify = notify
 }
 
 /** Reactions or an event hold that Instagram already observed apply to Threads too, but cannot undo a dispatched publish. */
-export function stopThreads(draft: ThreadsDraft, stop: 'rejected' | { title: string }) {
+export function stopThreads(draft: ThreadsDraft, stop: 'rejected' | 'delegated-skip' | { title: string }) {
   if (!isOpen(draft) || draft.attemptedAt || draft.mediaId) return
-  if (stop === 'rejected') settle(draft, 'skipped', threadsReplies.rejected)
+  if (stop === 'delegated-skip') settle(draft, 'skipped', null) // The command acknowledges the veto in the preview thread.
+  else if (stop === 'rejected') settle(draft, 'skipped', threadsReplies.rejected)
   else settle(draft, 'held', threadsReplies.held(stop.title))
 }
 

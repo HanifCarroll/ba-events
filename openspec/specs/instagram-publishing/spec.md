@@ -88,19 +88,26 @@ The Reel MUST be one 1080 × 1920 H.264/AAC MP4 at 30 fps, drafted Thursday 18:0
 - **THEN** the draft fails with an alert that names the install command
 
 ### Requirement: Slack previews request approval only when needed
-While approval is open, a rendered draft MUST request approval in a top-level Slack preview when an enabled publication needs Hanif's ✅. This includes manual mode, an unavailable review, and unresolved questions requiring Hanif's decision. A confirmed error alone does not require his decision. If Threads later needs approval and its text was not shown, the new preview MUST show its text and request only the missing approval. A ✅ applies only to the destinations and content revision it showed and does not replace approval for unchanged Instagram content. The preview MUST attach every frame (for a Reel, the video, and a last line naming the track). It MUST use `slack.channel` from publisher config, defaulting to #alerts (`C0CG3EGKKP1`), and save that channel with the preview. Existing previews without a stored channel MUST keep using #ba-eventos (`C0CHBCSEV3R`). Only Hanif's ✅ and ❌ reactions on an existing preview count; thread replies do not. Routine outcomes MUST only reply under an existing preview. Failures continue through the alert path.
+While approval is open, a rendered draft MUST request approval in a top-level Slack preview when an enabled publication needs Hanif's ✅. This includes manual mode, an unavailable review, and unresolved questions requiring Hanif's decision. A confirmed error alone does not require his decision. If Threads later needs approval and its text was not shown, the new preview MUST show its text and request only the missing approval. A ✅ applies only to the destinations and content revision it showed and does not replace approval for unchanged Instagram content. The preview MUST attach every frame (for a Reel, the video, and a last line naming the track). It MUST use `slack.channel` from publisher config, defaulting to #alerts (`C0CG3EGKKP1`), and save that channel with the preview. Existing previews without a stored channel MUST keep using #ba-eventos (`C0CHBCSEV3R`). Only Hanif's ✅ and ❌ reactions on an existing preview count as Slack decisions; bot reactions and thread replies do not. Hermes may record Hanif's explicit decision using the local publisher CLI. Routine outcomes MUST only reply under an existing preview. Failures continue through the alert path.
 
 #### Scenario: Hanif reacts ❌
 - **WHEN** Hanif's ❌ is on any preview of the draft before the post goes out, including an earlier revision or a preview for only one destination
 - **THEN** the draft is skipped, even if it later qualified for auto mode, and the thread gets "Skipped: you reacted ❌"
 
-#### Scenario: No ✅ by the cutoff
-- **WHEN** there is no ✅ by 17:00 for Hoy, Friday 18:00 for Este finde and the Reel, or Tuesday 20:00 for Gratis, and auto mode is off
+#### Scenario: Hanif asks Hermes to decide
+- **WHEN** Hermes runs `approve <draft-id> --revision <n> --reason "<instruction source>"` for the current preview while it still needs approval and before the Instagram approval cutoff
+- **THEN** the job records the revision, preview destinations, time, actor `hermes`, and reason. The approval is equivalent to an in-time ✅ for those destinations only and is checked before new publishing writes
+- **AND** a rebuild clears delegated approvals. Hanif's ❌ on any preview still wins, but removing a ✅ does not withdraw a delegated approval
+- **AND** `skip <draft-id> --revision <n> --reason "<instruction source>"` records a permanent veto for the draft. It stops new writes to both destinations and prevents rebuilding, without undoing or blocking reconciliation of a dispatched publish
+- **AND** a repeated decision for the same preview does not rewrite the audit entry or send another reply. A newly recorded decision posts one Spanish acknowledgment attempt in the preview thread; the job logs a Slack failure without undoing the decision
+
+#### Scenario: No approval by the cutoff
+- **WHEN** there is no in-time approval by 17:00 for Hoy, Friday 18:00 for Este finde and the Reel, or Tuesday 20:00 for Gratis, and auto mode is off
 - **THEN** the draft is skipped and the thread gets "Skipped: no ✅ by {HH:MM}"
 
 #### Scenario: Approval changes after publishing has started
-- **WHEN** a draft is publishing and Hanif reacts ❌, or removes his ✅ with auto mode off
-- **THEN** no further Instagram write is made: ❌ skips the draft, a removed ✅ pauses it
+- **WHEN** a draft is publishing and Hanif reacts ❌, Hermes records a veto, or Hanif removes his ✅ with auto mode off and without a delegated approval
+- **THEN** no further Instagram write is made: a veto skips the draft, a withdrawn approval pauses it
 
 #### Scenario: Past the deadline
 - **WHEN** the deadline has passed (Hoy 19:00, a carousel's or the Reel's cutoff)
