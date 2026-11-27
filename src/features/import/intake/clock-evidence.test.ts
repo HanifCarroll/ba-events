@@ -70,6 +70,8 @@ describe('intake clock tokens', () => {
   it.each([
     ['Sábado 14 a 18 hs', '14:00', '18:00'], ['Domingo 15 hasta 20 hs', '15:00', '20:00'],
     ['Viernes de las 20 a las 23 hs', '20:00', '23:00'],
+    ['Viernes de las 20 a las 23', '20:00', '23:00'],
+    ['desde las 21 hasta las 2', '21:00', '02:00'],
     ['de 21:00 a las 23:30 hs', '21:00', '23:30'],
     ['desde 20 hasta las 23 hs', '20:00', '23:00'],
     ['de la 1 a la 2 h', '01:00', '02:00'],
@@ -81,6 +83,13 @@ describe('intake clock tokens', () => {
   ])('uses the opening clock in %s rather than its closing hour', (excerpt, start, end) => {
     expect(citesClock(excerpt, start)).toBe(true)
     expect(citesClock(excerpt, end)).toBe(false)
+  })
+
+  it('does not use either number from an opened span with only a marked closing clock', () => {
+    const excerpt = 'Mayores de 18 a las 21'
+    expect(citesClock(excerpt, '18:00')).toBe(false)
+    expect(citesClock(excerpt, '21:00')).toBe(false)
+    expect(citesClock(`${excerpt}. Show: 21 hs`, '21:00')).toBe(true)
   })
 
   it('verifies the flyer’s stated start rather than an unstated hour', () => {

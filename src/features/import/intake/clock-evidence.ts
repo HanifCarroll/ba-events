@@ -28,7 +28,7 @@ function clockLexemes(source: string) {
     const before = source.slice(Math.max(0, start - 80), start)
     // Context labels are local to the number and cannot extend onto another line.
     const prefix = normalizeEvidenceText(before.split(/[\r\n]/u).at(-1) ?? '')
-    const opensRange = /(?<![\p{L}\p{N}_])(?:de|desde)(?: las?)?$/u.test(normalizeEvidenceText(before))
+    const opener = /(?<![\p{L}\p{N}_])(?:de|desde)(?: (las?))?$/u.exec(normalizeEvidenceText(before))
     const tail = normalizeEvidenceText(source.slice(end, end + 80).split(/[\r\n]/u, 1)[0])
     const period = suffix?.[0].toLowerCase()
     const meridiem = period === 'a' || period === 'p'
@@ -43,7 +43,7 @@ function clockLexemes(source: string) {
     const hours = Number(hour)
     const validStart = hours < 24 && (!meridiem || hours >= 1 && hours <= 12)
     const localHour = meridiem ? hours % 12 + (period === 'p' ? 12 : 0) : hours
-    return [{ start, end, bareAfterColon, nonClock, meridiem, hasDayPrefix, opensRange,
+    return [{ start, end, bareAfterColon, nonClock, meridiem, hasDayPrefix, opensRange: !!opener, opensWithArticle: !!opener?.[1],
       time: `${String(localHour).padStart(2, '0')}:${minute ?? '00'}`,
       standalone: validStart && Boolean(suffix || introduced || explicitMinutes(separator, minute) || bareAfterColon),
       sharedStart: validStart && !separator && !suffix && !dateFragmentOrRating,
@@ -58,14 +58,17 @@ export function* clockTokens(source: string) {
     const right = tokens[index + 1]
     if (!right) return
     const gap = source.slice(left.end, right.start).trim().toLowerCase()
-    // `a la(s)` and `hasta la(s)` only close a range explicitly opened by `de` or `desde`.
-    const wordJoin = gap === 'a' || gap === 'hasta' || left.opensRange && /^(?:a|hasta)\s+las?$/u.test(gap)
+    // `a la(s)` and `hasta la(s)` mark a closing clock only in an explicitly opened span.
+    const articleJoin = left.opensRange && /^(?:a|hasta)\s+las?$/u.test(gap)
+    const wordJoin = gap === 'a' || gap === 'hasta' || articleJoin
     const dashJoin = gap === '-' || gap === '–'
     if (!wordJoin && !dashJoin) return
     const bareStart = left.sharedStart && (wordJoin || !left.hasDayPrefix)
+    const rightClock = right.standalone || right.sharedEnd || articleJoin && right.sharedStart
+    const openedWordRange = wordJoin && left.opensRange && rightClock
     if (left.nonClock || right.nonClock) return 'non-clock'
-    if (left.standalone && (right.standalone || right.sharedEnd) || bareStart && right.sharedEnd) return 'clock'
-    if (bareStart && right.standalone && right.meridiem) return 'ambiguous-meridiem'
+    if (left.standalone && rightClock || bareStart && (right.sharedEnd || openedWordRange && left.opensWithArticle)) return 'clock'
+    if (openedWordRange || bareStart && right.standalone && right.meridiem) return 'closing-only'
   })
   for (const [index, { start, end, time, standalone, bareAfterColon, nonClock }] of tokens.entries()) {
     const previousRange = ranges[index - 1]
@@ -73,7 +76,7 @@ export function* clockTokens(source: string) {
     const borrowsEnd = !standalone && ranges[index] === 'clock'
     if (!standalone && !borrowsEnd) continue
     const evidenceEnd = borrowsEnd ? tokens[index + 1].end : end
-    const closesRange = previousRange === 'clock' || previousRange === 'ambiguous-meridiem'
+    const closesRange = previousRange === 'clock' || previousRange === 'closing-only'
     yield { start, end, time, evidenceEnd, bareAfterColon, closesRange }
   }
 }
