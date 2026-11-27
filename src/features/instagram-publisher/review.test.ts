@@ -6,6 +6,8 @@ import { expect, it, vi } from 'vitest'
 import { freshD1 } from '../../../tests/support/d1.ts'
 import { OK, readReviewKey, reviewWithOpenAI, type ReviewInput } from './review.ts'
 import { loadReviewSources } from './review-evidence.ts'
+import { lookupReviewBarrio } from './review-reply.ts'
+import { adjudicateReviewQuestions, resolveReviewQuestionsWithOpenAI, type ReviewQuestion } from './review-resolution.ts'
 
 const id = '00000000-0000-4000-8000-000000000001'
 const from = '2026-11-25'
@@ -96,6 +98,39 @@ it('refuses missing, duplicate, invalid, or invented event verdicts', async () =
     await expect(reviewWithOpenAI(config, 'key', prompt, input, [file, file, file], new Map(), async () => response(events)))
       .rejects.toThrow('invalid or incomplete verdicts')
   }
+})
+
+it.each(['venue field', 'venue citation', 'untagged unrelated caption', 'venue-only quote from mixed price excerpt'])('keeps a price question open despite a real %s', async mode => {
+  const url = sourceUrl
+  const quote = 'Venue: Sala de ensayo.'
+  const question: ReviewQuestion = { id, field: 'price', question: 'Is admission free?', usig: null, evidence: { address: null, officialPages: [],
+    observations: [{ postUrl: url, caption: quote, publishedAt: null, excerpts: mode === 'untagged unrelated caption' ? []
+      : [{ fields: mode === 'venue-only quote from mixed price excerpt' ? ['venue', 'price'] : ['venue'], excerpt: quote }] }] } }
+  const formats: string[] = []
+  const resolution = await resolveReviewQuestionsWithOpenAI(config, 'synthetic', 'test', input, [question], async (_url, request) => {
+    const format = JSON.parse(String(request?.body)).text.format.name
+    formats.push(format)
+    const output = format === 'publisher_citation_check' ? { direct: [] } : {
+      resolved: [{ id, field: mode === 'venue field' ? 'venue' : 'price', verdict: 'ok', reason: 'The venue is listed.', citations: [{ url, quote }] }],
+    }
+    return Response.json({ status: 'completed', model: 'fake', output: [{ type: 'message', content: [{ type: 'output_text', text: JSON.stringify(output) }] }] })
+  })
+  expect(resolution.resolved).toEqual([])
+  expect(formats).toEqual(mode === 'venue field' || mode === 'venue citation' ? ['publisher_question_resolution']
+    : ['publisher_question_resolution', 'publisher_citation_check'])
+})
+
+it.each([false, true])('applies the official barrio polarity even if the reviewer agrees with the card (ambiguous: %s)', async ambiguous => {
+  const evidence = { address: 'Av. San Martín 5885', officialPages: [], observations: [
+    { postUrl: sourceUrl, publishedAt: null, caption: ambiguous ? 'Nos vemos en Av. Corrientes 4040.' : 'Nos vemos en Av. San Martín 5885.', excerpts: [] },
+  ] }
+  const usig = await lookupReviewBarrio(evidence, async () => Response.json({ barrio: 'Agronomia' }))
+  const question = 'Is this street number in Almagro?'
+  const state = await adjudicateReviewQuestions(input, [{ id, field: 'barrio', question, usig, evidence }], async () => {
+    throw new Error('An agreed or ambiguous municipal result must not be reclassified by the model.')
+  })
+  expect(usig?.ambiguous ?? false).toBe(ambiguous)
+  expect(state.resolved).toEqual(ambiguous ? [] : [expect.objectContaining({ id, verdict: 'wrong', field: 'barrio', citations: [{ url: usig?.url, quote: 'Agronomia' }] })])
 })
 
 it('reads the OpenAI key only from a mode-600 file', () => {

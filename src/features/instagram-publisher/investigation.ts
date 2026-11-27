@@ -27,7 +27,7 @@ export const finding = z.discriminatedUnion('verdict', [
   z.strictObject({ verdict: z.literal('ok'), reason: line(300), url: webUrl, checked: checked.optional() }),
   z.strictObject({ verdict: z.literal('fixed'), fixes: z.array(z.uuid()).min(1).max(12), checked: checked.optional() }),
   z.strictObject({ verdict: z.literal('exclude'), reason: line(300), hermes: line(300).optional(), checked: checked.optional() }),
-  z.strictObject({ verdict: z.literal('ask'), question: line(300), checked, hermes: line(300).optional() }),
+  z.strictObject({ verdict: z.literal('ask'), question: line(300), field: line(40).optional(), checked, hermes: line(300).optional() }),
 ])
 export type Finding = z.infer<typeof finding>
 export type Findings = Record<string, Finding>
@@ -40,6 +40,8 @@ export interface Investigation {
   fallback?: boolean
   repairAlertQueued?: boolean
   failure?: string
+  /** This revision may no longer match the catalog after a submitted correction. */
+  catalogWriteHold?: boolean
   failureAlerted?: boolean
   replied?: boolean
 }

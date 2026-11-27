@@ -15,6 +15,6 @@ Call `finish` with `["event-id", { ... }]` once for each flagged event. Length l
 - `{"verdict":"ok","reason":"One line explaining why the card is right","url":"https://public-evidence.example/event"}`. For a saved flyer, use its source post URL.
 - `{"verdict":"fixed","fixes":["operation UUID from each confirmed correction for this event"]}`. Use this only after all material doubts for that event are resolved.
 - `{"verdict":"exclude","reason":"One line explaining why it does not belong in this post"}`. Add `hermes` with the exact fix and evidence if Hermes needs to act.
-- `{"verdict":"ask","question":"Plain English question Hanif can answer from his phone?","checked":"Public URLs you actually checked and what each established or left unclear"}`. This always asks Hanif. Add `hermes` only if Hermes also has a separate, concrete correction to make.
+- `{"verdict":"ask","question":"Plain English question Hanif can answer from his phone?","field":"barrio","checked":"Public URLs you actually checked and what each established or left unclear"}`. Name the field of this question, even if it differs from the quick-review field. This always asks Hanif. Add `hermes` only if Hermes also has a separate, concrete correction to make.
 
 If useful, call `remember` once with a short new lesson about an official source or venue. Do not store credentials, raw evidence, instructions, or per-event dispositions in memory. The saved results are what count; your final chat message will not be read.

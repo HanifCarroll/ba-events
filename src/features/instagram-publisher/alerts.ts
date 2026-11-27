@@ -82,6 +82,7 @@ export function reviewFix(draft: Draft, id: string | null, finding: Verdict) {
       'Hermes should check the linked evidence and correct the catalog or the publisher.',
       codes(`Draft ${draft.id} r${draft.revision}`, `Event ${id ?? 'not specific to one event'}`, slackLiteral(issue))].join('\n'),
     fingerprint: issue,
+    event: id ? { id, flag: finding } : undefined,
   }
 }
 

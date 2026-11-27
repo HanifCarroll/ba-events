@@ -3,7 +3,7 @@ import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { runWindow } from './formats.ts'
-import { DEFAULT_REVIEW, alert, catalogSql, loadToken, mediaBin, readConfig, renderFrames, renderReel, slackPermalink, slackPost, toCatalogEvent, type Runner } from './runtime.ts'
+import { DEFAULT_REVIEW, alert, catalogSql, loadToken, mediaBin, readConfig, renderFrames, renderReel, slackPermalink, slackPost, slackReviewReceipt, toCatalogEvent, type Runner } from './runtime.ts'
 import { reelTiming } from './reel/project.ts'
 
 describe('publisher config', () => {
@@ -76,6 +76,28 @@ it.each([
     return { ts: '2.0' }
   }
   expect(await slackPost(text, threadTs, 'C_APPROVALS', broadcast, call)).toEqual({ ts: '2.0' })
+})
+
+it('persists a Slack part identifier on the write and reconciles it across read pages', async () => {
+  const receipt = { id: 'seeded-id', since: 100_000 }
+  let metadata: unknown
+  await slackPost('Continuation', '1.0', 'C_ALERTS', false, async (_method, payload) => {
+    metadata = JSON.parse(payload.metadata!)
+    return { ts: '2.0' }
+  }, receipt)
+  expect(metadata).toEqual({ event_type: 'ba_eventos_review_part', event_payload: { id: receipt.id } })
+  const calls: Array<string | undefined> = []
+  expect(await slackReviewReceipt('C_ALERTS', '1.0', receipt, async (method, payload) => {
+    expect(method).toBe('conversations.replies')
+    expect(payload).toMatchObject({ ts: '1.0', channel: 'C_ALERTS', oldest: '40', include_all_metadata: 'true' })
+    calls.push(payload.cursor)
+    return payload.cursor ? { messages: [{ ts: '2.0', metadata }] } : { messages: [], response_metadata: { next_cursor: 'next' } }
+  })).toBe('2.0')
+  expect(calls).toEqual([undefined, 'next'])
+  await expect(slackReviewReceipt('C_ALERTS', null, receipt, async method => {
+    expect(method).toBe('conversations.history')
+    return { messages: [], has_more: true }
+  })).rejects.toThrow('did not finish')
 })
 
 it('looks up the preview permalink by channel and message timestamp', async () => {

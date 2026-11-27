@@ -169,7 +169,7 @@ After rendering, the publisher MUST review the still frames (for a Reel, its cov
 
 #### Scenario: The investigation completes
 - **WHEN** every flagged event is resolved as `ok` with evidence, or the investigator returns `fixed`, `exclude`, or `ask` entries
-- **THEN** the job replies with one line per event if a preview exists or if the findings require one
+- **THEN** the job replies with each flagged event's conclusion and review resources if a preview exists or if the findings require one
 - **AND** all `ok` clears the event gate for that exact revision only; a `fixed` or `exclude` result without any `ask` rebuilds with cumulative exclusions and a fresh review when the approval and cutoff rules allow it. It rebuilds at most twice per draft per Buenos Aires day; if too few qualify it skips in the old thread
 - **AND** a confirmed error the investigator cannot correct is excluded and the evidence and requested correction go to Hermes without blocking the rebuild
 - **AND** an investigator's `ask` or an unresolved quick-review question after the investigation limit requires ✅, even when Hermes also gets a fix request
@@ -189,8 +189,8 @@ After rendering, the publisher MUST review the still frames (for a Reel, its cov
 #### Scenario: Public evidence answers a pending question
 - **WHEN** a quick-review event question or a fallback question would otherwise need Hanif's decision
 - **THEN** the publisher checks all linked observations and official excerpts, and uses USIG for a parseable address or barrio question
-- **AND** it may clear or confirm the flag only with a public URL and an exact supporting quote or official lookup value. It records the original question, conclusion, and citations on that revision
-- **AND** a confirmed contradiction follows the existing repair path. Missing, conflicting, unverified, or unavailable evidence leaves the original question open
+- **AND** it may clear or confirm the flag only with a public URL and an exact quote about the flagged fact. When sources agree on the numbered address, it compares the official USIG barrio directly with the card. It records the original question, conclusion, and citations on that revision
+- **AND** a confirmed contradiction goes to Hermes even when a replacement can be built immediately. Missing, conflicting, unverified, or unavailable evidence leaves the original question open. A fallback answer never overrides a hold for an unreconciled catalog correction
 
 #### Scenario: An unresolved review needs Hanif's decision
 - **WHEN** a current Slack preview has an unresolved review question, including a post-wide question or an investigator's `ask`, and at least one destination it showed still needs a decision while approval remains open and Hanif has not vetoed the draft
@@ -200,10 +200,10 @@ After rendering, the publisher MUST review the still frames (for a Reel, its cov
 
 #### Scenario: A review reply asks for a decision or reports a problem
 - **WHEN** the job sends a quick-review or investigation reply with an event question or problem
-- **THEN** for each flagged event it includes a one-line question or problem, the public catalog event link, every linked source post and official page URL, and up to two short verbatim excerpts prioritized for the flagged claim
+- **THEN** for each flagged event it includes a one-line question or problem, the public catalog event link and every linked source post and official page URL, each with its own short verbatim excerpt for the current flagged fact when available, including caption-only facts. If the source lacks such an excerpt, the reply says so. Event-specific fix alerts include the same links and source excerpts
 - **AND** for an address, venue, or barrio flag, it attempts a short, anonymous USIG lookup when it can parse a street and number, and reports the link and official barrio or a lookup failure
 - **AND** it includes recorded investigator conclusions and their cited URLs for that event from this or earlier rounds of the same draft. If none were recorded, it says why the event was not investigated instead of presenting a cap or failure as evidence
-- **AND** untrusted text cannot inject Slack formatting or mentions. Overflow continues in the same Slack thread without cutting links or broadcasting a second decision notice
+- **AND** untrusted text cannot inject Slack formatting or mentions. The job reserves overflow before sending the first part and reconciles uncertain continuation sends before retrying. Overflow continues in the same Slack thread without cutting links or broadcasting a second decision notice
 
 #### Scenario: Investigation fails
 - **WHEN** the investigator cannot start, times out, or exits without a complete, valid, on-time result
