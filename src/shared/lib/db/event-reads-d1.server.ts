@@ -45,6 +45,16 @@ export async function eventsByStartD1(db: D1Database, limit: number): Promise<Ch
   return results.map(toPayload)
 }
 
+/** Sitemap candidates: no artwork requirement, feed window, or card grouping. */
+export async function upcomingEventSitemapRowsD1(db: D1Database, asOf: Date) {
+  const { results } = await db.prepare(`
+    SELECT id, updated_at FROM events
+    WHERE status = 'scheduled' AND scope = 'in' AND starts_at >= ?
+    ORDER BY starts_at, id
+  `).bind(asOf.toISOString()).all<{ id: string; updated_at: string }>()
+  return results
+}
+
 const INSTAGRAM_POST = /^https:\/\/www\.instagram\.com\/(?:p|reel)\/[\w-]+\/?$/i
 
 type AgendaRow = Omit<HomeAgendaEvent, 'is_free' | 'time_tba' | 'is_all_day' | 'location_hidden' | 'location_tba' | 'music' | 'payWhatYouCan' | 'sourceUrl'> & {

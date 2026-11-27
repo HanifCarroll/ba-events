@@ -4,7 +4,7 @@ vi.mock('$app/env', () => ({ dev: false }));
 
 import { handleCanonicalOrigin, handleLocaleSync, handleReadOnly } from './hooks.server';
 
-const eventFor = (url: string, method = 'GET') => ({ url: new URL(url), request: new Request(url, { method }) });
+const eventFor = (url: string, method = 'GET') => ({ url: new URL(url), request: new Request(url, { method }), route: { id: null } });
 
 const redirectHosts = [
 	'http://baeventos.com',
@@ -67,13 +67,24 @@ describe('locale preference synchronization', () => {
 		expect(resolve).toHaveBeenCalledWith(event);
 	});
 
+	it('does not set a locale cookie on the public sitemap', async () => {
+		const url = 'https://baeventos.com/sitemap.xml';
+		const cookies = { get: () => 'es', set: vi.fn() };
+		const event = { ...eventFor(url), route: { id: '/sitemap.xml' }, cookies,
+			request: new Request(url, { headers: { accept: 'text/html' } }) };
+		const resolve = vi.fn(() => new Response());
+		await handleLocaleSync({ event, resolve } as never);
+		expect(cookies.set).not.toHaveBeenCalled();
+		expect(resolve).toHaveBeenCalledWith(event);
+	});
+
 	it('forwards the saved locale on the same request without dropping the other cookies or the body', async () => {
 		const url = 'https://baeventos.com/?f=gratis';
 		const request = new Request(url, { method: 'POST', body: 'payload', headers: {
 			cookie: 'other=first; PARAGLIDE_LOCALE=en; session=fixture%2Etoken', accept: 'text/html'
 		} });
 		const cookies = { get: () => 'en', set: vi.fn() };
-		const event = { url: new URL(url), request, cookies, locals: { profile: { locale: 'es' } } };
+		const event = { ...eventFor(url), request, cookies, locals: { profile: { locale: 'es' } } };
 		const resolve = async ({ request: synced }: typeof event) => {
 			expect(synced.url).toBe(url);
 			expect(synced.headers.get('cookie')).toBe('PARAGLIDE_LOCALE=es; other=first; session=fixture%2Etoken');

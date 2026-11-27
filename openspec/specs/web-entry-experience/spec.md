@@ -147,6 +147,15 @@ The D1 homepage feed SHALL omit out-of-scope and unjudged events before applying
 - **WHEN** both are otherwise eligible for the homepage feed
 - **THEN** neither consumes a slot in the feed
 
+### Requirement: The public sitemap lists upcoming event pages
+`/sitemap.xml` SHALL serve a UTF-8 XML sitemap containing the canonical URLs for the homepage, `/mcp`, and upcoming scheduled event detail pages with an in-scope judgment. Event entries SHALL use the catalog event's `updated_at` as `lastmod`. `robots.txt` SHALL point crawlers to the production sitemap URL.
+
+#### Scenario: A crawler requests the sitemap
+- **WHEN** the crawler requests `/sitemap.xml`
+- **THEN** the response is `200` with an `application/xml` content type and can be cached at the edge for one hour
+- **AND** an event is listed only if its detail page is indexable at its own URL, its status is `scheduled`, its scope is `in`, and its stored start is at or after the generation time
+- **AND** the sitemap does not change which events their direct detail URLs serve
+
 ### Requirement: Card artwork preserves complete posters with a subtle background
 Event artwork SHALL preserve the full image without cropping inside a softly tinted container. The container SHALL remain visually quieter than the card content when artwork dimensions leave unused space.
 
@@ -211,5 +220,6 @@ The PWA installation prompt and pull-to-refresh gesture SHALL each have explicit
 - Implementation: `messages/en.json`, `messages/es.json`, `src/routes/(chat)/HomePage.svelte`, `src/features/events/components/HomeAgenda.svelte`, `src/shared/ui/MainLayout.svelte`, `src/features/events/components/EventArtwork.svelte`, `src/routes/mcp/+page.svelte`, `src/shared/lib/utils/formatting.ts`
 - Browser checks: render the real components in English and Spanish at desktop and mobile widths; verify homepage alignment at 320, 390, and 1440 CSS pixels, both session states, the second-visit install hint, and its dismissal. Verify app header alignment, menu keyboard access, navigation icon geometry, wrapped labels, Telegram link attributes, and Claude and ChatGPT setup instructions. Verify the phone list, desktop grid, centered composer, and pagination.
 - Install hint persistence: `src/shared/lib/pwa/install-hint.test.ts`.
+- Sitemap: `src/routes/sitemap.xml/sitemap.server.test.ts`, `src/features/sitemap/lib/sitemap-xml.test.ts`.
 - Static check: `bun run paraglide:compile && bun run check`
 - Specification validation: `bunx @fission-ai/openspec validate --specs --json`
