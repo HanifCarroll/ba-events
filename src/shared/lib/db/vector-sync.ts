@@ -2,7 +2,6 @@
 import type { D1Database, Vectorize } from '@cloudflare/workers-types'
 import { buildSearchDocument, CURRENT_EMBEDDING_VERSION, embedEventWithDocument, generateEmbedding } from '../ai/embeddings.ts'
 import type { EventFacets } from '../search-facets.ts'
-import { intakeCommitBatch } from './d1.server.ts'
 import { eventColumnsWith, type EventColumn } from './event-columns.ts'
 
 const VECTOR_CHUNK = 20
@@ -18,15 +17,15 @@ const EMBEDDING_FIELDS = `${VECTOR_FIELDS}, ${searchViewInputs.join(', ')}`
 
 type VectorRow = { id: string; status: string; starts_at: string }
 type DocumentState = { search_document: string | null; embedding_version: number }
-type StoredVector = VectorRow & DocumentState
+export type StoredVector = VectorRow & DocumentState
 type SearchInputRow = {
   name: string; description_es: string | null; description_en: string | null; categories: string; facets: string
   price: number | null; is_free: number; venue_name: string | null; venue_neighborhood: string | null
 }
 type StaleRow = StoredVector & SearchInputRow
 
-type VectorPatch = { search_document?: string | null; embedding_version?: number | null; embedding?: number[] | null; status?: string | null; starts_at?: string | null }
-type VectorWrite = { source: 'catalog' | 'rebuild'; patch: VectorPatch }
+export type VectorPatch = { search_document?: string | null; embedding_version?: number | null; embedding?: number[] | null; status?: string | null; starts_at?: string | null }
+type VectorWrite = { source: 'catalog'; patch: VectorPatch; documentChanged?: boolean }
   | { source: 'intake'; patch: VectorPatch; previous: { status?: unknown; starts_at?: unknown } | null }
 
 /** The write-capable catalog index binding; search's read-only checks stay independent. */
@@ -64,8 +63,8 @@ async function upsertPrepared(vectors: Vectorize, row: StoredVector & { document
 
 /**
  * Plan the index work for an event write. Append `queue`, when present, to the caller's D1 batch, then call `settle`
- * after commit. A thrown Vectorize write leaves the queue for reconcile. `rebuild` queues only after an immediately
- * preceding guarded UPDATE changed a row. Give `settle` a receipt plan id to retry only its still-pending work.
+ * after commit. A thrown Vectorize write leaves the queue for reconcile. The gateway supplies only changes that it
+ * permits; the later document comparison prevents publishing a preparation superseded by a concurrent write.
  */
 export function planVectorWrite(db: D1Database, id: string, write: VectorWrite) {
   const { source, patch } = write
@@ -75,22 +74,18 @@ export function planVectorWrite(db: D1Database, id: string, write: VectorWrite) 
     ? write.previous !== null && (write.previous.status !== patch.status ||
       Date.parse(String(write.previous.starts_at)) !== Date.parse(patch.starts_at ?? ''))
     : patch.status !== undefined || patch.starts_at !== undefined
-  // Intake retains a pending entry's place in the retry order. Importers replace it only if the document survived
-  // protection. Default to the insert (and its foreign-key check) if the event doesn't exist.
-  const queue = intake ? (embedding || metadataChanged
-    ? db.prepare('INSERT INTO vector_sync (event_id) VALUES (?) ON CONFLICT (event_id) DO NOTHING').bind(id) : null)
-    : !embedding ? null : source === 'rebuild'
-      ? db.prepare('INSERT OR REPLACE INTO vector_sync (event_id) SELECT ? WHERE changes() > 0').bind(id)
-      : db.prepare(`INSERT OR REPLACE INTO vector_sync (event_id)
-          SELECT ? WHERE coalesce((SELECT ${DOCUMENT_MATCH} FROM events WHERE id = ?), 1)`)
-        .bind(id, ...documentMatchParams(patch), id)
+  const documentChanged = source === 'catalog' && write.documentChanged
+  // Preserve older repair work when only metadata changes. The metadata settle must not clear that older entry.
+  const queue = source === 'catalog' && (embedding || documentChanged)
+    ? db.prepare('INSERT OR REPLACE INTO vector_sync (event_id) VALUES (?)').bind(id)
+    : embedding || metadataChanged
+      ? db.prepare('INSERT INTO vector_sync (event_id) VALUES (?) ON CONFLICT (event_id) DO NOTHING RETURNING event_id').bind(id)
+      : null
 
   return {
     queue,
-    async settle(vectors: Vectorize, receiptPlanId?: string): Promise<boolean> {
+    async settle(vectors: Vectorize, ownsQueue = false): Promise<boolean> {
       if (!embedding && !metadataChanged) return false
-      if (receiptPlanId && !await db.prepare(`SELECT 1 FROM event_intake_protection p JOIN vector_sync q ON q.event_id = p.event_id
-        WHERE p.event_id = ? AND p.plan_id = ?`).bind(id, receiptPlanId).first()) return false
       const expected = intake ? { ...patch, embedding_version: patch.embedding_version ?? 1 } : patch
       const row = await readVector(db, id, expected)
       if (!row) return false
@@ -101,14 +96,18 @@ export function planVectorWrite(db: D1Database, id: string, write: VectorWrite) 
       if (intake && !embedding) {
         // Intake metadata updates leave the queue: Vectorize can return stale values.
         await syncMetadata(vectors, [row], true)
-      } else if (source === 'catalog') {
-        // A metadata refresh cannot settle an outstanding document repair.
-        await syncMetadata(vectors, [row])
+      } else if (source === 'catalog' && metadataChanged && row.document_matches && !documentChanged && !embedding) {
+        const { missing } = await syncMetadata(vectors, [row])
+        if (ownsQueue && !missing.length) await clearQueue(db, row)
       }
       return false
     },
   }
 }
+
+/** Check the pending row and the caller's receipt predicate in the same read. */
+export const hasPendingVector = (db: D1Database, id: string, receiptCondition: string, ...params: unknown[]) => db
+  .prepare(`SELECT 1 FROM vector_sync WHERE event_id = ? AND (${receiptCondition})`).bind(id, ...params).first()
 
 /** D1 deletes the event (and cascades the queue row) before the caller removes its vector. */
 export async function removeEventVectors(vectors: Vectorize, ids: readonly string[]): Promise<void> {
@@ -135,13 +134,29 @@ async function syncMetadata(vectors: Vectorize, rows: readonly VectorRow[], rewr
   return { updated, missing }
 }
 
-/** Refresh metadata after an hourly status update, using the rows as the triggers left them. */
-export async function settlePastVectors(db: D1Database, vectors: Vectorize, ids: readonly string[]) {
-  if (!ids.length) return { marked: 0, vectorsUpdated: 0 }
-  const { results: rows } = await db.prepare('SELECT id, status, starts_at FROM events WHERE id IN (SELECT value FROM json_each(?))')
-    .bind(JSON.stringify(ids)).all<VectorRow>()
-  const { updated } = await syncMetadata(vectors, rows)
-  return { marked: rows.filter(row => row.status === 'past').length, vectorsUpdated: updated }
+async function clearSettledRows(db: D1Database, queue: 'vector_sync' | 'vector_metadata_sync', rows: readonly StoredVector[]) {
+  for (let offset = 0; offset < rows.length; offset += VECTOR_CHUNK) {
+    await db.prepare(`DELETE FROM ${queue} WHERE event_id IN (
+      SELECT e.id FROM json_each(?) s JOIN events e ON e.id = json_extract(s.value, '$.id')
+      WHERE ${vectorFields.slice(1).map(key => `e.${key} IS json_extract(s.value, '$.${key}')`).join(' AND ')})`)
+      .bind(JSON.stringify(rows.slice(offset, offset + VECTOR_CHUNK))).run()
+  }
+}
+
+/** Queue hourly aging in the event batch, then rewrite metadata without regenerating embeddings. */
+export function planPastVectors(db: D1Database, eligibility: string, values: readonly unknown[]) {
+  return {
+    queue: db.prepare(`INSERT INTO vector_sync (event_id) SELECT id FROM events WHERE ${eligibility}
+      ON CONFLICT (event_id) DO NOTHING RETURNING event_id AS id`).bind(...values),
+    async settle(vectors: Vectorize, applied: readonly StoredVector[], queued: readonly string[]) {
+      const { updated, missing } = await syncMetadata(vectors, applied)
+      const owned = new Set(queued)
+      const absent = new Set(missing)
+      const settled = applied.filter(row => owned.has(row.id) && !absent.has(row.id))
+      await clearSettledRows(db, 'vector_sync', settled)
+      return { marked: applied.length, vectorsUpdated: updated }
+    },
+  }
 }
 
 function sourceForEmbedding(row: SearchInputRow) {
@@ -154,9 +169,18 @@ function sourceForEmbedding(row: SearchInputRow) {
 }
 
 /** A publisher correction runs over D1 HTTP without an embedding binding. Mark changed text stale for nightly rebuild. */
-export function invalidateCorrectedVector(before: DocumentState, field: EventColumn, after: SearchInputRow) {
+export function planCorrectedVector(before: DocumentState, field: EventColumn, after: SearchInputRow) {
   const document = searchInputs.has(field) ? buildSearchDocument(sourceForEmbedding(after)) : before.search_document
-  return { document, version: document === before.search_document ? before.embedding_version : CURRENT_EMBEDDING_VERSION - 1 }
+  const changed = document !== before.search_document
+  // The HTTP transport has no index binding. The SQL envelope queues this for nightly settlement.
+  return { document, version: changed ? CURRENT_EMBEDDING_VERSION - 1 : before.embedding_version,
+    sync: changed ? 'document' : field === 'status' || field === 'starts_at' ? 'metadata' : null }
+}
+
+function rebuildGuard(row: StaleRow, scheduled: boolean) {
+  return { sql: `${scheduled ? "status = 'scheduled' AND " : ''}embedding_version IS ? AND search_document IS ?
+    AND EXISTS (SELECT 1 FROM events_with_venues v WHERE v.id = events.id AND ${searchViewInputs.map(key => `v.${key} IS ?`).join(' AND ')})`,
+    values: [row.embedding_version, row.search_document, ...searchViewInputs.map(key => row[key])] }
 }
 
 interface ReconcileOptions {
@@ -182,11 +206,10 @@ export async function reconcileCatalog(db: D1Database, vectors: Vectorize, optio
   const embedText = options.embedText ?? generateEmbedding
   const result = { reembedded: 0, resynced: 0, restored: 0, metadataUpdated: 0, checked: 0, deferred: 0 }
 
+  const { writeEvent, INTAKE_UPDATE_WITHOUT_EMBEDDING } = await import('./event-write.ts')
   // 1. Artwork-only intake updates can retain stale text even at the current version. Compare the document first.
   const { results: candidates } = await db.prepare(`SELECT ${EMBEDDING_FIELDS} FROM events_with_venues e
-    WHERE (${STALE_DOCUMENT}) OR (e.status = 'scheduled' AND e.embedding_version = ? AND EXISTS (
-      SELECT 1 FROM event_intake_protection p JOIN intake_plans i ON i.id = p.plan_id
-      WHERE p.event_id = e.id AND i.action = 'update' AND json_extract(i.payload, '$.embedding') IS NULL))
+    WHERE (${STALE_DOCUMENT}) OR (e.status = 'scheduled' AND e.embedding_version = ? AND ${INTAKE_UPDATE_WITHOUT_EMBEDDING})
     ORDER BY starts_at, id`).bind(CURRENT_EMBEDDING_VERSION, CURRENT_EMBEDDING_VERSION).all<StaleRow>()
   const reembedded = new Set<string>()
   for (const row of candidates) {
@@ -195,17 +218,12 @@ export async function reconcileCatalog(db: D1Database, vectors: Vectorize, optio
     if (budget <= 0) { result.deferred++; continue }
     budget--
     const { embedding, searchDocument } = await embed(input)
-    const write = planVectorWrite(db, row.id, { source: 'rebuild', patch: { embedding, search_document: searchDocument, embedding_version: CURRENT_EMBEDDING_VERSION } })
-    // Bypass intake protection only for these derived fields, and only if the facts used above are still current.
-    const [, updated] = await db.batch(intakeCommitBatch(db, [
-      db.prepare(`UPDATE events SET search_document = ?, embedding_version = ? WHERE id = ? AND status = 'scheduled'
-        AND embedding_version IS ? AND search_document IS ?
-        AND EXISTS (SELECT 1 FROM events_with_venues v WHERE v.id = events.id AND ${searchViewInputs.map(key => `v.${key} IS ?`).join(' AND ')})
-        RETURNING id`)
-        .bind(searchDocument, CURRENT_EMBEDDING_VERSION, row.id, row.embedding_version, row.search_document, ...searchViewInputs.map(key => row[key])),
-      ...(write.queue ? [write.queue] : []),
-    ]))
-    if (!updated?.results.length || !await write.settle(vectors)) { result.deferred++; continue }
+    const write = await writeEvent(db, vectors, { writer: 'maintenance', id: row.id,
+      patch: { embedding, search_document: searchDocument, embedding_version: CURRENT_EMBEDDING_VERSION },
+      guard: rebuildGuard(row, true),
+    })
+    if (write.vectorFailure) throw write.vectorFailure.error
+    if (!write.vectorUpdated) { result.deferred++; continue }
     reembedded.add(row.id)
     result.reembedded++
   }
@@ -223,14 +241,17 @@ export async function reconcileCatalog(db: D1Database, vectors: Vectorize, optio
     result.resynced++
   }
 
-  // 3. Every live or recently changed event should have current metadata. Restore only searchable missing vectors.
-  const { results: live } = await db.prepare(`SELECT ${VECTOR_FIELDS} FROM events
-    WHERE status NOT IN ('canceled', 'past') OR updated_at >= ? ORDER BY id`)
-    .bind(new Date(now.getTime() - 48 * HOUR).toISOString()).all<StoredVector>()
+  // 3. Metadata-only publisher work needs no fresh embedding. Include it even outside the normal drift scan.
+  const metadataQueued = 'EXISTS (SELECT 1 FROM vector_metadata_sync m WHERE m.event_id = e.id)'
+  const { results: live } = await db.prepare(`SELECT ${VECTOR_FIELDS}, (${metadataQueued}) AS metadata_queued FROM events e
+    WHERE status NOT IN ('canceled', 'past') OR updated_at >= ? OR ${metadataQueued} ORDER BY id`)
+    .bind(new Date(now.getTime() - 48 * HOUR).toISOString()).all<StoredVector & { metadata_queued: number }>()
   const toCheck = live.filter(row => !reembedded.has(row.id))
   result.checked = toCheck.length
   const { updated, missing } = await syncMetadata(vectors, toCheck)
   result.metadataUpdated = updated
+  // A missing vector has no metadata to refresh. The ordinary live-vector restoration path below still applies.
+  await clearSettledRows(db, 'vector_metadata_sync', live.filter(row => row.metadata_queued))
   const byId = new Map(toCheck.map(row => [row.id, row]))
   for (const id of missing) {
     const row = byId.get(id)!
@@ -250,6 +271,7 @@ export async function runEmbeddingTask(
   task: 'populate-embeddings' | 'reembed-stale', db: D1Database, vectors: Vectorize, limit: number,
   { embed = embedEventWithDocument, embedText = generateEmbedding }: Pick<ReconcileOptions, 'embed' | 'embedText'> = {},
 ) {
+  const { writeEvent } = await import('./event-write.ts')
   const result = { checked: 0, updated: 0, blocked: 0, more: false }
   async function repair(row: StaleRow, rebuild: boolean) {
     if (!rebuild && row.search_document) {
@@ -258,12 +280,10 @@ export async function runEmbeddingTask(
       return
     }
     const { embedding, searchDocument } = await embed(sourceForEmbedding(row))
-    const write = planVectorWrite(db, row.id, { source: 'catalog', patch: { embedding, search_document: searchDocument, embedding_version: CURRENT_EMBEDDING_VERSION } })
-    await db.batch([
-      db.prepare('UPDATE events SET search_document = ?, embedding_version = ? WHERE id = ?').bind(searchDocument, CURRENT_EMBEDDING_VERSION, row.id),
-      ...(write.queue ? [write.queue] : []),
-    ])
-    if (await write.settle(vectors)) result.updated++
+    const write = await writeEvent(db, vectors, { writer: 'manual-repair', id: row.id,
+      patch: { embedding, search_document: searchDocument, embedding_version: CURRENT_EMBEDDING_VERSION }, guard: rebuildGuard(row, rebuild) })
+    if (write.vectorFailure) throw write.vectorFailure.error
+    if (write.vectorUpdated) result.updated++
     else result.blocked++
   }
 

@@ -11,6 +11,7 @@ import { fakeVectorize } from '../../../../tests/support/vectorize.ts'
 import { fakeR2 } from '../../../../tests/support/r2.ts'
 import { buildSearchDocument, CURRENT_EMBEDDING_VERSION } from '#shared/lib/ai/embeddings.ts'
 import { reconcileCatalog } from '#shared/lib/db/vector-sync.ts'
+import { applyCatalogFix } from '#features/instagram-publisher/catalog-fix.ts'
 import { describeImage } from './collection.ts'
 import { readOfficialPage } from './official-page.ts'
 import { commitPlanEffect, previewCandidateEffect, submitCandidateEffect } from './service.ts'
@@ -31,7 +32,7 @@ const bun = 'Bun' in globalThis
 beforeAll(async () => { if (bun) return; ({ db, dispose } = await freshD1()) }, 60_000)
 afterAll(async () => { if (bun) return; await dispose() })
 
-const TABLES = ['vector_sync', 'event_intake_protection', 'event_source_evidence', 'intake_plans', 'intake_candidate_revisions', 'intake_candidates',
+const TABLES = ['publisher_catalog_fixes', 'vector_sync', 'event_intake_protection', 'event_source_evidence', 'intake_plans', 'intake_candidate_revisions', 'intake_candidates',
   'intake_media', 'intake_observations', 'intake_runs', 'instagram_sources', 'venue_review_queue', 'events', 'venues']
 beforeEach(async () => {
   if (bun) return
@@ -98,6 +99,20 @@ describe.skipIf(bun)('reserve_instagram_collection on D1', () => {
     const second = await run(store.reserveCollection)
     expect(second).toMatchObject({ fresh: false, id: first.id })
     expect((await db.prepare('SELECT count(*) AS n FROM intake_runs').first<{ n: number }>())!.n).toBe(1)
+  })
+
+  it('reports reservation spend with each unmeasured run at its own reserved amount', async () => {
+    await source()
+    const completed = await run(store.reserveCollection)
+    const { local_date: day } = completed
+    if (typeof day !== 'string') throw new Error('Reservation did not return a local date')
+    const month = day.slice(0, 7)
+    const [unmeasured, released] = ['01', '02', '03'].map(ordinal => `${month}-${ordinal}`).filter(date => date !== day)
+    await db.prepare(`INSERT INTO intake_runs (id, local_date, state, reserved_usd, charged_usd, input)
+      VALUES (?, ?, 'failed', 2, NULL, '{}'), (?, ?, 'failed', 3, 0, '{}')`)
+      .bind(id(), unmeasured, id(), released).run()
+    expect(await run(store.updateRun(completed.id, { state: 'succeeded', charged_usd: 0.5, completed_at: utc(Date.now()) })))
+      .toEqual({ charged_usd: 0.5, unmeasured_runs: 1, reserved_or_charged_usd: 2.5 })
   })
 
   it('lets only one concurrent retry reclaim a released day and refuses a stale release', async () => {
@@ -211,6 +226,66 @@ describe.skipIf(bun)('commit_intake_plan on D1', () => {
       .bind(id(), runId, 'b'.repeat(64), new Date(Date.now() + 1000).toISOString()).run()
     expect(await fails(store.commitPlan(stale))).toBe('Source changed after review')
     expect((await run(store.plan(stale))).receipt).toBeNull()
+  })
+
+  it('refuses new and previously prepared venue text for a hidden-location target', async () => {
+    await source()
+    const venueId = await venue('PrivateVenueToken')
+    const post = await observation((await run(store.reserveCollection)).id)
+    const candidate = id(), event = id()
+    await db.prepare(`INSERT INTO events (id, name, starts_at, source, location_hidden, search_document)
+      VALUES (?, 'Synthetic Jazz', '2026-11-21T00:00:00.000Z', 'luma', 1, 'Synthetic Jazz')`).bind(event).run()
+    const metadata = { status: 'scheduled', starts_at: Date.parse('2026-11-21T00:00:00Z') }
+    vectors.vectors.set(event, { id: event, values: [0.1], metadata })
+    await run(store.submitCandidate(candidate, 0, { name: 'Synthetic Jazz' } as never))
+    const cited = [{ observation_id: post, fields: ['venue'] }]
+    const unprepared = await plan(candidate, 1, 'update', event, body(venueId, { embedding: undefined, search_document: undefined }), cited)
+    const embed = vi.fn(async () => ({ searchDocument: 'Synthetic Jazz. Venue: PrivateVenueToken', embedding: Array(1536).fill(0.9) }))
+    const presentation = vi.fn(async () => ({ description_display_es: null, description_display_en: null,
+      description_summary_es: null, description_summary_en: null }))
+    const reason = 'Intake cannot attach a venue to a hidden-location event'
+    expect(await fails(commitPlanEffect(store, unprepared, { embed, presentation }))).toBe(reason)
+    expect(embed).not.toHaveBeenCalled()
+    expect((await run(store.plan(unprepared))).receipt).toBeNull()
+
+    const prepared = await plan(candidate, 1, 'update', event, body(venueId, { search_document: 'Synthetic Jazz. Venue: PrivateVenueToken' }), cited)
+    expect(await fails(store.commitPlan(prepared))).toBe(reason)
+    expect((await run(store.plan(prepared))).receipt).toBeNull()
+    expect(await db.prepare('SELECT venue_id, search_document FROM events WHERE id = ?').bind(event).first())
+      .toEqual({ venue_id: null, search_document: 'Synthetic Jazz' })
+    expect(await db.prepare("SELECT count(*) AS n FROM events_fts WHERE events_fts MATCH 'PrivateVenueToken'").first('n')).toBe(0)
+    expect(vectors.vectors.get(event)).toEqual({ id: event, values: [0.1], metadata })
+    expect(await db.prepare('SELECT event_id FROM vector_sync WHERE event_id = ?').bind(event).first()).toBeNull()
+  }, 15_000)
+
+  it('rejects a stale intake plan after a publisher correction; fresh direct intake evidence can supersede it', async () => {
+    await source()
+    const venueId = await venue()
+    const post = await observation((await run(store.reserveCollection)).id)
+    const candidate = id(), event = id()
+    await run(store.submitCandidate(candidate, 0, { name: 'Original' } as never))
+    const created = await plan(candidate, 1, 'create', event, body(venueId), [{ observation_id: post }])
+    const original = await run(store.commitPlan(created))
+    await run(store.submitCandidate(candidate, 1, { name: 'Confirmed by venue' } as never))
+    const payload = body(venueId, { name: 'Confirmed by venue', search_document: 'Confirmed by venue' })
+    const cited = [{ observation_id: post, fields: ['name'] }]
+    const stale = await plan(candidate, 2, 'update', event, payload, cited)
+    const authority = await db.prepare('SELECT * FROM event_intake_protection WHERE event_id = ?').bind(event).first()
+    const query = async (sql: string, params: string[]) => (await db.prepare(sql).bind(...params).all()).results
+    await applyCatalogFix(query, { id: event, field: 'name', from: 'Synthetic Jazz', to: 'Publisher correction',
+      allOccurrences: false, evidence: 'Synthetic program' }, id)
+    expect(await db.prepare('SELECT name FROM events WHERE id = ?').bind(event).first('name')).toBe('Publisher correction')
+    expect(await db.prepare('SELECT event_id FROM vector_sync WHERE event_id = ?').bind(event).first('event_id')).toBe(event)
+    expect(await db.prepare('SELECT * FROM event_intake_protection WHERE event_id = ?').bind(event).first()).toEqual(authority)
+    expect(await fails(store.commitPlan(stale))).toBe('Catalog changed after preview')
+    expect((await run(store.plan(stale))).receipt).toBeNull()
+    expect(await run(commitPlanEffect(store, created))).toEqual(original)
+    expect(await db.prepare('SELECT event_id FROM vector_sync WHERE event_id = ?').bind(event).first('event_id')).toBe(event)
+
+    const fresh = await plan(candidate, 2, 'update', event, payload, cited)
+    expect(await run(store.commitPlan(fresh))).toMatchObject({ previous_event: { name: 'Publisher correction' } })
+    expect(await db.prepare('SELECT name FROM events WHERE id = ?').bind(event).first('name')).toBe('Confirmed by venue')
+    expect(await db.prepare('SELECT plan_id FROM event_intake_protection WHERE event_id = ?').bind(event).first('plan_id')).toBe(fresh)
   })
 
   it('refuses held, expired and superseded plans, curator corrections, and a duplicate that appeared after preview', async () => {

@@ -1,6 +1,5 @@
 import type { D1Database } from '@cloudflare/workers-types'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { INSERT_INTAKE_EVENT, UPDATE_INTAKE_EVENT } from '#features/import/intake/store-d1.ts'
 import { catalogRowSql } from '#features/instagram-publisher/catalog-fix.ts'
 import { buildSearchDocument, type EmbeddingEventData } from '../ai/embeddings.ts'
 import { EMPTY_FACETS } from '../search-facets.ts'
@@ -106,10 +105,7 @@ describe('events column policy', () => {
     expect(() => updateColumns(sql, 'events')).toThrow('cannot parse SET assignment: (price, is_free) = (0, 1)')
   })
 
-  it('matches the column lists in the literal intake commit statements', () => {
-    const insert = /^INSERT INTO events\s*\(([^)]+)\)\s*VALUES/i.exec(INSERT_INTAKE_EVENT)?.[1] ?? ''
-    expectColumns(commaList(insert), eventColumnsWith('intakeWrite', 'create', 'both'), 'intake INSERT')
-    expectColumns(updateColumns(UPDATE_INTAKE_EVENT, 'intake UPDATE'), eventColumnsWith('intakeWrite', 'both'), 'intake UPDATE')
+  it('only records unconditional intake authority for protectable facts', () => {
     const facts = new Set<string>(eventColumnsWith('protection', 'facts'))
     expect(eventColumnsWith('protectOnCommit', true).filter(column => !facts.has(column))).toEqual([])
   })

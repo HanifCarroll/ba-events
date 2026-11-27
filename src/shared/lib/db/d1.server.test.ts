@@ -1,7 +1,7 @@
 import type { D1Database } from '@cloudflare/workers-types'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { freshD1 } from '../../../../tests/support/d1.ts'
-import { batchAssert, boundD1Database, intakeCommitBatch } from './d1.server.ts'
+import { freshD1, withTestIntakeContext } from '../../../../tests/support/d1.ts'
+import { batchAssert, boundD1Database } from './d1.server.ts'
 
 let db: D1Database
 let dispose: () => Promise<void>
@@ -34,17 +34,17 @@ describe('batchAssert', () => {
 	})
 })
 
-describe('intakeCommitBatch', () => {
+describe('the D1 intake bypass backstop', () => {
 	it('sets write_context for the batch only, and a failed batch leaves no bypass behind', async () => {
-		await db.batch(intakeCommitBatch(db, [batchAssert(db, 'bypass active', 'EXISTS (SELECT 1 FROM write_context)')]))
+		await withTestIntakeContext(db, [batchAssert(db, 'bypass active', 'EXISTS (SELECT 1 FROM write_context)')])
 		expect(await db.prepare('SELECT count(*) AS n FROM write_context').first('n')).toBe(0)
-		await expect(db.batch(intakeCommitBatch(db, [batchAssert(db, 'Plan is held or expired', '0')]))).rejects.toThrow('Plan is held or expired')
+		await expect(withTestIntakeContext(db, [batchAssert(db, 'Plan is held or expired', '0')])).rejects.toThrow('Plan is held or expired')
 		expect(await db.prepare('SELECT count(*) AS n FROM write_context').first('n')).toBe(0)
 	})
 
 	it('refuses to start while a stale bypass row exists', async () => {
 		await db.prepare('INSERT INTO write_context (intake_commit) VALUES (1)').run()
-		await expect(db.batch(intakeCommitBatch(db, []))).rejects.toThrow(/UNIQUE|PRIMARY KEY/)
+		await expect(withTestIntakeContext(db, [])).rejects.toThrow(/UNIQUE|PRIMARY KEY/)
 		await db.prepare('DELETE FROM write_context').run()
 	})
 })
