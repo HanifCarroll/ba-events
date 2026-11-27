@@ -3,6 +3,7 @@ import { dev } from '$app/env';
 import { Effect } from 'effect';
 import { cookieMaxAge, cookieName, getTextDirection, isLocale } from '#lib/paraglide/runtime.js';
 import { paraglideMiddleware } from '#lib/paraglide/server.js';
+import { discoveryLocale } from '#features/discovery/lib/discovery-locale.ts';
 import { requestChatTiming } from "#features/chat/lib/timing.ts";
 import { getSessionUserEffect } from '#features/auth/api/session.server.ts';
 import { useD1Binding } from '#shared/lib/db/d1-binding.server.ts';
@@ -55,9 +56,17 @@ const handleSession: Handle = async ({ event, resolve }) => {
 	return resolve(event);
 };
 
+function requestWithLocale(request: Request, locale: 'es' | 'en') {
+	const headers = new Headers(request.headers);
+	const otherCookies = (headers.get('cookie') ?? '').split(';').map((cookie) => cookie.trim())
+		.filter((cookie) => cookie && !cookie.startsWith(`${cookieName}=`));
+	headers.set('cookie', [`${cookieName}=${locale}`, ...otherCookies].join('; '));
+	return new Request(request, { headers });
+}
+
 // Paraglide reads the locale in both the server request and document.cookie.
 export const handleLocaleSync: Handle = ({ event, resolve }) => {
-	if (event.route.id === '/sitemap.xml') return resolve(event);
+	if (event.route.id === '/sitemap.xml' || discoveryLocale(event.url.pathname)) return resolve(event);
 	const previous = event.cookies.get(cookieName);
 	const locale = event.locals.profile?.locale ?? (isLocale(previous) ? previous : undefined);
 	if (!locale) return resolve(event);
@@ -68,16 +77,13 @@ export const handleLocaleSync: Handle = ({ event, resolve }) => {
 	}
 	if (locale === previous) return resolve(event);
 
-	const headers = new Headers(event.request.headers);
-	const otherCookies = (headers.get('cookie') ?? '').split(';').map((cookie) => cookie.trim())
-		.filter((cookie) => cookie && !cookie.startsWith(`${cookieName}=`));
-	headers.set('cookie', [`${cookieName}=${locale}`, ...otherCookies].join('; '));
-	return resolve({ ...event, request: new Request(event.request, { headers }) });
+	return resolve({ ...event, request: requestWithLocale(event.request, locale) });
 };
 
 // (c) Paraglide handle — keep LAST so transformPageChunk sees the final locale.
-const handleParaglide: Handle = ({ event, resolve }) =>
-	paraglideMiddleware(event.request, ({ request, locale }) =>
+export const handleParaglide: Handle = ({ event, resolve }) => {
+	const pinned = discoveryLocale(event.url.pathname);
+	return paraglideMiddleware(pinned ? requestWithLocale(event.request, pinned) : event.request, ({ request, locale }) =>
 		resolve(
 			{ ...event, request },
 			{
@@ -88,6 +94,7 @@ const handleParaglide: Handle = ({ event, resolve }) =>
 			}
 		)
 	);
+};
 
 // (d) Cloudflare backend — search, chat, guests, feedback, and the rate limiter use D1 (and search Vectorize) when the
 // Workers register the bindings used by shared repositories.

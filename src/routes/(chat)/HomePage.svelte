@@ -7,6 +7,7 @@
 	import type { LandingPromptHandler } from '#features/chat/lib/landing-prompt.ts'
 	import { parseHomeFilter, type HomeAgendaPage, type HomeAgendaEvent, type HomeViewPage } from '#features/events/lib/home-feed.ts'
 	import HomeAgenda from '#features/events/components/HomeAgenda.svelte'
+	import DiscoveryFooter from '#features/discovery/components/DiscoveryFooter.svelte'
 	import HomeFlyerCollage from '#features/events/components/HomeFlyerCollage.svelte'
 	import BrandLogo from '#shared/ui/BrandLogo.svelte'
 	import LanguageSwitcher from '#shared/ui/LanguageSwitcher.svelte'
@@ -355,6 +356,7 @@
 	</section>
 
 	<footer data-section="footer" class="mx-auto max-w-[90rem] border-t border-[#3b3b42] px-4 py-4 sm:px-8 lg:px-12">
+		<DiscoveryFooter />
 		<a
 			href="/mcp"
 			onclick={() => track('mcp:signpost_clicked', { source: 'homepage' })}
