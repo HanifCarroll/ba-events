@@ -4,9 +4,9 @@ import { createActor } from 'xstate'
 import { deliveryMachine } from './delivery.machine.ts'
 import type { ClientTurn } from './turn-lifecycle.ts'
 import {
-	ChatEventDecoder, DELIVERY_RETENTION_MS, deliveryHeaders, deliveryStreamUrl,
-	eventData, eventOffset, type DeliveryIdentity,
-	parseDeliveryIdentity,
+	ChatEventDecoder, CHAT_DONE, DELIVERY_RECONNECT_HEADER, DELIVERY_RECONNECT_VERSION,
+	DELIVERY_RETENTION_MS, deliveryHeaders, deliveryStreamUrl, encodeChatEvent,
+	eventData, eventOffset, parseDeliveryIdentity, type DeliveryIdentity,
 } from './delivery-protocol.ts'
 
 export type ClientDelivery = { turn: ClientTurn; identity: DeliveryIdentity; expiresAt: number }
@@ -87,13 +87,12 @@ export function createDeliveryFetch(identity: DeliveryIdentity, fetchFn: typeof 
 					await delay(); actor.send({ type: 'RETRY' })
 				}
 			}
-			if (!response.ok || !response.body || response.headers.get('x-chat-reconnectable') !== '1') {
+			if (!response.ok || !response.body || response.headers.get(DELIVERY_RECONNECT_HEADER) !== DELIVERY_RECONNECT_VERSION) {
 				actor.send({ type: 'PASSTHROUGH' }); cleanup(); return response
 			}
 		} catch (error) { cleanup(); throw error }
 		actor.send({ type: 'CONNECTED' })
 		let source = response.body!
-		const encoder = new TextEncoder()
 		const body = new ReadableStream<Uint8Array>({
 			async start(controller) {
 				try {
@@ -107,14 +106,14 @@ export function createDeliveryFetch(identity: DeliveryIdentity, fetchFn: typeof 
 								if (done || state().matches('cancelled')) break
 								for (const frame of frames.push(decoder.decode(value, { stream: true }))) {
 									const data = eventData(frame)
-									if (!data || data === '[DONE]') continue
+									if (!data || data === CHAT_DONE) continue
 									const next = eventOffset(frame)
 									if (next === null) throw new Error('Missing chat delivery offset')
 									if (next <= state().context.offset) continue
 									if (next !== state().context.offset + 1) throw new Error('Missing chat delivery event')
 									const finished = (JSON.parse(data) as { type?: unknown }).type === 'finish'
 									actor.send({ type: 'FRAME', offset: next, finished })
-									controller.enqueue(encoder.encode(`data: ${data}\n\n`))
+									controller.enqueue(encodeChatEvent(data))
 									if (finished) break
 								}
 							}
@@ -141,7 +140,7 @@ export function createDeliveryFetch(identity: DeliveryIdentity, fetchFn: typeof 
 						if (state().matches('failed')) throw new Error('Chat delivery interrupted')
 					}
 					if (state().matches('cancelled')) signal.throwIfAborted()
-					controller.enqueue(encoder.encode('data: [DONE]\n\n'))
+					controller.enqueue(encodeChatEvent(CHAT_DONE))
 					controller.close()
 				} catch (error) { if (state().context.cancelledBy !== 'consumer') controller.error(error) }
 				finally { cleanup() }
