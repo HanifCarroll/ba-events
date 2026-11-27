@@ -56,7 +56,7 @@ describe('catalog-fix on real D1', () => {
     const { id } = input
     const embed = vi.fn(async () => { throw new Error('Unexpected document rebuild') })
     const embedText = vi.fn(async (_document: string) => [0.8])
-    await applyCatalogFix(query, { ...input, field: 'status', from: 'scheduled', to: 'canceled', allOccurrences: false }, randomUUID)
+    await applyCatalogFix(query, { ...input, field: 'status', from: 'scheduled', to: 'canceled', allOccurrences: false }, () => randomUUID())
     expect(await query('SELECT event_id FROM vector_sync WHERE event_id = ?', [id])).toEqual([])
     expect(await query('SELECT event_id FROM vector_metadata_sync WHERE event_id = ?', [id])).toEqual([{ event_id: id }])
     // The canceled event falls outside the regular recent-change scan. Only its metadata queue can select it.
@@ -73,7 +73,7 @@ describe('catalog-fix on real D1', () => {
     const repairId = ids[1]!
     const queuedAt = '2026-01-01T00:00:00.000Z'
     await db.prepare('INSERT INTO vector_sync (event_id, queued_at) VALUES (?, ?)').bind(repairId, queuedAt).run()
-    await applyCatalogFix(query, { ...input, id: repairId, field: 'status', from: 'scheduled', to: 'canceled', allOccurrences: false }, randomUUID)
+    await applyCatalogFix(query, { ...input, id: repairId, field: 'status', from: 'scheduled', to: 'canceled', allOccurrences: false }, () => randomUUID())
     expect(await query('SELECT queued_at FROM vector_sync WHERE event_id = ?', [repairId])).toEqual([{ queued_at: queuedAt }])
     expect(await reconcileCatalog(db, index, { embed, embedText, now })).toMatchObject({ resynced: 1 })
     expect(embedText).toHaveBeenCalledExactlyOnceWith(document)
