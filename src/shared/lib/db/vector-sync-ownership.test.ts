@@ -8,10 +8,10 @@ const testFile = /(?:\.test|\.spec|\.d)\.[cm]?[jt]sx?$/u
 // These write method names are reserved for Vectorize in production code. Include property references so
 // extracting a bound method instead of calling it directly does not bypass the check.
 const writeMethod = /(?:\.\s*(?:upsert|insert|deleteByIds)(?![\w$-])|\[\s*['"`](?:upsert|insert|deleteByIds)['"`]\s*\])/u
-const queueTable = /\bvector_sync\b/iu
+const queueTable = /\b(?:vector_sync|vector_metadata_sync)\b/iu
 
 describe('event Vectorize ownership', () => {
-  it('reserves Vectorize writes and vector_sync access for the shared vector module', () => {
+  it('reserves Vectorize writes and both retry queues for the shared vector module', () => {
     const violations = roots.flatMap(root => readdirSync(root, { recursive: true, withFileTypes: true })
       .filter(entry => entry.isFile() && sourceFile.test(entry.name) && !testFile.test(entry.name))
       .map(entry => `${entry.parentPath}/${entry.name}`)

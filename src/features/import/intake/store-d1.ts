@@ -5,14 +5,13 @@
  * Each intake write is one `db.batch()`, which D1 runs as one transaction and
  * serializes with every other write, so the Postgres advisory locks and `FOR UPDATE` have nothing left to guard. Checks
  * that must hold when the batch commits are `batchAssert` statements inside it, with the Postgres error messages. A
- * commit runs inside `intakeCommitBatch`, which sets `write_context` so the protection trigger lets it change protected
- * facts. The shared vector module plans index work for the batch and settles it after commit or on receipt replay.
+ * commit submits its checked patch, evidence, and receipt to the catalog write gateway as one batch.
  */
 import type { D1Database, R2Bucket, Vectorize } from '@cloudflare/workers-types'
 import { Effect } from 'effect'
-import { batchAssert, intakeCommitBatch } from '#shared/lib/db/d1.server.ts'
+import { batchAssert } from '#shared/lib/db/d1.server.ts'
 import { eventColumnsWith } from '#shared/lib/db/event-columns.ts'
-import { planVectorWrite } from '#shared/lib/db/vector-sync.ts'
+import { checkIntakeAuthority, commitIntakeEvent, intakeVenueChecks, replayIntakeVector, type IntakeEventPatch } from '#shared/lib/db/event-write.ts'
 import type { EventInsert } from '#shared/lib/types.ts'
 import { importTry, ImportOperationError } from '../core/effect-utils.ts'
 import { mostSimilarVenue, similarIntakeVenues } from '../core/venue-similarity-d1.ts'
@@ -20,7 +19,7 @@ import { pickVenue, venueNameKey } from '../core/venue-identity.ts'
 import { baDate, baTime, citesIntakeClock, citesTicketDestination, hasOfficialTicketEvidence, isWholeCaptionExcerpt, requiresWholeCaptionExcerpt,
   retainedIntakeDoors, SAME_CLOCK_REASON, SAME_CLOCK_RETAINED_REASON, searchInputsChanged, separatelyCitedDoors, ticketDestinationChanged, type Media } from './planning.ts'
 import { isOfficialPage, type Source } from './schema.ts'
-import type { IntakePlanRow, IntakePolicy, IntakeStore, Reservation, VenueRow } from './store.ts'
+import type { IntakePlanRow, IntakePolicy, IntakeStore, MonthlyCharges, Reservation, VenueRow } from './store.ts'
 
 type Row = Record<string, unknown>
 export type IntakeBindings = { db: D1Database; evidence: R2Bucket; artwork: R2Bucket; vectors: Vectorize }
@@ -69,22 +68,7 @@ function canonical(value: unknown): unknown {
 }
 const sameJson = (a: unknown, b: unknown) => JSON.stringify(canonical(a)) === JSON.stringify(canonical(b))
 
-// Keep the legacy protection marker in the ledger. D1 stores vectors in Vectorize, not an events.embedding column.
-const PROTECTED_FIELDS = [...eventColumnsWith('protectOnCommit', true), 'embedding']
 const detailProtectionColumns = eventColumnsWith('protection', 'details')
-
-// Keep these lists next to their positional VALUES and SET expressions; event-columns.test.ts checks their membership.
-export const INSERT_INTAKE_EVENT = `INSERT INTO events (id, name, starts_at, ends_at, time_tba, venue_id, description_es, description_en,
-            description_display_es, description_display_en, description_summary_es, description_summary_en, categories, price, is_free,
-            image_url, image_width, image_height, link, ticket_url, source, external_id, status, search_document, embedding_version,
-            enrichment_status, description_unavailable, organizer_name, organizer_url, performers, offers_valid_from, doors_at)
-          VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'instagram', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-export const UPDATE_INTAKE_EVENT = `UPDATE events SET name = ?, starts_at = ?, ends_at = ?, time_tba = ?, venue_id = ?, description_es = ?,
-            description_en = ?, description_display_es = ?, description_display_en = ?, description_summary_es = ?, description_summary_en = ?,
-            categories = ?, price = ?, is_free = ?, image_url = COALESCE(?, image_url), image_width = ?, image_height = ?,
-            ticket_url = COALESCE(?, ticket_url), status = ?, search_document = ?, embedding_version = ?, enrichment_status = ?,
-            description_unavailable = ?, organizer_name = ?, organizer_url = ?, performers = ?, offers_valid_from = ?, doors_at = ?
-          WHERE id = ?`
 
 export function d1Intake({ db, evidence, artwork, vectors }: IntakeBindings, siteOrigin = SITE_ORIGIN): IntakeStore {
   const planRow = (id: string) => first<IntakePlanRow>(db.prepare('SELECT * FROM intake_plans WHERE id = ?').bind(id))
@@ -112,9 +96,9 @@ export function d1Intake({ db, evidence, artwork, vectors }: IntakeBindings, sit
       LEFT JOIN intake_observations o ON o.id = json_extract(x.value, '$.observation_id')
       WHERE o.id IS NULL AND json_extract(x.value, '$.kind') IS NOT 'official_page')`, JSON.stringify(plan.evidence)),
   ]
-
-  const vectorWrite = (plan: IntakePlanRow, previous: Row | null) => plan.action === 'link' ? null :
-    planVectorWrite(db, plan.event_id, { source: 'intake', patch: plan.payload, previous })
+  const preflightChecks = (plan: IntakePlanRow, at: string) => [
+    ...planChecks(plan, at), ...(plan.action === 'update' ? intakeVenueChecks(db, plan.event_id, plan.payload.venue_id) : []),
+  ]
 
   const store: IntakeStore = {
     // ---------------------------------------------------------------------------------------------------------------
@@ -172,8 +156,9 @@ export function d1Intake({ db, evidence, artwork, vectors }: IntakeBindings, sit
       const update = db.prepare(`UPDATE intake_runs SET ${columns.map(column => `${column} = ?`).join(', ')} WHERE id = ?`)
         .bind(...Object.values(values), id)
       if (patch.state === 'succeeded') {
-        const [result, month] = await db.batch<{ charged_usd: number; unmeasured_runs: number }>([update, db.prepare(`
-          SELECT COALESCE(SUM(charged_usd), 0) AS charged_usd, COUNT(*) - COUNT(charged_usd) AS unmeasured_runs
+        const [result, month] = await db.batch<MonthlyCharges>([update, db.prepare(`
+          SELECT COALESCE(SUM(charged_usd), 0) AS charged_usd, COUNT(*) - COUNT(charged_usd) AS unmeasured_runs,
+            COALESCE(SUM(COALESCE(charged_usd, reserved_usd)), 0) AS reserved_or_charged_usd
           FROM intake_runs WHERE substr(local_date, 1, 7) = (SELECT substr(local_date, 1, 7) FROM intake_runs WHERE id = ?)`)
           .bind(id)])
         if (!result.meta.changes) throw new Error('Collection run not found')
@@ -316,7 +301,7 @@ export function d1Intake({ db, evidence, artwork, vectors }: IntakeBindings, sit
     checkPlan: id => d1('intake.check-plan', async () => {
       const plan = await planRow(id)
       if (!plan) throw new Error('Plan not found')
-      if (!plan.receipt) await db.batch(planChecks(plan, now()))
+      if (!plan.receipt) await db.batch(preflightChecks(plan, now()))
     }),
     preparePlan: (id, payload) => d1('intake.prepare', async () => {
       const row = await db.prepare('UPDATE intake_plans SET payload = ? WHERE id = ? AND receipt IS NULL RETURNING id').bind(JSON.stringify(payload), id).first()
@@ -343,7 +328,7 @@ export function d1Intake({ db, evidence, artwork, vectors }: IntakeBindings, sit
       if (!plan) throw new Error('Plan not found')
       if (plan.receipt) return plan.receipt
       const at = now()
-      await db.batch(planChecks(plan, at))
+      await db.batch(preflightChecks(plan, at))
       const e = plan.payload
       const startsAt = iso(e.starts_at)!
       if (plan.action === 'create') {
@@ -373,7 +358,8 @@ export function d1Intake({ db, evidence, artwork, vectors }: IntakeBindings, sit
       }
       const level = Math.max(...evidenceRows.map(row => row.authority === 'curator' ? 1 : 2))
       const observed = evidenceRows.map(row => row.observed_at).sort().at(-1)!
-      const previous = plan.action === 'create' ? null : await first(db.prepare('SELECT * FROM events WHERE id = ?').bind(plan.event_id))
+      const stored = plan.action === 'create' ? null : await db.prepare('SELECT * FROM events WHERE id = ?').bind(plan.event_id).first<Row>()
+      const previous = stored ? decodeRow(stored) : null
       if (plan.action !== 'create' && !previous) throw new Error('Catalog changed after preview')
       const oldStart = typeof previous?.starts_at === 'string' ? previous.starts_at : undefined
       const moved = oldStart !== undefined && Date.parse(oldStart) !== Date.parse(startsAt)
@@ -395,11 +381,7 @@ export function d1Intake({ db, evidence, artwork, vectors }: IntakeBindings, sit
       }
       const changedTicket = ticketDestinationChanged(previous?.ticket_url, e.ticket_url)
       if (plan.action === 'update' && previous) {
-        const protection = await db.prepare('SELECT authority, observed_at FROM event_intake_protection WHERE event_id = ?').bind(plan.event_id)
-          .first<{ authority: number; observed_at: string }>()
-        if (level < 2 || protection && (level < protection.authority || observed < protection.observed_at)) {
-          throw new Error('Correction needs current organizer or venue evidence')
-        }
+        const minimumObservedAt = await checkIntakeAuthority(db, plan.event_id, level, observed)
         if (sameDay && !previous.time_tba && e.time_tba) throw new Error('Cannot replace a known start with time TBA on the same date')
         if (e.doors_at && !e.time_tba && Date.parse(e.doors_at) > Date.parse(startsAt)) throw new Error('Doors cannot follow the known start time')
         const changed = { status: previous.status !== (e.status ?? 'scheduled'), date: moved, time: startChanged,
@@ -411,7 +393,7 @@ export function d1Intake({ db, evidence, artwork, vectors }: IntakeBindings, sit
         const ticket = e.ticket_url ?? (typeof previous.ticket_url === 'string' ? previous.ticket_url : null)
         for (const [fact, needsEvidence] of Object.entries(changed)) {
           if (needsEvidence && !evidenceRows.some(row => (row.authority === 'venue' || row.authority === 'organizer') &&
-            fields(row).includes(fact) && (!protection || row.observed_at >= protection.observed_at) &&
+            fields(row).includes(fact) && (!minimumObservedAt || row.observed_at >= minimumObservedAt) &&
             (fact !== 'ticket' || quotesTicket(row, ticket)))) {
             throw new Error(`Correction field lacks current direct evidence: ${fact}`)
           }
@@ -422,62 +404,52 @@ export function d1Intake({ db, evidence, artwork, vectors }: IntakeBindings, sit
 
       const performers = e.performers ?? previous?.performers
       const replacedTicket = !!previous?.ticket_url && changedTicket
-      const details = [e.organizer_name ?? previous?.organizer_name ?? null,
-        e.organizer_url ?? (e.organizer_name === undefined || e.organizer_name === previous?.organizer_name ? previous?.organizer_url ?? null : null),
-        performers ? JSON.stringify(performers) : null, e.offers_valid_from ?? (replacedTicket ? null : previous?.offers_valid_from ?? null),
-        e.doors_at ?? retainedDoors] as const
-      const protects = [...PROTECTED_FIELDS, ...detailProtectionColumns.filter(column =>
-        e[column === 'organizer_url' ? 'organizer_name' : column] !== undefined)]
-      const vector = vectorWrite(plan, previous)
-      const writes = []
-      if (plan.action === 'create') {
-        writes.push(db.prepare(INSERT_INTAKE_EVENT).bind(
-          plan.event_id, e.name, startsAt, bit(e.time_tba) ?? 0, e.venue_id ?? null, e.description_es ?? null, e.description_en ?? null,
-          e.description_display_es ?? null, e.description_display_en ?? null, e.description_summary_es ?? null, e.description_summary_en ?? null,
-          JSON.stringify(e.categories ?? []), e.price ?? null, bit(e.is_free) ?? 0, e.image_url ?? null, e.image_width ?? null, e.image_height ?? null,
-          e.link ?? null, e.ticket_url ?? null, plan.candidate_id, e.status ?? 'scheduled', e.search_document ?? null, e.embedding_version ?? 1,
-          e.enrichment_status ?? 'pending', bit(e.description_unavailable) ?? 0, ...details))
-      } else if (plan.action === 'update') {
-        writes.push(db.prepare(UPDATE_INTAKE_EVENT).bind(e.name, startsAt, !moved && typeof previous?.ends_at === 'string' ? iso(previous.ends_at) : null,
-          bit(e.time_tba) ?? 0, e.venue_id ?? null, e.description_es ?? null,
-          e.description_en ?? null, e.description_display_es ?? null, e.description_display_en ?? null, e.description_summary_es ?? null,
-          e.description_summary_en ?? null, JSON.stringify(e.categories ?? []), e.price ?? null, bit(e.is_free) ?? 0, e.image_url ?? null,
-          e.image_width ?? null, e.image_height ?? null, e.ticket_url ?? null, e.status ?? 'scheduled', e.search_document ?? null,
-          e.embedding_version ?? 1, e.enrichment_status ?? 'pending', bit(e.description_unavailable) ?? 0, ...details, plan.event_id))
-      }
-      writes.push(db.prepare(`INSERT INTO event_source_evidence (event_id, candidate_id, observation_id, revision)
+      const replacing = plan.action === 'update'
+      const patch = {
+        name: e.name, starts_at: startsAt, ends_at: !moved && typeof previous?.ends_at === 'string' ? iso(previous.ends_at) : null,
+        time_tba: bit(e.time_tba) ?? 0, venue_id: e.venue_id ?? null, description_es: e.description_es ?? null, description_en: e.description_en ?? null,
+        description_display_es: e.description_display_es ?? null, description_display_en: e.description_display_en ?? null,
+        description_summary_es: e.description_summary_es ?? null, description_summary_en: e.description_summary_en ?? null,
+        categories: JSON.stringify(e.categories ?? []), price: e.price ?? null, is_free: bit(e.is_free) ?? 0,
+        image_url: e.image_url ?? (replacing ? undefined : null), image_width: e.image_width ?? null, image_height: e.image_height ?? null,
+        ticket_url: e.ticket_url ?? (replacing ? undefined : null), status: e.status ?? 'scheduled',
+        search_document: e.search_document ?? null, embedding_version: e.embedding_version ?? 1,
+        enrichment_status: e.enrichment_status ?? 'pending', description_unavailable: bit(e.description_unavailable) ?? 0,
+        organizer_name: e.organizer_name ?? previous?.organizer_name ?? null,
+        organizer_url: e.organizer_url ?? (e.organizer_name === undefined || e.organizer_name === previous?.organizer_name ? previous?.organizer_url ?? null : null),
+        performers: performers ? JSON.stringify(performers) : null,
+        offers_valid_from: e.offers_valid_from ?? (replacedTicket ? null : previous?.offers_valid_from ?? null), doors_at: e.doors_at ?? retainedDoors,
+      } satisfies IntakeEventPatch
+      const receipt = { plan_id: plan.id, candidate_id: plan.candidate_id, revision: plan.revision, action: plan.action, event_id: plan.event_id,
+        committed_at: at, previous_event: replacing ? previous : null }
+      const recordEvidence = db.prepare(`INSERT INTO event_source_evidence (event_id, candidate_id, observation_id, revision)
         SELECT ?, ?, json_extract(value, '$.observation_id'), ? FROM json_each(?) WHERE json_extract(value, '$.observation_id') IS NOT NULL
         ON CONFLICT (event_id, candidate_id, observation_id) DO UPDATE SET revision = excluded.revision`)
-        .bind(plan.event_id, plan.candidate_id, plan.revision, JSON.stringify(plan.evidence)))
-      if (plan.action !== 'link') {
-        if (vector?.queue) writes.push(vector.queue)
-        writes.push(db.prepare(`INSERT INTO event_intake_protection (event_id, fields, plan_id, authority, observed_at) VALUES (?, ?, ?, ?, ?)
-          ON CONFLICT (event_id) DO UPDATE SET fields = (SELECT json_group_array(value) FROM (
-              SELECT value FROM json_each(event_intake_protection.fields) UNION SELECT value FROM json_each(excluded.fields)
-            )), plan_id = excluded.plan_id, authority = excluded.authority,
-            observed_at = excluded.observed_at`).bind(plan.event_id, JSON.stringify(protects), plan.id, level, observed))
-      }
-      const receipt = { plan_id: plan.id, candidate_id: plan.candidate_id, revision: plan.revision, action: plan.action, event_id: plan.event_id,
-        committed_at: at, previous_event: plan.action === 'update' ? previous : null }
-      writes.push(db.prepare('UPDATE intake_plans SET receipt = ? WHERE id = ?').bind(JSON.stringify(receipt), plan.id))
+        .bind(plan.event_id, plan.candidate_id, plan.revision, JSON.stringify(plan.evidence))
+      let commit: Awaited<ReturnType<typeof commitIntakeEvent>>
       try {
-        await db.batch([
-          ...planChecks(plan, at),
-          batchAssert(db, 'Candidate revision already committed through another plan',
-            'NOT EXISTS (SELECT 1 FROM intake_plans WHERE candidate_id = ? AND revision = ? AND receipt IS NOT NULL)', plan.candidate_id, plan.revision),
-          ...intakeCommitBatch(db, writes),
-        ])
+        if (plan.action === 'held') throw new Error('Plan is held or expired')
+        commit = await commitIntakeEvent(db, vectors, {
+          id: plan.event_id, planId: plan.id, action: plan.action, patch, previous: stored, vectorPatch: e,
+          create: { link: e.link ?? null, external_id: plan.candidate_id },
+          evidence: { authority: level, observedAt: observed, details: detailProtectionColumns.filter(column =>
+            e[column === 'organizer_url' ? 'organizer_name' : column] !== undefined) },
+          checks: [...planChecks(plan, at), batchAssert(db, 'Candidate revision already committed through another plan',
+            'NOT EXISTS (SELECT 1 FROM intake_plans WHERE candidate_id = ? AND revision = ? AND receipt IS NOT NULL)', plan.candidate_id, plan.revision)],
+          recordEvidence, recordReceipt: db.prepare('UPDATE intake_plans SET receipt = ? WHERE id = ?').bind(JSON.stringify(receipt), plan.id),
+        })
       } catch (error) {
         // A concurrent commit of this plan won; its receipt is the answer, as the publication lock made it in Postgres.
         const committed = await planRow(id)
         if (committed?.receipt) return committed.receipt
         throw error
       }
-      await vector?.settle(vectors)
+      await commit.settle()
       return receipt
     }),
     replayReceipt: plan => d1('intake.commit', async () => {
-      await vectorWrite(plan, (plan.receipt!.previous_event as Row | null) ?? null)?.settle(vectors, plan.id)
+      if (plan.action !== 'link') await replayIntakeVector(db, vectors, plan.event_id, plan.id, plan.payload,
+        (plan.receipt!.previous_event as Row | null) ?? null)
       return plan.receipt!
     }),
 

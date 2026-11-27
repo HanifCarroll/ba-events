@@ -47,6 +47,7 @@ case "$INTAKE_PHASE" in
     case "$scenario" in
       empty) : >"$INTAKE_REPORT" ;;
       sentinel|sentinel-review-fails) echo "NOTHING TO REPORT" >"$INTAKE_REPORT" ;;
+      fix-only) printf 'FIX: an account needs follow-up\n' >"$INTAKE_FIXES"; echo "NOTHING TO REPORT" >"$INTAKE_REPORT" ;;
       fix-single) printf 'FIX: one tool needs a fix\n' >"$INTAKE_FIXES"; echo 'Run went fine.' >"$INTAKE_REPORT" ;;
       fixes-reordered)
         printf '  FIX: barrio of venue f98ce6e3 is Balvanera, Almagro per Nominatim\nFIX: venue rejects Gallo 238 with "geocodes outside the city ()"; blocks 3 events  \n' >"$INTAKE_FIXES"
@@ -57,7 +58,7 @@ case "$INTAKE_PHASE" in
       fixes*)
         printf 'FIX: venue rejects Gallo 238 with "geocodes outside the city ()"; blocks 3 events\n\nFIX: barrio of venue f98ce6e3 is Balvanera, Almagro per Nominatim\n' >"$INTAKE_FIXES"
         printf 'Run went fine.\n' >"$INTAKE_REPORT" ;;
-      *) printf 'Run went fine.\n- notes: %s\n' "$(grep -c . "$INTAKE_NOTES")" >"$INTAKE_REPORT" ;;
+      *) printf 'Needs you: is this event in scope?\n- notes: %s\n' "$(grep -c . "$INTAKE_NOTES")" >"$INTAKE_REPORT" ;;
     esac ;;
 esac
 # Every phase but report confirms it finished, unless this scenario's phase stops early.
@@ -114,6 +115,52 @@ resolved() { grep -q 'alert resolve pro/ba-events-intake <<<' "$t/ssh-calls"; }
 fixes_raised() { grep -q "alert raise pro/ba-events-intake/fixes --title 'BA Eventos intake fixes'" "$t/ssh-calls"; }
 fixes_resolved_quietly() { grep -q 'alert resolve pro/ba-events-intake/fixes --quiet' "$t/ssh-calls"; }
 
+echo "# the prompt allows only the three operator-report triggers"
+triggers=$(awk '
+  /^## Phase: report$/ {in_report=1; next}
+  in_report && /^## / {exit}
+  in_report && /unless at least one of these triggers holds/ {in_triggers=1; next}
+  in_triggers && /^     - / {print; next}
+  in_triggers {exit}
+' "$here/prompt.md")
+check "closed trigger list: decision, distinct venue, refused reservation" test "$triggers" = '     - Decision only Hanif can make.
+     - Venue created with `distinct_from` today.
+     - Collection reservation forecast returns a refusal before a budget resets.'
+
+echo "# reservation forecast checks balances, not a percent of the cap"
+forecast() { python3 "$here/reservation-forecast.py"; }
+check "over 80% stays quiet when all remaining runs can reserve" test "$(forecast <<'JSON'
+{"today":"2026-11-28","run_cap_usd":1.5,"recent_charges_usd":[0.2],"intake":{"limit_usd":18,"usage_usd":16},"apify":{"limit_usd":20,"usage_usd":17}}
+JSON
+)" = '[]'
+check "low percentage still triggers when the next reservation would be refused" test "$(forecast <<'JSON'
+{"today":"2026-11-28","run_cap_usd":5,"recent_charges_usd":[1],"intake":{"limit_usd":7,"usage_usd":3}}
+JSON
+)" = '[{"budget": "intake", "run_date": "2026-11-29", "usage_usd": 3.0, "limit_usd": 7.0, "reservation_usd": 5.0}]'
+check "Apify requires two cents more than the intake reservation" test "$(forecast <<'JSON'
+{"today":"2026-11-29","run_cap_usd":1.5,"recent_charges_usd":[],"intake":{"limit_usd":18,"usage_usd":16.5},"apify":{"limit_usd":20,"usage_usd":18.49}}
+JSON
+)" = '[{"budget": "apify", "run_date": "2026-11-30", "usage_usd": 18.49, "limit_usd": 20.0, "reservation_usd": 1.5}]'
+check "deducts average measured charge after each affordable run" test "$(forecast <<'JSON'
+{"today":"2026-11-27","run_cap_usd":1.5,"recent_charges_usd":[0.2,null,0.8],"apify":{"limit_usd":20,"usage_usd":17.98}}
+JSON
+)" = '[{"budget": "apify", "run_date": "2026-11-30", "usage_usd": 17.98, "limit_usd": 20.0, "reservation_usd": 1.5}]'
+check "a reset before the otherwise-refused run suppresses the warning" test "$(forecast <<'JSON'
+{"today":"2026-11-29","run_cap_usd":1.5,"recent_charges_usd":[0.5],"intake":{"limit_usd":18,"usage_usd":16.5},"apify":{"limit_usd":20,"usage_usd":18.48,"reset_date":"2026-12-01"}}
+JSON
+)" = '[]'
+check "unknown Apify reset forecasts only the next three runs" test "$(forecast <<'JSON'
+{"today":"2026-11-25","run_cap_usd":1.5,"recent_charges_usd":[0.5],"apify":{"limit_usd":20,"usage_usd":17.48}}
+JSON
+)" = '[]'
+
+echo "# a fix for Hermes is not an operator report"
+setup 0 fix-only; go
+check "fix-only run succeeds" test "$rc" -eq 0
+check "fix-only run opens the Hermes triage key" fixes_raised
+check "fix-only run sends no Slack report" eval '! posted'
+rm -rf "$t"
+
 echo "# backlog cleared over several batches"
 setup 75 report; go
 check "exit 0" [ "$rc" -eq 0 ]
@@ -121,7 +168,7 @@ check "collect, 3 reviews, venues, report" [ "$(phases)" = "collect review revie
 check "backlog cleared" [ ! -s "$t/pending" ]
 check "report posted, not stdout" posted
 check "new report goes to #alerts" grep -Eq 'slack_api.py.*<<< \{"channel": "C0CG3EGKKP1",' "$t/ssh-calls"
-check "posted text is the report file" grep -q 'Run went fine' "$t/ssh-calls"
+check "posted text is the report file" grep -q 'Needs you: is this event in scope?' "$t/ssh-calls"
 check "alert resolved" resolved
 check "no alert raised" eval '! grep -q "alert raise" "$t/ssh-calls"'
 check "no fixes: fixes key resolved quietly" fixes_resolved_quietly
@@ -289,11 +336,11 @@ HOME="$t" INTAKE_CHECKOUT="$t/checkout" INTAKE_STATE="$t/state" INTAKE_POST_BACK
 check "posting problems don't fail the run" [ "$rc" -eq 0 ]
 check "retried with backoff, then stopped at the budget" eval 'grep -q "retrying in 1s" "$t"/state/runs/*.log && ! grep -q "retrying in 4s" "$t"/state/runs/*.log && grep -q "delivery budget spent\|stay queued" "$t"/state/runs/*.log'
 check "report, delivery alert, and fixes resolve queued; nothing delivered" eval '[ "$(ls "$t/state/outbox" | grep -c .)" -eq 3 ] && [ ! -s "$t/ssh-calls" ]'
-check "queued report is the report file" eval 'grep -l "^slack$" "$t"/state/outbox/* | xargs grep -q "Run went fine"'
+check "queued report is the report file" eval 'grep -l "^slack$" "$t"/state/outbox/* | xargs grep -q "Needs you: is this event in scope?"'
 rm -f "$t/vps-down"; : >"$t/pending"; echo sentinel >"$t/scenario"
 go
 check "second run exits 0" [ "$rc" -eq 0 ]
-check "queued report delivered first to #alerts, marked delayed with its run" eval 'head -1 "$t/ssh-calls" | grep -q "slack_api.py.*C0CG3EGKKP1.*Delayed: this is from the BA Eventos intake run of $(TZ=America/Argentina/Buenos_Aires date +%F).*Run went fine"'
+check "queued report delivered first to #alerts, marked delayed with its run" eval 'head -1 "$t/ssh-calls" | grep -q "slack_api.py.*C0CG3EGKKP1.*Delayed: this is from the BA Eventos intake run of $(TZ=America/Argentina/Buenos_Aires date +%F).*Needs you: is this event in scope?"'
 check "queued alert keeps its headline on line one" eval 'grep "^~/.local/bin/alert raise pro/ba-events-intake " "$t/ssh-calls" | grep -q "<<< ⚠️ .*its report didn.t reach #alerts.*{triage}$"'
 check "queued message names the next attempt, not a refusal" grep -Fxq 'The run finished. It saved the report to send at the next 09:00 run.' "$t/ssh-calls"
 check "delay notice stays on the last line" grep -Eq '^report .* on the Pro · Delayed from the .* intake run\.$' "$t/ssh-calls"

@@ -47,6 +47,38 @@ async function fixture() {
 let fixtureNumber = 0
 
 describe('catalog-fix on real D1', () => {
+  it('reuses vector values for a metadata-only correction without downgrading a queued document repair', async () => {
+    const { ids, unrelated, input, document } = await fixture()
+    const { index, vectors, failUpserts } = fakeVectorize()
+    for (const [day, id] of [...ids, unrelated].entries()) {
+      vectors.set(id, { id, values: [0.7], metadata: { status: 'scheduled', starts_at: Date.UTC(2026, 11, day + 3) } })
+    }
+    const { id } = input
+    const embed = vi.fn(async () => { throw new Error('Unexpected document rebuild') })
+    const embedText = vi.fn(async (_document: string) => [0.8])
+    await applyCatalogFix(query, { ...input, field: 'status', from: 'scheduled', to: 'canceled', allOccurrences: false }, () => randomUUID())
+    expect(await query('SELECT event_id FROM vector_sync WHERE event_id = ?', [id])).toEqual([])
+    expect(await query('SELECT event_id FROM vector_metadata_sync WHERE event_id = ?', [id])).toEqual([{ event_id: id }])
+    // The canceled event falls outside the regular recent-change scan. Only its metadata queue can select it.
+    const now = new Date(Date.now() + 3 * 86_400_000)
+    failUpserts(1)
+    await expect(reconcileCatalog(db, index, { embed, embedText, now })).rejects.toThrow('injected')
+    expect(await query('SELECT event_id FROM vector_metadata_sync WHERE event_id = ?', [id])).toEqual([{ event_id: id }])
+    expect(await reconcileCatalog(db, index, { embed, embedText, now })).toMatchObject({ metadataUpdated: 1, resynced: 0 })
+    expect(embed).not.toHaveBeenCalled()
+    expect(embedText).not.toHaveBeenCalled()
+    expect(vectors.get(id)).toEqual({ id, values: [0.7], metadata: { status: 'canceled', starts_at: Date.UTC(2026, 11, 3) } })
+    expect(await query('SELECT event_id FROM vector_metadata_sync WHERE event_id = ?', [id])).toEqual([])
+
+    const repairId = ids[1]!
+    const queuedAt = '2026-01-01T00:00:00.000Z'
+    await db.prepare('INSERT INTO vector_sync (event_id, queued_at) VALUES (?, ?)').bind(repairId, queuedAt).run()
+    await applyCatalogFix(query, { ...input, id: repairId, field: 'status', from: 'scheduled', to: 'canceled', allOccurrences: false }, () => randomUUID())
+    expect(await query('SELECT queued_at FROM vector_sync WHERE event_id = ?', [repairId])).toEqual([{ queued_at: queuedAt }])
+    expect(await reconcileCatalog(db, index, { embed, embedText, now })).toMatchObject({ resynced: 1 })
+    expect(embedText).toHaveBeenCalledExactlyOnceWith(document)
+    expect(vectors.get(repairId)).toMatchObject({ values: [0.8], metadata: { status: 'canceled' } })
+  }, 15_000)
   it('corrects the eight 18 mundos summaries, bypasses intake protection only in the guarded operation, and leaves the unrelated same-title show alone', async () => {
     const { ids, input, unrelated, document } = await fixture()
     const operation = randomUUID()
@@ -58,6 +90,7 @@ describe('catalog-fix on real D1', () => {
     }
     expect(await query('SELECT operation FROM publisher_catalog_fixes WHERE operation = ?', [operation])).toEqual([{ operation }])
     expect(await query('SELECT * FROM write_context', [])).toEqual([])
+    expect(await query('SELECT event_id FROM vector_sync WHERE event_id = ?', [input.id])).toEqual([])
     await db.prepare('UPDATE events SET description_summary_es = ? WHERE id = ?').bind(old, ids[0]).run()
     expect(await query('SELECT description_summary_es FROM events WHERE id = ?', [ids[0]!])).toEqual([{ description_summary_es: corrected }])
     await expect(applyCatalogFix(query, input, () => randomUUID())).rejects.toThrow('stale --from')
@@ -88,11 +121,13 @@ describe('catalog-fix on real D1', () => {
     }])
     expect(await query('SELECT name FROM events WHERE id = ?', [ids[1]!])).toEqual([{ name: show }])
     expect(vectors.get(id)?.values).toEqual([0.1])
+    expect(await query('SELECT event_id FROM vector_sync WHERE event_id = ?', [id])).toEqual([{ event_id: id }])
     const embed = vi.fn(async () => ({ embedding: [0.9], searchDocument: document }))
     expect(await reconcileCatalog(db, index, { embed, maxEmbeds: 1 })).toMatchObject({ reembedded: 1 })
     expect(embed).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ name: title, venue_name: name }))
     expect(vectors.get(id)).toEqual({ id, values: [0.9], metadata })
     expect(await query('SELECT embedding_version FROM events WHERE id = ?', [id])).toEqual([{ embedding_version: CURRENT_EMBEDDING_VERSION }])
+    expect(await query('SELECT event_id FROM vector_sync WHERE event_id = ?', [id])).toEqual([])
   })
 
   it('applies a shared start-clock correction to different dates, but refuses a date shift', async () => {
@@ -101,5 +136,6 @@ describe('catalog-fix on real D1', () => {
     await expect(applyCatalogFix(query, { ...correction, to: '2026-12-04T00:30:00.000Z' }, () => randomUUID())).rejects.toThrow('original local date')
     await applyCatalogFix(query, correction, () => randomUUID())
     expect(await query('SELECT starts_at FROM events WHERE id = ?', [ids[7]!])).toEqual([{ starts_at: '2026-12-10T00:30:00.000Z' }])
+    expect(await query('SELECT event_id FROM vector_metadata_sync WHERE event_id = ?', [ids[7]!])).toEqual([{ event_id: ids[7] }])
   })
 })

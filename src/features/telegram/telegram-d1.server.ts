@@ -47,14 +47,8 @@ export async function redactIdentity(db: D1Database, identityHash: string, now: 
 		.bind(now, now, identityHash).run()
 }
 
-/** Deletes Telegram conversations and update claims older than the cutoff, in one transaction. */
-export async function purgeRetention(db: D1Database, cutoff: string) {
-	// RETURNING, not meta.changes: D1's change count also includes the ON DELETE SET NULL updates to telegram_updates.
-	const [conversations, updates] = await db.batch([
-		db.prepare(`DELETE FROM conversations WHERE channel = 'telegram' AND created_at < ? RETURNING id`).bind(cutoff),
-		db.prepare('DELETE FROM telegram_updates WHERE received_at < ? RETURNING update_id').bind(cutoff),
-	])
-	return { conversations: conversations.results.length, updates: updates.results.length }
+export function preparePurgeUpdateClaims(db: D1Database, cutoff: string) {
+	return db.prepare('DELETE FROM telegram_updates WHERE received_at < ? RETURNING update_id').bind(cutoff)
 }
 
 export async function countStaleFailures(db: D1Database, cutoff: string) {

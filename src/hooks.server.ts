@@ -27,8 +27,9 @@ export const handleCanonicalOrigin: Handle = ({ event, resolve }) => {
 
 // Load the authenticated user and profile once for the request.
 const handleSession: Handle = async ({ event, resolve }) => {
-  // These public media/feed endpoints never read account data or refresh a session.
-  if (event.url.pathname === '/api/events/happening-soon' || event.url.pathname.startsWith('/api/event-artwork/')) {
+  // Public sitemap, media, and feed endpoints never read account data or refresh a session.
+  const { pathname } = event.url;
+  if (event.route.id === '/sitemap.xml' || pathname === '/api/events/happening-soon' || pathname.startsWith('/api/event-artwork/')) {
     event.locals.user = null;
     event.locals.profile = null;
     event.locals.isAdmin = false;
@@ -56,6 +57,7 @@ const handleSession: Handle = async ({ event, resolve }) => {
 
 // Paraglide reads the locale in both the server request and document.cookie.
 export const handleLocaleSync: Handle = ({ event, resolve }) => {
+	if (event.route.id === '/sitemap.xml') return resolve(event);
 	const previous = event.cookies.get(cookieName);
 	const locale = event.locals.profile?.locale ?? (isLocale(previous) ? previous : undefined);
 	if (!locale) return resolve(event);

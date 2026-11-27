@@ -243,8 +243,8 @@ describe('collect through the CLI client', () => {
     const store = remoteCollection(client())
     const fetcher = async () => describeImage(flyer)
     const result = await Effect.runPromise(collectInstagramEffect(store, apify, fetcher))
-    expect(result).toMatchObject({ state: 'succeeded', run_id: 'synthetic-run', posts: 1, changed: 1, failures: [], charged_usd: 0.4,
-      month: { charged_usd: 0.4, unmeasured_runs: 0, cap_usd: 18 }, apify_cycle: { usage_usd: 1.4, limit_usd: 19 } })
+    expect(result).toMatchObject({ state: 'succeeded', run_id: 'synthetic-run', posts: 1, changed: 1, failures: [], charged_usd: 0.4, run_cap_usd: 1.5,
+      month: { charged_usd: 0.4, reserved_or_charged_usd: 0.4, unmeasured_runs: 0, cap_usd: 18 }, apify_cycle: { usage_usd: 1.4, limit_usd: 19 } })
     const media = await db.prepare('SELECT object_key, content_type FROM intake_media').all<{ object_key: string }>()
     expect(media.results).toHaveLength(1)
     expect(env.INTAKE_EVIDENCE.objects.has(media.results[0].object_key)).toBe(true)
