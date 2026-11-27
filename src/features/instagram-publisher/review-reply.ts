@@ -11,6 +11,8 @@ export interface ReviewReplyDelivery {
   channel: string
   threadTs: string | null
   parts: string[]
+  /** An uncertain first notice can be reconciled, but never sent again. */
+  firstDecision?: { text: string; receipt: ReviewPartReceipt; broadcast: boolean }
   parent?: ReviewPartReceipt
   inFlight?: ReviewPartReceipt
 }
@@ -48,12 +50,12 @@ function quote(value: string) {
 const fold = (text: string) => text.normalize('NFD').replace(/\p{M}/gu, '').toUpperCase().replace(/\s+/gu, ' ')
 export const streetForUsig = (street: string) => fold(street).replace(/^CALLE /u, '').replace(/^(?:AV\.?|AVDA\.?|AVENIDA) (.+)$/u, '$1 AV.').replace(/ AV$/u, ' AV.')
 
-export interface ReviewBarrioLookup { url: string; address: string; barrio: string | null }
+export interface ReviewBarrioLookup { url: string; address: string; barrio: string | null; status: 'checked' | 'unavailable' }
 
 export async function lookupReviewBarrio(address: VenueAddress, fetchImpl: typeof fetch = fetch): Promise<ReviewBarrioLookup> {
   const street = streetForUsig(address.street)
   const url = `https://ws.usig.buenosaires.gob.ar/datos_utiles?calle=${encodeURIComponent(street)}&altura=${address.number}`
-  const lookup: ReviewBarrioLookup = { url, address: `${street} ${address.number}`, barrio: null }
+  const lookup: ReviewBarrioLookup = { url, address: `${street} ${address.number}`, barrio: null, status: 'unavailable' }
   try {
     const response = await fetchImpl(url, { redirect: 'error', signal: AbortSignal.timeout(4_000) })
     if (!response.ok) {
@@ -61,9 +63,10 @@ export async function lookupReviewBarrio(address: VenueAddress, fetchImpl: typeo
       return lookup
     }
     const result: unknown = await response.json()
-    if (result && typeof result === 'object' && 'barrio' in result && typeof result.barrio === 'string') {
-      const barrio = result.barrio.trim()
-      if (NEIGHBORHOODS.some(name => fold(name) === fold(barrio))) lookup.barrio = barrio
+    if (result && typeof result === 'object' && 'barrio' in result && (typeof result.barrio === 'string' || result.barrio === null)) {
+      lookup.status = 'checked'
+      const barrio = result.barrio?.trim()
+      if (barrio && NEIGHBORHOODS.some(name => fold(name) === fold(barrio))) lookup.barrio = barrio
     }
   } catch { /* Show the link even if the official service is unavailable. */ }
   return lookup
@@ -73,7 +76,8 @@ function barrioLine({ lookup, conflictingAddresses }: ReviewSelection) {
   if (conflictingAddresses) return 'USIG: las fuentes no coinciden en la dirección del evento.'
   if (!lookup) return 'USIG: ninguna fuente confirmó la calle y altura del lugar del evento.'
   const link = slackLink(lookup.url, `USIG: ${slackLiteral(lookup.address)}`)
-  return lookup.barrio ? `${link} — barrio oficial: ${slackLiteral(lookup.barrio)}.` : `${link} — falló la consulta oficial.`
+  if (lookup.status === 'unavailable') return `${link} — falló la consulta oficial.`
+  return lookup.barrio ? `${link} — barrio oficial: ${slackLiteral(lookup.barrio)}.` : `${link} — la consulta no confirmó el barrio.`
 }
 
 function checkText({ finding }: RecordedCheck, fixes: FixReceipt[]) {
@@ -95,9 +99,10 @@ export interface ReviewEventReply {
   flag: ReviewEvidenceFlag
   notInvestigated: string
   checks?: RecordedCheck[]
+  record?: QuestionEvidence
 }
 
-export function sourceReadings(evidence: ReviewResources | undefined, selection?: ReviewSelection) {
+export function sourceReadings(evidence: ReviewResources | undefined, selection?: ReviewSelection, research: Array<{ url: string; excerpt: string }> = []) {
   const sources = new Map<string, { label: string; caption?: string; excerpt?: string }>()
   for (const observation of evidence?.observations ?? []) {
     if (!publicReviewUrl(observation.postUrl)) continue
@@ -111,6 +116,9 @@ export function sourceReadings(evidence: ReviewResources | undefined, selection?
     const source = sources.get(page.url) ?? { label: 'Página oficial' }
     source.excerpt ||= page.excerpt.trim()
     sources.set(page.url, source)
+  }
+  for (const { url, excerpt } of research) {
+    if (publicReviewUrl(url) && !sources.has(url)) sources.set(url, { label: 'Fuente de la investigación', excerpt })
   }
   return [...sources].map(([url, { label, caption, excerpt }]) => ({ url, label, quote:
     selection?.quotes.find(item => item.url === url)?.quote ?? (caption || excerpt)?.trim().slice(0, 400) ?? null }))
@@ -132,7 +140,8 @@ export function eventResourceLines(id: string, evidence: ReviewResources | undef
   return lines
 }
 
-export function eventReplyLines(item: ReviewEventReply, evidence: ReviewResources | undefined, fixes: FixReceipt[], selection?: ReviewSelection, record?: QuestionEvidence) {
+export function eventReplyLines(item: ReviewEventReply, evidence: ReviewResources | undefined, fixes: FixReceipt[], selection?: ReviewSelection) {
+  const { record } = item
   const lines = [withReviewLinks(`${item.title}: ${item.detail}`), ...eventResourceLines(item.id, evidence, record ?? selection, record)]
   const checks = recordedCheckLines([...(record?.history ?? []), ...(item.checks ?? [])], fixes)
   lines.push(...(checks.length ? checks : [`Not investigated: ${slackLiteral(item.notInvestigated)}`]))
