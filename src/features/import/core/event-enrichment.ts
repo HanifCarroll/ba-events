@@ -132,9 +132,8 @@ function updateEventEnrichmentEffect(
     enrichment_provenance?: EnrichmentProvenance
     status?: 'scheduled' | 'canceled' | 'postponed' | 'past' | 'pending_review'
   }
-): Effect.Effect<void, EventEnrichmentError> {
+) {
   return importTry('event-enrichment.update-event', () => catalog.updateEvent(eventId, data, 'enrichment')).pipe(
-    Effect.asVoid,
     Effect.mapError((error) => enrichmentError('event-enrichment.update-event', `Failed to update event: ${error.message}`, error))
   )
 }
@@ -233,8 +232,9 @@ export function enrichSingleEventEffect(
       }))
       const credits = missingCredits(input, organizer, performers)
 
+      let write: Awaited<ReturnType<CatalogStore['updateEvent']>>
       if (isEmptyFacets(facets)) {
-        yield* updateEventEnrichmentEffect(catalog, id, {
+        write = yield* updateEventEnrichmentEffect(catalog, id, {
           facets,
           ...credits,
           enrichment_provenance: {
@@ -265,7 +265,7 @@ export function enrichSingleEventEffect(
           })
         )
 
-        yield* updateEventEnrichmentEffect(catalog, id, {
+        write = yield* updateEventEnrichmentEffect(catalog, id, {
           facets,
           embedding,
           search_document: searchDocument,
@@ -281,7 +281,7 @@ export function enrichSingleEventEffect(
       return {
         eventId: id,
         success: true,
-        enriched: true,
+        enriched: write.applied.length > 0,
       } satisfies EventEnrichmentResult
     }
 
@@ -478,13 +478,14 @@ export function enrichSingleEventEffect(
     }
     if (settledVenueId) updateData.venue_id = settledVenueId
 
-    yield* updateEventEnrichmentEffect(catalog, id, updateData)
-    console.log(`[event-enrichment] Enriched: ${name}${settledVenueId ? ` (venue: ${enrichmentResult.venue_name})` : ''}`)
+    const write = yield* updateEventEnrichmentEffect(catalog, id, updateData)
+    const enriched = write.applied.length > 0
+    if (enriched) console.log(`[event-enrichment] Enriched: ${name}${settledVenueId ? ` (venue: ${enrichmentResult.venue_name})` : ''}`)
 
     return {
       eventId: id,
       success: true,
-      enriched: true,
+      enriched,
       venueSettlement,
     } satisfies EventEnrichmentResult
   })
@@ -507,18 +508,15 @@ export function enrichSingleEventEffect(
 
     if (cause instanceof HttpError && cause.isNotFound) {
       const errorMsg = `HTTP ${cause.status} - Event page not found`
-      console.log(`[event-enrichment] Event page gone (${cause.status}), marking as canceled: ${name}`)
       return updateEventEnrichmentEffect(catalog, id, {
         status: 'canceled',
         enrichment_status: 'skipped',
         enrichment_error: errorMsg,
-      }).pipe(Effect.as({
-        eventId: id,
-        success: false,
-        enriched: false,
-        canceled: true,
-        error: errorMsg,
-      } satisfies EventEnrichmentResult))
+      }).pipe(Effect.map(({ applied }) => {
+        const canceled = applied.includes('status')
+        console.log(`[event-enrichment] Event page gone (${cause.status}), ${canceled ? 'canceled' : 'status unchanged'}: ${name}`)
+        return { eventId: id, success: !canceled, enriched: false, canceled, error: errorMsg } satisfies EventEnrichmentResult
+      }))
     }
 
     const errorMsg = cause instanceof Error ? cause.message : 'Unknown error'

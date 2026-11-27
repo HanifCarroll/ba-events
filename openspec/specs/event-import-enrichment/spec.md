@@ -147,6 +147,10 @@ Imports, venue settlement, the venue review queue, enrichment, the blocklist, an
 - **THEN** the catalog reports the protected fields it kept and applies any permitted changes
 - **AND** the daily scrape counts the event as updated only if at least one stored field changed
 
+#### Scenario: Enrichment finds a missing page for an event whose status intake protected
+- **WHEN** enrichment receives a 404 and the catalog keeps the current status
+- **THEN** enrichment does not count the event as canceled
+
 #### Scenario: A jobs Worker without a D1 binding
 - **WHEN** the jobs Worker runs without `DB`
 - **THEN** catalog jobs cannot run and no writes are sent to another backend
