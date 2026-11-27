@@ -101,7 +101,7 @@ The homepage SHALL lead with the current agenda and render exactly one centered 
 
 #### Scenario: An ongoing event started on a previous Buenos Aires day
 - **WHEN** the homepage or a public agenda shows an ongoing Event Listing that started before today's Buenos Aires midnight
-- **THEN** the agenda groups that card under Today where day headings are shown, and the card shows its actual local start date at every viewport width
+- **THEN** the agenda groups that card under Today where day headings are shown, and the card shows the localized Ongoing label followed by its actual local start date at every viewport width
 
 #### Scenario: A venue offers several time slots on the same day
 - **WHEN** remaining timed occurrences share a normalized title, a known venue, and a Buenos Aires start date

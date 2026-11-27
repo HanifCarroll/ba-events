@@ -30,7 +30,7 @@
 
 	const sourceIsPost = $derived(/^https:\/\/(?:www\.)?instagram\.com\/(?:p|reel)\/[\w-]+\/?(?:[?#].*)?$/i.test(event.sourceUrl ?? ''))
 	const hasTime = $derived(event.time_tba || !event.is_all_day)
-	const showStartDateOnMobile = $derived(homeDay(event.starts_at) < displayDay)
+	const ongoingFromEarlierDay = $derived(homeDay(event.starts_at) < displayDay)
 	const price = $derived(event.payWhatYouCan ? m.home_price_pay_what_you_can() : formatPrice(event.price, event.is_free))
 	const venue = $derived(event.location_hidden ? m.event_location_hidden() :
 		[event.venue_name, event.venue_neighborhood].filter(Boolean).join(' · ') || m.concierge_location_tba())
@@ -98,9 +98,9 @@
 			/>
 		</a>
 		<div class="card-copy space-y-1 pt-2 wrap-anywhere">
-			<div class={['text-xs font-medium text-[#d0ff36] tabular-nums sm:text-sm', !hasTime && !showStartDateOnMobile && 'hidden md:block']}>
-				{#if showStartDateOnMobile}
-					{@render startDate()}
+			<div class={['text-xs font-medium text-[#d0ff36] tabular-nums sm:text-sm', !hasTime && !ongoingFromEarlierDay && 'hidden md:block']}>
+				{#if ongoingFromEarlierDay}
+					<span>{m.home_ongoing()}</span>{' · '}{@render startDate()}
 				{:else}
 					<span class="hidden md:inline">{@render startDate()}</span>
 				{/if}

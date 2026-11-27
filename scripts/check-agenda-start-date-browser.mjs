@@ -11,25 +11,33 @@ const dateLabel = new Intl.DateTimeFormat('es', {
 
 const browser = await chromium.launch()
 try {
-  const context = await browser.newContext({
-    viewport: { width: 390, height: 844 }, locale: 'es-AR', serviceWorkers: 'block', javaScriptEnabled: false,
-  })
-  await context.route('**/*', route => new URL(route.request().url()).origin === url.origin ? route.continue() : route.abort())
-  const page = await context.newPage()
-  page.setDefaultNavigationTimeout(120_000)
-  for (const path of ['/agenda/gratis', '/']) {
-    assert.equal((await page.goto(new URL(path, url).href, { waitUntil: 'domcontentloaded' }))?.status(), 200, path)
-    const card = page.locator('[data-section="event-card"]').filter({
-      has: page.locator(`a[href="/events/${encodeURIComponent(eventId)}"]`),
+  for (const [width, height] of [[390, 844], [1440, 900]]) {
+    const context = await browser.newContext({
+      viewport: { width, height }, locale: 'es-AR', serviceWorkers: 'block', javaScriptEnabled: false,
     })
-    assert.equal(await card.count(), 1, `${path}: the ongoing fixture should appear once`)
-    const day = card.locator('xpath=preceding-sibling::h2[@data-section="day"][1]')
-    assert.equal(await day.textContent(), 'Hoy', `${path}: the ongoing fixture belongs under Hoy`)
-    assert.ok(await day.isVisible(), `${path}: Hoy is visible on mobile`)
-    const date = card.getByText(dateLabel, { exact: true })
-    assert.ok(await date.isVisible(), `${path}: ${dateLabel} is visible at 390 px`)
-    assert.equal(await date.getAttribute('datetime'), startsAt)
-    console.log(`PASS ${path}: ${dateLabel} stays visible under Hoy at 390 px without JavaScript`)
+    try {
+      await context.route('**/*', route => new URL(route.request().url()).origin === url.origin ? route.continue() : route.abort())
+      const page = await context.newPage()
+      page.setDefaultNavigationTimeout(120_000)
+      for (const path of ['/agenda/gratis', '/']) {
+        assert.equal((await page.goto(new URL(path, url).href, { waitUntil: 'domcontentloaded' }))?.status(), 200, path)
+        const card = page.locator('[data-section="event-card"]').filter({
+          has: page.locator(`a[href="/events/${encodeURIComponent(eventId)}"]`),
+        })
+        assert.equal(await card.count(), 1, `${path}: the ongoing fixture should appear once`)
+        const day = card.locator('xpath=preceding-sibling::h2[@data-section="day"][1]')
+        assert.equal(await day.textContent(), 'Hoy', `${path}: the ongoing fixture belongs under Hoy`)
+        assert.equal(await day.isVisible(), width === 390, `${path}: the day heading is visible only on mobile`)
+        const ongoing = card.getByText('En curso', { exact: true })
+        const date = card.getByText(dateLabel, { exact: true })
+        assert.ok(await ongoing.isVisible(), `${path}: En curso is visible at ${width} px`)
+        assert.ok(await date.isVisible(), `${path}: ${dateLabel} is visible at ${width} px`)
+        assert.equal(await date.getAttribute('datetime'), startsAt)
+        console.log(`PASS ${path}: En curso · ${dateLabel} at ${width} px without JavaScript`)
+      }
+    } finally {
+      await context.close()
+    }
   }
 } finally {
   await browser.close()
