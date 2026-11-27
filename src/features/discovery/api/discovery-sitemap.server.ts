@@ -2,6 +2,7 @@ import { getDiscoveryVenues } from '#shared/lib/db/client.server.ts'
 import { barriosBySlug, currentPlaceEvents, eventsByVenue, eventsForBarrioIndex, selectBarrio, venuesBySlug } from '../lib/place-pages.ts'
 import { getSiteUrl } from '#shared/lib/utils/url.ts'
 import { agendaPages, lastmod, selectAgendaPage } from '../lib/agenda-pages.ts'
+import { aboutPaths } from './about-page.server.ts'
 import { readDiscoveryAgenda } from './read-agenda.server.ts'
 
 export async function readDiscoverySitemapUrls(asOf: Date) {
@@ -17,6 +18,7 @@ export async function readDiscoverySitemapUrls(asOf: Date) {
   }))
   return [
     ...agendas,
+    ...aboutPaths.map(path => ({ loc: site + path })),
     { loc: `${site}/agenda/barrios`, lastmod: lastmod(eventsForBarrioIndex(snapshot)) },
     ...barrios,
     ...[...venuesBySlug(venues)].flatMap(([slug, venue]) => {

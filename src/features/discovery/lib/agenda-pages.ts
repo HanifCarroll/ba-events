@@ -6,6 +6,7 @@ import type { AgendaListing } from '#shared/lib/db/event-reads-d1.server.ts'
 import type { AgendaCopy } from './copy.ts'
 import dates from './date-copy.json'
 import topics from './topic-copy.json'
+import english from './english-agenda-copy.json'
 import { genreLabels, topicRules, type AgendaTopic } from './agenda-topics.ts'
 
 export type DiscoverySnapshot = { window: HomeWindow; events: AgendaListing[]; asOf: number }
@@ -27,6 +28,8 @@ export const agendaPages: Record<string, AgendaDefinition> = {
   '/agenda/muestras': topicDefinition('muestras', topics['/agenda/muestras']),
   '/agenda/poesia': topicDefinition('poesia', topics['/agenda/poesia']),
   '/agenda/tango': topicDefinition('tango', topics['/agenda/tango']),
+  '/en/things-to-do-this-weekend': { copy: english['/en/things-to-do-this-weekend'], filter: 'finde', lang: 'en' },
+  '/en/free-events-this-week': { copy: english['/en/free-events-this-week'], filter: 'gratis', lang: 'en' },
 }
 
 export function selectAgendaPage(snapshot: DiscoverySnapshot, definition: AgendaDefinition): AgendaSelection {
@@ -89,5 +92,12 @@ export function agendaCopyValues(snapshot: DiscoverySnapshot, selection: AgendaS
     barrios_top: barrios.length === 3 ? new Intl.ListFormat('es').format(barrios) : undefined,
     proxima_fecha: selection.next ? listDate(selection.next.starts_at) : undefined,
     fecha_actualizacion: readDate(asOf),
+    friday: listDate(window.weekendStart, 'en'), sunday: listDate(Date.parse(window.weekendEnd) - 1, 'en'),
+    n_events: count(cards.length, 'event'), n_venues: count(venueCount(cards), 'venue'),
+    n_free: count(free.length, 'free event'), last_day: listDate(Date.parse(window.end) - 1, 'en'),
+    free_sentence: free.length ? `${free.length} ${free.length === 1 ? 'is' : 'are'} free.` : undefined,
+    today_sentence: todayFree ? `${todayFree} ${todayFree === 1 ? 'is' : 'are'} today.` : undefined,
+    next_date: selection.next ? listDate(selection.next.starts_at, 'en') : undefined,
+    updated_at: readDate(asOf, 'en'),
   }
 }

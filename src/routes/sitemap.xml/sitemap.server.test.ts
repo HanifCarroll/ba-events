@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { freshD1 } from '../../../tests/support/d1.ts'
+import { loadAboutPage } from '#features/discovery/api/about-page.server.ts'
 import { loadBarrioIndex, loadVenuePage } from '#features/discovery/api/place-page.server.ts'
 import { useCloudflareBindings } from '#shared/lib/db/search-bindings.server.ts'
 import { GET } from './+server.ts'
@@ -16,6 +17,8 @@ beforeAll(async () => {
     fixture.db.prepare("INSERT INTO venues (id, name, neighborhood) VALUES ('fixture-venue', 'Sala Proof', 'Almagro')"),
     fixture.db.prepare("INSERT INTO venues (id, name, neighborhood) VALUES ('fixture-closed', 'Sala sin eventos', 'Villa Crespo')"),
   ])
+  await fixture.db.batch(Array.from({ length: 12 }, (_, i) => fixture.db.prepare(`INSERT INTO instagram_sources
+    (username, authority, qualification, enabled) VALUES (?, 'venue', 'synthetic', ?)`).bind(`fixture_${i}`, i < 11 ? 1 : 0)))
   const rows = [
     ['future&live', later, 'scheduled', 'in'],
     ['starts-now', now.toISOString(), 'scheduled', 'in'],
@@ -56,7 +59,7 @@ describe('GET /sitemap.xml', () => {
     expect(response.headers.get('Cache-Control')).toBe('public, max-age=0, s-maxage=3600')
     const xml = await response.text()
     const urls = Array.from(xml.matchAll(/<loc>(.*?)<\/loc>/g), match => match[1])
-    expect(urls.slice(0, 15)).toEqual([
+    expect(urls.slice(0, 19)).toEqual([
       'https://baeventos.com',
       'https://baeventos.com/mcp',
       'https://baeventos.com/events/starts-now',
@@ -71,6 +74,10 @@ describe('GET /sitemap.xml', () => {
       'https://baeventos.com/agenda/muestras',
       'https://baeventos.com/agenda/poesia',
       'https://baeventos.com/agenda/tango',
+      'https://baeventos.com/en/things-to-do-this-weekend',
+      'https://baeventos.com/en/free-events-this-week',
+      'https://baeventos.com/que-es-ba-eventos',
+      'https://baeventos.com/en/about',
       'https://baeventos.com/agenda/barrios',
     ])
     const barrios = urls.filter(loc => loc.includes('/agenda/barrio/'))
@@ -78,7 +85,7 @@ describe('GET /sitemap.xml', () => {
     expect(barrios).toContain('https://baeventos.com/agenda/barrio/villa-crespo')
     expect(urls.filter(loc => loc.includes('/lugares/'))).toEqual(['https://baeventos.com/lugares/sala-proof'])
     expect(Array.from(xml.matchAll(/<lastmod>(.*?)<\/lastmod>/g), match => match[1])).toEqual([
-      modified, modified, modified, modified, modified, modified, modified, modified,
+      modified, modified, modified, modified, modified, modified, modified, modified, modified,
     ])
   })
 
@@ -146,6 +153,14 @@ describe('GET /sitemap.xml', () => {
       await fixture.db.batch(places.map(([id]) => fixture.db.prepare('DELETE FROM events WHERE id = ?').bind(`event-${id}`)))
       await fixture.db.batch(places.map(([id]) => fixture.db.prepare('DELETE FROM venues WHERE id = ?').bind(id)))
     }
+  })
+
+  it('uses the live enabled-source count and the review month in the about copy', async () => {
+    const about = await loadAboutPage('/en/about', () => {}, false)
+    expect(about.lang).toBe('en')
+    expect(about.updated).toBe('Updated November 2026')
+    expect(about.blocks.join(' ')).toContain('more than 10 accounts')
+    expect(about.blocks.join(' ')).not.toMatch(/{{|\[HANIF:|Passline/)
   })
 
   it('returns a venue page for an eligible event and a 404 for a venue with only canceled events', async () => {

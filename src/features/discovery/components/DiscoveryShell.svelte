@@ -2,19 +2,26 @@
 	import type { Snippet } from 'svelte'
 	import { resolveSiteUrl } from '#shared/lib/utils/url.ts'
 	import DiscoveryFooter from './DiscoveryFooter.svelte'
-	import { dateLinks } from '../lib/discovery-links.ts'
+	import { dateNavigation, discoveryAlternate } from '../lib/discovery-links.ts'
 
 	let { data, children, agenda = false }: {
 		data: { title: string; description: string; heading: string; path: string; canonical: string; lang: 'es' | 'en'; updated: string }
 		children: Snippet
 		agenda?: boolean
 	} = $props()
+	const navigation = $derived(dateNavigation(data.lang))
+	const alternate = $derived(discoveryAlternate(data.path))
+	const origin = $derived(new URL(data.canonical).origin)
 </script>
 
 <svelte:head>
 	<title>{data.title}</title>
 	<meta name="description" content={data.description} />
 	<link rel="canonical" href={data.canonical} />
+	{#if alternate}
+		<link rel="alternate" hreflang={data.lang} href={data.canonical} />
+		<link rel="alternate" hreflang={alternate.language} href={origin + alternate.href} />
+	{/if}
 	<meta property="og:type" content="website" />
 	<meta property="og:site_name" content="BA Eventos" />
 	<meta property="og:title" content={data.title} />
@@ -28,9 +35,12 @@
 	<header class="mx-auto max-w-[90rem] space-y-3 px-4 pt-10 pb-6 sm:px-8 lg:px-12">
 		<h1 class="font-display text-3xl font-bold sm:text-4xl">{data.heading}</h1>
 		{#if data.updated}<p class="text-sm text-[#ccccd4]">{data.updated}</p>{/if}
+		{#if alternate}
+			<a data-sveltekit-reload lang={alternate.language} href={alternate.href} class="inline-flex min-h-11 items-center text-sm text-[#d0ff36] underline underline-offset-4">{alternate.label}</a>
+		{/if}
 		{#if agenda}
-			<nav aria-label="Agenda" class="flex flex-wrap items-center gap-x-2 text-sm">
-				{#each dateLinks as link, index (link.href)}
+			<nav aria-label={navigation.label} class="flex flex-wrap items-center gap-x-2 text-sm">
+				{#each navigation.links as link, index (link.href)}
 					{#if index}<span aria-hidden="true">·</span>{/if}
 					{#if link.href === data.path}
 						<span aria-current="page">{link.label}</span>
