@@ -119,9 +119,14 @@ describe('intake clock tokens', () => {
     expect(citesClock(excerpt, '21:00')).toBe(false)
   })
 
-  it('still reads a clock range when the end has a colon or a time unit and the price is separate', () => {
+  it('still reads a colon-ended clock range after a separate price', () => {
     expect(citesClock('Precios: 10–15.50 USD. Horario: 20–23:30', '20:00')).toBe(true)
-    expect(citesClock('Horario: 20–23.30 hs; precio $10', '20:00')).toBe(true)
+  })
+
+  it('requires the hours unit in the quote when a dotted range end establishes the start', () => {
+    const source = 'Horario: 20–23.30 hs; precio $10'
+    expect(citesClock(source, '20:00')).toBe(true)
+    expect(citesClock('Horario: 20–23.30', '20:00', source)).toBe(false)
   })
 
   it.each(['Duración: de 2 a 3 horas', 'dura 2 a 3 hs', 'Duración estimada: 02:00 a 03:00', 'de 2 a 3 horas de duración'])('does not use either duration bound in %s', duration => {
