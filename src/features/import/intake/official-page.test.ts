@@ -137,7 +137,7 @@ describe('official-page evidence', () => {
     ['20/11/2026 entradas', '2026-11-20', '20:00', 'time 20:00'],
     ['21:23 hs', '2026-11-23', '21:23', 'day 23'],
     ['Viernes, 20 de Noviembre 21:00 - 23:30 hs', '2026-11-20', '23:30', 'time 23:30'],
-    ['viernes 20 de noviembre de 21:00 a 23:30 hs', '2026-11-20', '23:30', 'time 23:30'],
+    ['viernes 20 de noviembre de 21:00 a las 23:30 hs', '2026-11-20', '23:30', 'time 23:30'],
     ['viernes 20 de noviembre de 21 a 23 hs', '2026-11-20', '23:00', 'time 23:00'],
     ['20/11/2026 de 21 a 23 hs', '2026-11-20', '23:00', 'time 23:00'],
     ['20/11/2026 de 21 a 23:30 hs', '2026-11-20', '23:30', 'time 23:30'],

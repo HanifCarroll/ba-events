@@ -69,6 +69,12 @@ describe('intake clock tokens', () => {
 
   it.each([
     ['Sábado 14 a 18 hs', '14:00', '18:00'], ['Domingo 15 hasta 20 hs', '15:00', '20:00'],
+    ['Viernes de las 20 a las 23 hs', '20:00', '23:00'],
+    ['de 21:00 a las 23:30 hs', '21:00', '23:30'],
+    ['desde 20 hasta las 23 hs', '20:00', '23:00'],
+    ['de la 1 a la 2 h', '01:00', '02:00'],
+    ['desde la 1 hasta la 2 h', '01:00', '02:00'],
+    ['DESDE LAS\n20 hasta\u00a0las 23 hs', '20:00', '23:00'],
     ['20 de noviembre: 18 a 21 hs', '18:00', '21:00'],
     ['20 de noviembre, 18–21 hs', '18:00', '21:00'],
     ['20 de setiembre: 18 - 21 hs', '18:00', '21:00'],
@@ -77,11 +83,17 @@ describe('intake clock tokens', () => {
     expect(citesClock(excerpt, end)).toBe(false)
   })
 
+  it('verifies the flyer’s stated start rather than an unstated hour', () => {
+    const excerpt = 'Todos los días de 20 a 24 h.'
+    expect(citesClock(excerpt, '20:00')).toBe(true)
+    expect(citesClock(excerpt, '21:00')).toBe(false)
+  })
+
   it.each([
     ['Funciones: 20 y 21 a las 18:00 hs', '18:00', ['20:00', '21:00']],
     ['Funciones: 12 y 13 a la 1:00', '01:00', ['12:00', '13:00']],
-    ['Viernes de las 20 a las 23 hs', '23:00', ['20:00']],
-    ['desde 20 hasta las 23 hs', '23:00', ['20:00']],
+    ['Viernes 20 a las 23 hs', '23:00', ['20:00']],
+    ['Sala Verde 20 hasta las 23 hs', '23:00', ['20:00']],
     ['20—23 hs', '23:00', ['20:00']],
   ] as const)('does not use a clock introducer or unrelated punctuation as a range gap in %s', (excerpt, time, wrong) => {
     expect(citesClock(excerpt, time)).toBe(true)

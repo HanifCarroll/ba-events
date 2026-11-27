@@ -25,8 +25,10 @@ function clockLexemes(source: string) {
     const { introduced, delimiter, hour, separator, minute, suffix } = groups
     const start = index + (introduced ?? delimiter ?? '').length
     const end = index + token.length
+    const before = source.slice(Math.max(0, start - 80), start)
     // Context labels are local to the number and cannot extend onto another line.
-    const prefix = normalizeEvidenceText(source.slice(Math.max(0, start - 80), start).split(/[\r\n]/u).at(-1) ?? '')
+    const prefix = normalizeEvidenceText(before.split(/[\r\n]/u).at(-1) ?? '')
+    const opensRange = /(?<![\p{L}\p{N}_])(?:de|desde)(?: las?)?$/u.test(normalizeEvidenceText(before))
     const tail = normalizeEvidenceText(source.slice(end, end + 80).split(/[\r\n]/u, 1)[0])
     const period = suffix?.[0].toLowerCase()
     const meridiem = period === 'a' || period === 'p'
@@ -41,7 +43,7 @@ function clockLexemes(source: string) {
     const hours = Number(hour)
     const validStart = hours < 24 && (!meridiem || hours >= 1 && hours <= 12)
     const localHour = meridiem ? hours % 12 + (period === 'p' ? 12 : 0) : hours
-    return [{ start, end, bareAfterColon, nonClock, meridiem, hasDayPrefix,
+    return [{ start, end, bareAfterColon, nonClock, meridiem, hasDayPrefix, opensRange,
       time: `${String(localHour).padStart(2, '0')}:${minute ?? '00'}`,
       standalone: validStart && Boolean(suffix || introduced || explicitMinutes(separator, minute) || bareAfterColon),
       sharedStart: validStart && !separator && !suffix && !dateFragmentOrRating,
@@ -56,9 +58,9 @@ export function* clockTokens(source: string) {
     const right = tokens[index + 1]
     if (!right) return
     const gap = source.slice(left.end, right.start).trim().toLowerCase()
-    const wordJoin = gap === 'a' || gap === 'hasta'
+    // `a la(s)` and `hasta la(s)` only close a range explicitly opened by `de` or `desde`.
+    const wordJoin = gap === 'a' || gap === 'hasta' || left.opensRange && /^(?:a|hasta)\s+las?$/u.test(gap)
     const dashJoin = gap === '-' || gap === '–'
-    // `al` and `a la(s)` are never range joins. Day words only disqualify a bare number before a dash.
     if (!wordJoin && !dashJoin) return
     const bareStart = left.sharedStart && (wordJoin || !left.hasDayPrefix)
     if (left.nonClock || right.nonClock) return 'non-clock'
