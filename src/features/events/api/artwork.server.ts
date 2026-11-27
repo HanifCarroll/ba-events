@@ -1,4 +1,7 @@
-import { ARTWORK_WIDTHS, R2_ARTWORK_KEY, artworkVersion, isArtworkOriginAllowed, r2ArtworkKey } from '../lib/artwork-delivery.ts'
+import { isExternalArtworkOriginAllowed } from '#shared/lib/artwork-origins.ts'
+import { decodeArtworkRef, isStoredArtworkKey, type ArtworkRef } from '#shared/lib/artwork-ref.ts'
+import { ARTWORK_PUBLIC_ORIGIN, eventArtworkPath, isArtworkEventId, publicArtworkUrl } from '#shared/lib/artwork-url.ts'
+import { ARTWORK_WIDTHS, artworkVersion } from '../lib/artwork-delivery.ts'
 import type { PublicCache } from './platform-cache.ts'
 
 type CatalogArtwork = { image_url: string | null } | null
@@ -57,15 +60,15 @@ async function boundedBytes(response: Response): Promise<Uint8Array<ArrayBuffer>
 export async function serveArtwork(options: Options): Promise<Response> {
   const { request, id, variant, images, cache, retain, lookup } = options
   const url = new URL(request.url)
-  if (R2_ARTWORK_KEY.test(variant)) return serveOriginal(options, url)
+  if (isStoredArtworkKey(variant)) return serveOriginal(options, url)
   const width = Number(variant.replace('.webp', ''))
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id) ||
+  if (!isArtworkEventId(id) ||
     !ARTWORK_WIDTHS.some((allowed) => variant === `${allowed}.webp`) ||
     [...url.searchParams.keys()].some((key) => key !== 'v') || url.searchParams.getAll('v').length !== 1 ||
     !/^[a-z0-9]{1,7}$/.test(url.searchParams.get('v') ?? '')) {
     return new Response('Invalid artwork request', { status: 400, headers: { 'Cache-Control': 'no-store' } })
   }
-  const key = new Request(`https://baeventos.com/api/event-artwork/${id}/${variant}?v=${url.searchParams.get('v')}`)
+  const key = new Request(`${ARTWORK_PUBLIC_ORIGIN}${eventArtworkPath(id, variant)}?v=${url.searchParams.get('v')}`)
   const cached = await cache?.match(key).catch(() => undefined)
   if (cached) {
     const response = new Response(cached.body, cached)
@@ -73,23 +76,23 @@ export async function serveArtwork(options: Options): Promise<Response> {
     return response
   }
   const signal = AbortSignal.any([request.signal, AbortSignal.timeout(10_000)])
-  let original: string | undefined
+  let fallback: string | undefined
   try {
     const event = await lookup(id, signal)
-    if (!event?.image_url || !isArtworkOriginAllowed(event.image_url, options.ownedStorageOrigin)) {
-      return new Response('Artwork unavailable', { status: 404, headers: { 'Cache-Control': 'no-store' } })
+    const reference = decodeArtworkRef(event?.image_url, id)
+    if (!reference || reference.kind === 'external' && !isExternalArtworkOriginAllowed(reference.url, options.ownedStorageOrigin)) {
+      return unavailable()
     }
-    original = event.image_url
-    if (url.searchParams.get('v') !== artworkVersion(original)) {
+    if (url.searchParams.get('v') !== artworkVersion(publicArtworkUrl(id, reference))) {
       return new Response('Artwork changed', { status: 404, headers: { 'Cache-Control': 'no-store' } })
     }
+    fallback = reference.kind === 'stored' ? eventArtworkPath(id, reference.key) : reference.url
     if (!images) throw new Error('Images binding unavailable')
-    const r2Key = r2ArtworkKey(original)
     // Do not forward user cookies/authentication; do not follow upstream redirects.
-    const source = r2Key ? await r2Image(options.bucket, r2Key)
-      : await (options.fetchImage ?? fetch)(original, { redirect: 'manual', signal, headers: { Accept: 'image/*' } })
-    if (!source.ok || !/^image\/(jpeg|png|webp|gif|avif)(?:;|$)/i.test(source.headers.get('Content-Type') ?? '')) {
-      await source.body?.cancel()
+    const source = reference.kind === 'stored' ? await r2Image(options.bucket, reference)
+      : await (options.fetchImage ?? fetch)(reference.url, { redirect: 'manual', signal, headers: { Accept: 'image/*' } })
+    if (!source?.ok || !/^image\/(jpeg|png|webp|gif|avif)(?:;|$)/i.test(source.headers.get('Content-Type') ?? '')) {
+      await source?.body?.cancel()
       throw new Error('Artwork source unavailable')
     }
     const bytes = await boundedBytes(source)
@@ -118,49 +121,47 @@ export async function serveArtwork(options: Options): Promise<Response> {
   } catch {
     // Includes free transformation quota exhaustion. Never cache an error/fallback as a derivative.
     // An R2 original is served by this route on this host (staging has its own), so redirect by path.
-    if (original && !signal.aborted) return new Response(null, {
-      status: 307, headers: { Location: r2ArtworkKey(original) ? new URL(original).pathname : original, 'Cache-Control': 'no-store', 'X-Artwork-Cache': 'FALLBACK' },
+    if (fallback && !signal.aborted) return new Response(null, {
+      status: 307, headers: { Location: fallback, 'Cache-Control': 'no-store', 'X-Artwork-Cache': 'FALLBACK' },
     })
     return new Response('Artwork temporarily unavailable', { status: 502, headers: { 'Cache-Control': 'no-store' } })
   }
 }
 
 /** An R2 artwork object as a fetch response, so it takes the same bounded path as a fetched image. */
-async function r2Image(bucket: ArtworkBucket | undefined, key: string): Promise<Response> {
-  const object = await bucket?.get(key)
-  if (!object) throw new Error('Artwork object unavailable')
-  return new Response(object.body, { headers: { 'Content-Type': object.httpMetadata?.contentType ?? '' } })
+async function r2Image(bucket: ArtworkBucket | undefined, reference: Extract<ArtworkRef, { kind: 'stored' }>): Promise<Response | null> {
+  const object = await bucket?.get(reference.key)
+  if (!object) return null
+  const type = object.httpMetadata?.contentType
+  if (!type || type.toLowerCase() !== reference.contentType) {
+    await object.body.cancel()
+    return null
+  }
+  return new Response(object.body, { headers: { 'Content-Type': type } })
 }
 
 const unavailable = () => new Response('Artwork unavailable', { status: 404, headers: { 'Cache-Control': 'no-store' } })
 
 /**
- * The original of an R2 artwork, `/api/event-artwork/<event id>/<sha256>.<ext>`: the URL the copy tool and the D1
- * intake write to `events.image_url`. It is served only while it is the displayable event's current artwork. The key
+ * The original of an R2 Event Image. It is served only while it is the displayable event's current artwork. The key
  * is the content's hash, so the response never changes and is cached for a year.
  */
 async function serveOriginal(options: Options, url: URL): Promise<Response> {
   const { id, variant } = options
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id) || url.search) {
+  if (!isArtworkEventId(id) || id !== id.toLowerCase() || url.search) {
     return new Response('Invalid artwork request', { status: 400, headers: { 'Cache-Control': 'no-store' } })
   }
   if (!options.bucket) return unavailable()
   try {
     const signal = AbortSignal.any([options.request.signal, AbortSignal.timeout(10_000)])
     const event = await options.lookup(id, signal)
-    if (!event?.image_url || r2ArtworkKey(event.image_url, id) !== variant) return unavailable()
-    const object = await options.bucket.get(variant)
-    if (!object) return unavailable()
-    const type = object.httpMetadata?.contentType ?? ''
-    if (!/^image\/(jpeg|png|webp)$/i.test(type)) {
-      await object.body.cancel()
-      return unavailable()
-    }
-    return new Response(object.body, { headers: {
-      'Cache-Control': 'public, max-age=31536000, immutable',
-      'Content-Type': type,
-      'X-Content-Type-Options': 'nosniff',
-    } })
+    const reference = decodeArtworkRef(event?.image_url, id)
+    if (reference?.kind !== 'stored' || reference.key !== variant) return unavailable()
+    const response = await r2Image(options.bucket, reference)
+    if (!response) return unavailable()
+    response.headers.set('Cache-Control', 'public, max-age=31536000, immutable')
+    response.headers.set('X-Content-Type-Options', 'nosniff')
+    return response
   } catch {
     return new Response('Artwork temporarily unavailable', { status: 502, headers: { 'Cache-Control': 'no-store' } })
   }

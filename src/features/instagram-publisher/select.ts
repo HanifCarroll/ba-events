@@ -1,5 +1,7 @@
 /** Which catalog events a post shows (brief "Selection"). Pure: the D1 read lives in runtime.ts. */
-import { isArtworkOriginAllowed } from '../events/lib/artwork-delivery.ts'
+import { isExternalArtworkOriginAllowed } from '#shared/lib/artwork-origins.ts'
+import { decodeArtworkRef, type ArtworkRef } from '#shared/lib/artwork-ref.ts'
+import { isArtworkEventId } from '#shared/lib/artwork-url.ts'
 import { baLocal, descriptionLine, displayTitle, priceLabel, timeLabel } from './format.ts'
 import { FORMATS, type FormatKey, type FormatSpec, type RunWindow } from './formats.ts'
 
@@ -17,7 +19,7 @@ export interface CatalogEvent {
   isAllDay: boolean
   categories: string[]
   summary: string | null
-  /** The event's flyer or photo, when the catalog has one. */
+  /** The catalog's raw `image_url` value. */
   imageUrl: string | null
   venue: string | null
   barrio: string | null
@@ -39,7 +41,7 @@ export interface PostEvent {
   barrio: string
   price: string | null
   handle: string | null
-  imageUrl: string | null
+  artworkRef: ArtworkRef | null
   /** True when the handle is the posting account, not the venue's own ("Vía @handle"). */
   via: boolean
 }
@@ -100,7 +102,7 @@ export function toPostEvent(event: CatalogEvent): PostEvent {
     barrio: event.barrio!,
     price: priceLabel(event),
     handle,
-    imageUrl: artworkUrl(event),
+    artworkRef: publisherArtworkRef(event),
     via: handle !== null && handle !== venueHandle && !accountIsVenue(handle, venue),
   }
 }
@@ -120,17 +122,15 @@ export function selectEvents(events: CatalogEvent[], format: FormatKey, window: 
   return pick(qualifying, spec).map(toPostEvent)
 }
 
-/**
- * The event's artwork address when it is an https URL on one of the catalog's known image origins (our R2 route or a
- * listed CDN), the only kind the renderer downloads. Any other address counts as no artwork.
- */
-export function artworkUrl(event: Pick<CatalogEvent, 'imageUrl'>): string | null {
-  const url = event.imageUrl?.trim()
-  return url && isArtworkOriginAllowed(url) ? url : null
+function publisherArtworkRef(event: CatalogEvent): ArtworkRef | null {
+  const reference = decodeArtworkRef(event.imageUrl?.trim(), event.id)
+  if (!reference) return null
+  const allowed = reference.kind === 'stored' ? isArtworkEventId(event.id) : isExternalArtworkOriginAllowed(reference.url)
+  return allowed ? reference : null
 }
 
 function pick(pool: CatalogEvent[], spec: FormatSpec): CatalogEvent[] {
-  const candidates = pool.map(event => ({ event, date: baLocal(event.startsAt).date, venue: venueKey(event), artwork: artworkUrl(event) !== null }))
+  const candidates = pool.map(event => ({ event, date: baLocal(event.startsAt).date, venue: venueKey(event), artwork: publisherArtworkRef(event) !== null }))
   const venuesByDate = new Map<string, Set<string>>()
   if (spec.days > 1) for (const { date, venue } of candidates) {
     if (!venuesByDate.has(date)) venuesByDate.set(date, new Set())

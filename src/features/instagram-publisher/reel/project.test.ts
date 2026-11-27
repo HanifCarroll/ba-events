@@ -5,7 +5,7 @@ import type { PostEvent } from '../select.ts'
 import { REEL_FAILURE, holdFor, reelProject, reelTiming } from './project.ts'
 
 const event = (n: number, title: string, price: string | null = null): PostEvent =>
-  ({ id: `e${n}`, date: '2026-11-21', startsAt: '', title, time: '21:00', description: 'Ignored on the Reel.', venue: `Sala ${n}`, barrio: 'Boedo', price, handle: `sala${n}`, imageUrl: null, via: false })
+  ({ id: `e${n}`, date: '2026-11-21', startsAt: '', title, time: '21:00', description: 'Ignored on the Reel.', venue: `Sala ${n}`, barrio: 'Boedo', price, handle: `sala${n}`, artworkRef: null, via: false })
 const window = runWindow('reel', '2026-11-20')
 const six = [event(1, 'Muestra anual del Taller de Arte Daniela Lucero: 10 años', 'Gratis'), event(2, 'Mondongo'), event(3, 'Jazz <en> "vivo"', '$15.000'), event(4, 'Ciclo'), event(5, 'Yoga'), event(6, 'CBB')]
 

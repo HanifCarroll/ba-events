@@ -134,6 +134,16 @@ describe('R2 artwork (a Worker that binds D1)', () => {
     expect(options.bucket.get).toHaveBeenCalledWith(key)
   })
 
+  it('serves a stored reference at the same public URL and rejects a stale key before reading R2', async () => {
+    const options = original({ lookup: vi.fn(async () => ({ image_url: `r2:image/jpeg:${key}` })) })
+    expect((await serveArtwork({ ...options, variant: `${'b'.repeat(64)}.jpg` })).status).toBe(404)
+    expect(options.bucket.get).not.toHaveBeenCalled()
+    const response = await serveArtwork(options)
+    expect(response.status).toBe(200)
+    expect(await response.text()).toBe('jpeg')
+    expect(options.bucket.get).toHaveBeenCalledWith(key)
+  })
+
   it('serves only the current artwork of that displayable event', async () => {
     const other = `${'b'.repeat(64)}.jpg`
     expect((await serveArtwork(original({ variant: other }))).status).toBe(404)
@@ -145,8 +155,8 @@ describe('R2 artwork (a Worker that binds D1)', () => {
     expect((await serveArtwork(original({ request: new Request(`${r2Url}?x=1`) }))).status).toBe(400)
   })
 
-  it('resizes R2 artwork from the bucket instead of fetching its URL', async () => {
-    const options = { ...setup(r2Url), bucket: bucket() }
+  it.each([r2Url, `r2:image/jpeg:${key}`])('resizes %s from R2 under the same public version', async (image_url) => {
+    const options = { ...setup(r2Url), bucket: bucket(), lookup: vi.fn(async () => ({ image_url })) }
     const response = await serveArtwork(options)
     expect(response.status).toBe(200)
     expect(response.headers.get('Content-Type')).toBe('image/webp')

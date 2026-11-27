@@ -208,7 +208,7 @@ describe('rendering', () => {
 })
 
 describe('Reel rendering', () => {
-  const events = [1, 2, 3, 4].map(n => ({ id: `${n}`, date: '2026-11-21', startsAt: '', title: 'T', time: '21:00', description: null, venue: `V${n}`, barrio: 'B', price: null, handle: null, imageUrl: null, via: false }))
+  const events = [1, 2, 3, 4].map(n => ({ id: `${n}`, date: '2026-11-21', startsAt: '', title: 'T', time: '21:00', description: null, venue: `V${n}`, barrio: 'B', price: null, handle: null, artworkRef: null, via: false }))
   const window = { from: '2026-11-20', to: '2026-11-22' } as never
   const timing = reelTiming(window, events, 120)
   const track = { id: 't', title: 't', artist: 'a', file: 'x.flac', durationSec: 40, bpm: 120, startSec: 0, credit: null, path: '/nonexistent/x.flac' }

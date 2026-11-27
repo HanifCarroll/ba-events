@@ -1,5 +1,6 @@
 /** Public catalog reads on D1: home, event, artwork, venue, event facts, and the events API. */
 import type { D1Database } from '@cloudflare/workers-types'
+import { catalogArtworkUrl } from '../artwork-url.ts'
 import type { ChatEventPayload, EventCredit, Venue } from '../types.ts'
 import { isPayWhatYouCan } from '#features/events/lib/admission.ts'
 import { HOME_DOORS_ONLY_DURATION_MS, HOME_EVENT_DEFAULT_DURATION_MS, HOME_FALLBACK_LIMIT, type HomeAgendaEvent, type HomeWindow } from '#features/events/lib/home-feed.ts'
@@ -89,14 +90,15 @@ export async function homeAgendaD1(db: D1Database, window: HomeWindow): Promise<
   `).bind(window.end, window.start, window.end, window.start, window.start, earliestDoorsOnlyStart, earliestOvernightStart, HOME_FALLBACK_LIMIT).all<AgendaRow>()
 
   return results.map(({ is_free, time_tba, is_all_day, location_hidden, location_tba, music, priceNote, description_es, sourceUrl, ...card }) => ({
-    ...card, is_free: is_free === 1, time_tba: time_tba === 1, is_all_day: is_all_day === 1,
+    ...card, image_url: catalogArtworkUrl(card.id, card.image_url) ?? '',
+    is_free: is_free === 1, time_tba: time_tba === 1, is_all_day: is_all_day === 1,
     location_hidden: location_hidden === 1, location_tba: location_tba === 1, music: music === 1,
     payWhatYouCan: isPayWhatYouCan(card.name, description_es, priceNote),
     sourceUrl: sourceUrl && INSTAGRAM_POST.test(sourceUrl) ? sourceUrl : null,
   }))
 }
 
-/** A displayable event's `image_url`, for the artwork route; null when there is no such event. */
+/** A displayable event's raw artwork reference, for the artwork route; null when no such event exists. */
 export async function eventArtworkD1(db: D1Database, id: string): Promise<{ image_url: string | null } | null> {
   return db.prepare(`SELECT image_url FROM events e WHERE e.id = ? AND ${DISPLAYABLE}`).bind(id).first<{ image_url: string | null }>()
 }

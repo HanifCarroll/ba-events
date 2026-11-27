@@ -35,7 +35,7 @@ const slackDraft = (name: string, dates: string, publish: string, body: string) 
 }
 
 const post = (date: string, time: string, title: string, handle: string | null, barrio: string, price: string | null, venue = 'Sala', via = false): PostEvent =>
-  ({ id: title, date, startsAt: '', title, time, description: null, venue, barrio, price, handle, imageUrl: null, via })
+  ({ id: title, date, startsAt: '', title, time, description: null, venue, barrio, price, handle, artworkRef: null, via })
 
 const weekend: PostEvent[] = [
   post('2026-11-20', '21:00', 'Trío del Patio', 'patio.ejemplo', 'San Cristóbal', '$15.000'),

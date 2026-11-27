@@ -90,7 +90,6 @@ export interface IntakeStore extends CollectionStore {
   eventsBetween(from: string, to: string): Op<Row[]>
   eventsByIds(ids: string[]): Op<Row[]>
   /** The public artwork URL an event gets for a retained image. */
-  artworkUrl(eventId: string, media: Media): string
   insertPlan(plan: PlanInsert): Op<IntakePlanRow>
   plan(id: string): Op<IntakePlanRow>
   readonly publishingEnabled: Op<boolean>

@@ -10,7 +10,7 @@ import { stickerFrames } from './story-stickers.ts'
 
 const assets = { fontsDir: '/fonts', logo: '/logo.svg' }
 const event = (n: number, title = `Evento ${n}`): PostEvent =>
-  ({ id: `e${n}`, date: '2026-11-21', startsAt: '', title, time: '21:00', description: 'Una noche de música.', venue: `Sala ${n}`, barrio: 'Boedo', price: n === 1 ? 'Gratis' : '$8.000', handle: n === 3 ? null : `sala${n}`, imageUrl: null, via: n === 2 })
+  ({ id: `e${n}`, date: '2026-11-21', startsAt: '', title, time: '21:00', description: 'Una noche de música.', venue: `Sala ${n}`, barrio: 'Boedo', price: n === 1 ? 'Gratis' : '$8.000', handle: n === 3 ? null : `sala${n}`, artworkRef: null, via: n === 2 })
 const events = [1, 2, 3, 4].map(n => event(n))
 const art = (n: number, width: number, height: number) => ({ file: `/art/${n}.jpg`, backdrop: `/art/${n}-bg.jpg`, width, height })
 // Portrait 4:5, tall 9:16, and landscape; event 4 has no artwork.
