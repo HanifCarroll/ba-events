@@ -100,6 +100,18 @@ describe.skipIf(bun)('reserve_instagram_collection on D1', () => {
     expect((await db.prepare('SELECT count(*) AS n FROM intake_runs').first<{ n: number }>())!.n).toBe(1)
   })
 
+  it('reports reservation spend with each unmeasured run at its own reserved amount', async () => {
+    await source()
+    const completed = await run(store.reserveCollection)
+    const month = completed.local_date.slice(0, 7)
+    const [unmeasured, released] = ['01', '02', '03'].map(day => `${month}-${day}`).filter(day => day !== completed.local_date)
+    await db.prepare(`INSERT INTO intake_runs (id, local_date, state, reserved_usd, charged_usd, input)
+      VALUES (?, ?, 'failed', 2, NULL, '{}'), (?, ?, 'failed', 3, 0, '{}')`)
+      .bind(id(), unmeasured, id(), released).run()
+    expect(await run(store.updateRun(completed.id, { state: 'succeeded', charged_usd: 0.5, completed_at: utc(Date.now()) })))
+      .toEqual({ charged_usd: 0.5, unmeasured_runs: 1, reserved_or_charged_usd: 2.5 })
+  })
+
   it('lets only one concurrent retry reclaim a released day and refuses a stale release', async () => {
     await source()
     const first = await run(store.reserveCollection)

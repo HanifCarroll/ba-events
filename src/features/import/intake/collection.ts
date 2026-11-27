@@ -337,7 +337,7 @@ export const collectInstagramEffect = Effect.fn('intake.collect')(function*(stor
   if (retry.error) result.failures.push(retry.error)
   // This read is for reporting only; an unavailable account snapshot cannot undo completed collection.
   const cycle = yield* Effect.result(apifyCycleEffect(api))
-  return { state: 'succeeded', run_id: runId, charged_usd, month: month ? { ...month, cap_usd: policy.monthly_cap_usd } : null,
+  return { state: 'succeeded', run_id: runId, charged_usd, run_cap_usd: policy.run_cap_usd, month: month ? { ...month, cap_usd: policy.monthly_cap_usd } : null,
     apify_cycle: cycle._tag === 'Success' ? cycle.success : null,
     scope: 'posts since 2 hours before the last successful run started (7 days with none, at most 30), capped per source; stories and video audio excluded', ...result,
     media: {
