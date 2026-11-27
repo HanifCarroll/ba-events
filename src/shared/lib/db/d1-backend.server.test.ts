@@ -12,7 +12,8 @@ import {
 } from '#features/telegram/delivery.server.ts'
 import { purgeTelegramRetention } from '#features/telegram/retention.ts'
 import { countStaleTelegramFailures } from '#features/telegram/health.ts'
-import { getOrCreateExternalConversation } from '#features/chat/api/external-conversations.server.ts'
+import { EXTERNAL_CHANNEL } from '#features/chat/api/channels.ts'
+import { getOrCreateExternalConversation, insertExternalConversationMessage } from '#features/chat/api/external-conversations.server.ts'
 import { POST as postFeedback } from '../../../routes/api/feedback/+server.ts'
 
 let db: D1Database
@@ -209,17 +210,44 @@ describe('Telegram on D1', () => {
 		expect(claims.filter((claim) => (claim as { checkRateLimit: boolean }).checkRateLimit)).toHaveLength(1)
 	})
 
-	it('purges old conversations and claims, and counts stale failures', async () => {
-		const old = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000).toISOString()
+	it('purges expired conversations before claims in one transaction and keeps web and cutoff rows', async () => {
+		const now = new Date('2026-11-01T00:00:00.000Z')
+		const cutoff = '2026-10-02T00:00:00.000Z'
+		const old = '2026-10-01T23:59:59.999Z'
+		const channel = EXTERNAL_CHANNEL.telegram
 		await db.batch([
 			db.prepare('DELETE FROM telegram_updates'),
-			db.prepare("INSERT INTO conversations (id, channel, external_identity_hash, created_at) VALUES ('t-old', 'telegram', ?, ?)").bind('d'.repeat(64), old),
-			db.prepare("INSERT INTO telegram_updates (update_id, conversation_id, status, identity_hash, envelope_key, received_at, updated_at) VALUES (3001, 't-old', 'failed', ?, ?, ?, ?)")
-				.bind(identity, `${'A'.repeat(43)}=`, old, old),
+			db.prepare(`INSERT INTO conversations (id, channel, external_identity_hash, created_at)
+				VALUES ('t-old', ?, ?, ?), ('t-cutoff', ?, ?, ?), ('web-old', 'web', NULL, ?)`)
+				.bind(channel, 'd'.repeat(64), old, channel, 'e'.repeat(64), cutoff, old),
+			db.prepare(`INSERT INTO telegram_updates (update_id, conversation_id, status, identity_hash, envelope_key, received_at, updated_at, error_code)
+				VALUES (3001, 't-old', 'failed', ?, ?, ?, ?, 'block_retention'), (3002, 't-old', 'completed', ?, NULL, ?, ?, NULL)`)
+				.bind(identity, `${'A'.repeat(43)}=`, old, old, identity, cutoff, cutoff),
 		])
-		expect(await countStaleTelegramFailures(db)).toBe(1)
-		expect(await purgeTelegramRetention(db)).toEqual({ conversations: 1, updates: 1 })
-		expect(await countStaleTelegramFailures(db)).toBe(0)
+		await insertExternalConversationMessage({ channel, conversationId: 't-old', clientMessageId: 'retention:1', role: 'user', content: 'hola' })
+		// Reject claim deletion unless the earlier conversation purge has already cleared its foreign key.
+		// The explicit error flag also lets us verify rollback when the second statement fails.
+		await db.prepare(`CREATE TRIGGER check_retention_order BEFORE DELETE ON telegram_updates
+			WHEN OLD.update_id = 3001 AND (OLD.conversation_id IS NOT NULL OR OLD.error_code = 'block_retention')
+			BEGIN SELECT RAISE(ABORT, 'claims must be removed after conversations'); END`).run()
+		try {
+			expect(await countStaleTelegramFailures(db, now)).toBe(1)
+			await expect(purgeTelegramRetention(db, now)).rejects.toThrow('Telegram retention failed')
+			expect(await count("conversations WHERE id = 't-old'")).toBe(1)
+			expect(await count("messages WHERE conversation_id = 't-old'")).toBe(1)
+			expect(await db.prepare('SELECT conversation_id FROM telegram_updates WHERE update_id = 3001').first()).toEqual({ conversation_id: 't-old' })
+
+			await db.prepare('UPDATE telegram_updates SET error_code = NULL WHERE update_id = 3001').run()
+			expect(await purgeTelegramRetention(db, now)).toEqual({ conversations: 1, updates: 1 })
+			expect(await count("conversations WHERE id = 't-old'")).toBe(0)
+			expect(await count("conversations WHERE id IN ('t-cutoff', 'web-old')")).toBe(2)
+			expect(await count("messages WHERE conversation_id = 't-old'")).toBe(0)
+			expect(await db.prepare('SELECT update_id, conversation_id FROM telegram_updates').all().then(result => result.results))
+				.toEqual([{ update_id: 3002, conversation_id: null }])
+			expect(await countStaleTelegramFailures(db, now)).toBe(0)
+		} finally {
+			await db.prepare('DROP TRIGGER check_retention_order').run()
+		}
 	})
 })
 

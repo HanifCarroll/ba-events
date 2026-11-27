@@ -2,6 +2,7 @@ import type { D1Database } from '@cloudflare/workers-types'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { freshD1 } from '../../../../tests/support/d1.ts'
 import { useD1Binding } from '#shared/lib/db/d1-binding.server.ts'
+import { EXTERNAL_CHANNEL } from './channels.ts'
 import {
   clearExternalConversationMessages, getOrCreateExternalConversation, hardDeleteExternalConversation,
   insertExternalConversationMessage, loadExternalConversationMessages, updateExternalConversationMetadata,
@@ -14,7 +15,7 @@ afterAll(async () => { await dispose() })
 beforeEach(() => useD1Binding({ DB: db }))
 afterEach(() => useD1Binding(undefined))
 
-const channel = 'telegram' as const
+const channel = EXTERNAL_CHANNEL.telegram
 
 describe('external conversations', () => {
   it('requires a hash and stores only a null-owner external identity', async () => {
@@ -31,7 +32,7 @@ describe('external conversations', () => {
   it('replays a message, merges metadata and clears only the verified channel', async () => {
     const created = await getOrCreateExternalConversation({ channel, externalIdentityHash: 'b'.repeat(64), metadata: { retained: true } })
     const input = { channel, conversationId: created.id }
-    const message = { ...input, role: 'user' as const, clientMessageId: 'telegram:update:42:user', content: 'hola' }
+    const message = { ...input, role: 'user' as const, clientMessageId: 'external:update:42:user', content: 'hola' }
     const stored = await insertExternalConversationMessage(message)
     expect(await insertExternalConversationMessage(message)).toEqual(stored)
     expect(await loadExternalConversationMessages(input)).toEqual([stored])

@@ -1,12 +1,22 @@
 import { Data, Effect } from 'effect'
 import type { D1Database } from '@cloudflare/workers-types'
-import { purgeRetention } from './telegram-d1.server.ts'
+import { EXTERNAL_CHANNEL } from '#features/chat/api/channels.ts'
+import { purgeExternalConversations } from '#features/chat/api/external-conversations.server.ts'
+import { preparePurgeUpdateClaims } from './telegram-d1.server.ts'
 
 export const TELEGRAM_RETENTION_DAYS = 30
 
 class TelegramRetentionError extends Data.TaggedError('TelegramRetentionError')<{
   readonly message: string
 }> {}
+
+/** Delete expired conversations first and then expired claims, in one D1 transaction. */
+export async function purgeRetention(client: D1Database, cutoff: string) {
+  const { conversations, afterResults: [updates] } = await purgeExternalConversations(
+    client, EXTERNAL_CHANNEL.telegram, cutoff, [preparePurgeUpdateClaims(client, cutoff)],
+  )
+  return { conversations, updates: updates.results.length }
+}
 
 /** Effect-native retention purge; platform scheduler remains the runtime root. */
 export function purgeTelegramRetentionEffect(
