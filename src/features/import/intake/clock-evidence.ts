@@ -1,5 +1,5 @@
 // A bare dotted token with a possible month is ambiguous; an introducer or unit makes it a clock.
-const clock = /(?:(?<introduced>(?<![\p{L}\d])a las? )|(?<delimiter>(?<=\p{L})[ \t\u00a0\u202f]*:[ \t\r\n\u00a0\u202f]*))?(?<![\p{L}\d])(?<!\d[.:/])(?<!\p{Sc}[ \t\u00a0\u202f]*)(?<hour>[01]?\d|2[0-4])(?:(?<separator>[:.])(?<minute>[0-5]\d))?(?:[ \t\u00a0\u202f]*(?<suffix>[ap]\.?[ \t\u00a0\u202f]*m\b\.?|(?:horas|hs?)\b))?(?![\p{L}\d]|[.:/]\d)/giu
+const clock = /(?:(?<introduced>(?<![\p{L}\d])a las? )|(?<delimiter>(?<=\p{L})[ \t\u00a0\u202f]*:[ \t\r\n\u00a0\u202f]*))?(?<![\p{L}\d])(?<!\d[.:/])(?<!(?:\p{Sc}|\b(?:ars|usd|u\$s))[ \t\u00a0\u202f]*)(?<hour>[01]?\d|2[0-4])(?:(?<separator>[:.])(?<minute>[0-5]\d))?(?:[ \t\u00a0\u202f]*(?<suffix>[ap]\.?[ \t\u00a0\u202f]*m\b\.?|(?:horas|hs?)\b))?(?![\p{L}\d]|[.:/]\d)/giu
 
 export const normalizeEvidenceText = (text: string) => text.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replace(/\s+/gu, ' ').trim()
 
@@ -73,7 +73,8 @@ export function citesDateAndClock(excerpt: string, date: string, time: string): 
     const { isoYear, isoMonth, isoDay, day: numericDay, month: numericMonth, year: numericYear, monthName, namedYear } = groups
     const statedYear = isoYear ?? numericYear ?? namedYear
     const statedMonth = monthName ? months.findIndex(value => value.startsWith(monthName)) + 1 : Number(isoMonth ?? numericMonth)
+    // Removing the date must not join two numbers across it into a clock range.
     return Number(isoDay ?? numericDay) === day && statedMonth === month && (!statedYear || Number(statedYear) === year) &&
-      citesClock(`${text.slice(0, index)}\n${text.slice(index + token.length)}`, time)
+      citesClock(`${text.slice(0, index)}\n#\n${text.slice(index + token.length)}`, time)
   })
 }

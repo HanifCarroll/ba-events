@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { citesClock } from './clock-evidence.ts'
+import { citesClock, citesDateAndClock } from './clock-evidence.ts'
 
 describe('intake clock tokens', () => {
   it.each([
@@ -22,10 +22,15 @@ describe('intake clock tokens', () => {
   it.each([
     'del 20 al 24 de noviembre', 'de 20 a 24 años', 'entre 20 y 24 personas', '20 a 24 cuotas',
     'de 20 a 23 personas. Puertas 22 h', '20 en sala A - 24 h', 'de 20 a 23, 22 hs',
-    '20 a 23', '$20 a 24 h', 'ARS $ 20:00 a 24 h', '20 a $23 h', '20 a 24:30 h',
+    '20 a 23', '$20 a 24 h', 'ARS 20 a 24 h', 'USD 20:00 a 24 h', '20 a $23 h', '20 a 24:30 h',
     'viernes 20 a las 21 hs', '2026-11-20 - 21:00',
   ])('does not infer a start hour from %s', excerpt => {
     expect(citesClock(excerpt, '20:00')).toBe(false)
+  })
+
+  it('does not join range endpoints across a separately cited sale date', () => {
+    expect(citesDateAndClock('20 a 15/11 24 h', '2026-11-15', '20:00')).toBe(false)
+    expect(citesDateAndClock('15/11 de 20 a 24 h', '2026-11-15', '20:00')).toBe(true)
   })
 
   it('does not match 24 as a start or turn it into 00:00', () => {
