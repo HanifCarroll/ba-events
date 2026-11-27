@@ -7,13 +7,16 @@ import { createHash } from 'node:crypto'
 import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { basename, delimiter, dirname, extname, join, resolve } from 'node:path'
+import { z } from 'zod'
 import { readArtworkBody, type Artwork } from './artwork.ts'
 import { addDays } from './format.ts'
 import type { FormatKey, RunWindow } from './formats.ts'
 import { writeExcerpt, type ReadyTrack } from './reel/music.ts'
 import { REEL_FAILURE, reelProject, type ReelTiming } from './reel/project.ts'
 import { readReviewKey, reviewWithOpenAI, type ReviewConfig, type Reviewer } from './review.ts'
-import { loadReviewSources } from './review-evidence.ts'
+import { loadReviewResources, loadReviewSources } from './review-evidence.ts'
+import type { ReviewPartReceipt } from './review-reply.ts'
+import { resolveReviewQuestionsWithOpenAI, type QuestionResolver } from './review-resolution.ts'
 import type { CatalogEvent, PostEvent } from './select.ts'
 import type { ThreadsFormat } from './threads-copy.ts'
 
@@ -405,6 +408,7 @@ async function readIntakeFlyer(key: string) {
   return readArtworkBody(response).catch(() => { throw new Error(`Could not read retained intake evidence from R2 (HTTP ${response.status}).`) })
 }
 
+export const reviewResources = (ids: string[]) => loadReviewResources(ids, d1Read)
 export const reviewSources = (ids: string[]) => loadReviewSources(ids, d1Read, readIntakeFlyer)
 
 export async function reviewStills(input: Parameters<Reviewer>[0], dir: string) {
@@ -434,19 +438,25 @@ export const reviewDraft: Reviewer = async input => {
   finally { rmSync(dir, { recursive: true, force: true }) }
 }
 
+export const resolveQuestions: QuestionResolver = (input, questions) => {
+  const config = readConfig().review
+  const prompt = readFileSync(join(REPO, 'src/features/instagram-publisher/review-resolution-prompt.md'), 'utf8')
+  return resolveReviewQuestionsWithOpenAI(config, readReviewKey(config.keyFile), prompt, input, questions)
+}
+
 // Slack, through Hermes' slack_api.py (it reads the bot token itself).
 
 /** Slack explicitly rejected the request. A lost response is not a rejection. */
 export class SlackRejected extends Error {}
 
-export async function slack(method: string, args: Record<string, string>): Promise<any> {
+export async function slack(method: string, args: Record<string, string>, api = SLACK_API): Promise<any> {
   // The args file holds only message text and ids; the bot token stays inside slack_api.py.
   const dir = join(STATE_DIR, 'tmp')
   mkdirSync(dir, { recursive: true })
   const argsFile = join(dir, `slack-${process.pid}-${Date.now()}.json`)
   writeFileSync(argsFile, JSON.stringify(args), { mode: 0o600 })
   try {
-    const { out, err } = await run(['python3', '-I', SLACK_API, '--form', method, `@file=${argsFile}`], 60_000)
+    const { out, err } = await run(['python3', '-I', api, '--form', method, `@file=${argsFile}`], 60_000)
     const body = (() => { try { return JSON.parse(out) } catch { return null } })()
     if (!body?.ok) {
       const message = `Slack ${method} failed: ${body?.error ?? err.trim().slice(0, 200)}`
@@ -489,10 +499,33 @@ export async function slackShareTs(fileId: string, channel: string): Promise<str
   return null
 }
 
-export const slackPost = (text: string, threadTs: string | null, channel: string, broadcast = false, call: typeof slack = slack) =>
+const REVIEW_PART_EVENT = 'ba_eventos_review_part'
+export const slackPost = (text: string, threadTs: string | null, channel: string, broadcast = false, call: typeof slack = slack, receipt?: ReviewPartReceipt) =>
   call('chat.postMessage', { channel, text, unfurl_links: 'false', ...(threadTs ? { thread_ts: threadTs } : {}),
     ...(threadTs && broadcast ? { reply_broadcast: 'true' } : {}),
+    ...(receipt ? { metadata: JSON.stringify({ event_type: REVIEW_PART_EVENT, event_payload: { id: receipt.id } }) } : {}),
   })
+
+const reviewReceiptPage = z.object({ messages: z.array(z.object({ ts: z.string(), metadata: z.unknown().optional() })),
+  has_more: z.boolean().optional(), response_metadata: z.object({ next_cursor: z.string().optional() }).optional() })
+const reviewReceiptMetadata = z.object({ event_type: z.literal(REVIEW_PART_EVENT), event_payload: z.object({ id: z.string() }) })
+
+/** Read the exact receipt before retrying an unclear write; an incomplete scan is not an absent message. */
+export async function slackReviewReceipt(channel: string, threadTs: string | null, receipt: ReviewPartReceipt, call: typeof slack = slack) {
+  let cursor: string | undefined
+  for (let page = 0; page < 5; page++) {
+    const result = reviewReceiptPage.parse(await call(threadTs ? 'conversations.replies' : 'conversations.history', {
+      channel, ...(threadTs ? { ts: threadTs } : {}), oldest: String((receipt.since - 60_000) / 1000),
+      include_all_metadata: 'true', limit: '100', ...(cursor ? { cursor } : {}),
+    }, process.env.BA_INSTAGRAM_SLACK_READ_API ?? SLACK_API))
+    const match = result.messages.find(message => reviewReceiptMetadata.safeParse(message.metadata).data?.event_payload.id === receipt.id)
+    if (match?.ts) return match.ts
+    cursor = result.response_metadata?.next_cursor || undefined
+    if (!cursor && !result.has_more) return null
+    if (!cursor) break
+  }
+  throw new Error('Slack did not finish reading the review receipt.')
+}
 
 export async function slackPermalink(ts: string, channel: string, call: typeof slack = slack): Promise<string> {
   const { permalink } = await call('chat.getPermalink', { channel, message_ts: ts })

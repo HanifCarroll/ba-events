@@ -24,6 +24,11 @@ A post MUST show only events from the Instagram intake that are scheduled, marke
 - **WHEN** at least one free event qualifies
 - **THEN** the post includes at least one free event
 
+#### Scenario: The format covers multiple days
+- **WHEN** a format spans more than one day
+- **THEN** the pick covers as many qualifying Buenos Aires start dates as possible within the format's size, free-event, and one-event-per-venue rules
+- **AND** it can prefer an event with artwork on a date already picked if the remaining slots and unused venues can still cover the other dates. It lists the picks in start order; dates with no qualifying event do not get a pick
+
 ### Requirement: Frames show each event's own artwork in the website's look
 Every event card MUST show that event's own artwork whole, uncropped, above a solid panel that holds every word, so no text depends on the artwork's colors. Before a render the job MUST download each picked event's `image_url` over https and only from the catalog's known image origins (the R2 artwork route and the listed CDN hosts and paths), following at most three redirects and requesting no address or redirect hop outside those origins, with one 10 second limit for the whole download and a 15 MB limit, and MUST use it only if it decodes as a raster image. No format may use a stock photo. Among qualifying events the pick MUST prefer events that have artwork.
 
@@ -83,7 +88,7 @@ The Reel MUST be one 1080 × 1920 H.264/AAC MP4 at 30 fps, drafted Thursday 18:0
 - **THEN** the draft fails with an alert that names the install command
 
 ### Requirement: Slack previews request approval only when needed
-While approval is open, a rendered draft MUST request approval in a top-level Slack preview when an enabled publication needs Hanif's ✅. This includes manual mode, a missing or failed review, and review problems that an automatic investigation or rebuild cannot resolve. If Threads later needs approval and its text was not shown, the new preview MUST show its text and request only the missing approval. A ✅ applies only to the destinations and content revision it showed and does not replace approval for unchanged Instagram content. The preview MUST attach every frame (for a Reel, the video, and a last line naming the track). It MUST use `slack.channel` from publisher config, defaulting to #alerts (`C0CG3EGKKP1`), and save that channel with the preview. Existing previews without a stored channel MUST keep using #ba-eventos (`C0CHBCSEV3R`). Only Hanif's ✅ and ❌ reactions on an existing preview count; thread replies do not. Routine outcomes MUST only reply under an existing preview. Failures continue through the alert path.
+While approval is open, a rendered draft MUST request approval in a top-level Slack preview when an enabled publication needs Hanif's ✅. This includes manual mode, an unavailable review, and unresolved questions requiring Hanif's decision. A confirmed error alone does not require his decision. If Threads later needs approval and its text was not shown, the new preview MUST show its text and request only the missing approval. A ✅ applies only to the destinations and content revision it showed and does not replace approval for unchanged Instagram content. The preview MUST attach every frame (for a Reel, the video, and a last line naming the track). It MUST use `slack.channel` from publisher config, defaulting to #alerts (`C0CG3EGKKP1`), and save that channel with the preview. Existing previews without a stored channel MUST keep using #ba-eventos (`C0CHBCSEV3R`). Only Hanif's ✅ and ❌ reactions on an existing preview count; thread replies do not. Routine outcomes MUST only reply under an existing preview. Failures continue through the alert path.
 
 #### Scenario: Hanif reacts ❌
 - **WHEN** Hanif's ❌ is on any preview of the draft before the post goes out, including an earlier revision or a preview for only one destination
@@ -138,35 +143,71 @@ While approval is open, a rendered draft MUST request approval in a top-level Sl
 
 ### Requirement: A new draft needs a revision-specific review for automatic publishing
 
-After rendering, the publisher MUST review the still frames (for a Reel, its cover and card stills), Instagram caption, and exact Threads text, if present. It MUST supply the selected catalog fields, Buenos Aires dates, and linked intake captions and source flyers when available. The reviewer MUST report material factual, scope, artwork, or rendering problems, not style preferences. It MUST return an `ok`, `wrong`, or `question` verdict for each event and identify any post-wide issue. A new draft MUST NOT auto-publish to either channel unless the post verdict is `ok` and every event is `ok` in the quick review or resolved as `ok` by the investigator for the exact revision, frames hash, and saved content. A preview already sent or handed to Slack before review was introduced keeps its earlier approval rules.
+After rendering, the publisher MUST review the still frames (for a Reel, its cover and card stills), Instagram caption, and exact Threads text, if present. It MUST supply the selected catalog fields, Buenos Aires dates, and every linked intake observation's caption and cited excerpts, including official page evidence. It MUST keep the same source flyer selection: the best-ranked observation and its preferred image. The reviewer MUST report material factual, scope, artwork, or rendering problems, not style preferences. It MUST return an `ok`, `wrong`, or `question` verdict for each event and identify any post-wide issue. A new draft MUST NOT auto-publish to either channel unless the post verdict is `ok` and every event is `ok` in the quick review or resolved as `ok` by the investigator for the exact revision, frames hash, and saved content. A preview already sent or handed to Slack before review was introduced keeps its earlier approval rules.
 
 #### Scenario: The reviewer accepts every event and the post
 - **WHEN** the reviewer returns all `ok` for the saved revision
 - **THEN** the job saves the result, model, and timestamps, uses the normal auto rules without running that successful review again, and reports the result in Slack only if a preview exists
 
 #### Scenario: The quick review flags events
-- **WHEN** a new review reports any event as `wrong` or `question` and Hanif has not reacted ✅ or ❌
+- **WHEN** a new review reports any event as `wrong` or `question`, an open destination still needs review, and Hanif has not vetoed the draft
 - **THEN** the job queues a detached investigation once for that revision without requiring a Slack preview, holds automatic publishing in both channels, and checks the result on subsequent ticks
 - **AND** an event-only flag can wait for the investigation without sending an approval preview unless a destination is already in manual mode
 - **AND** the investigator has at most 30 minutes and stops at least 20 minutes before the earliest applicable approval cutoff; at most two revisions of a draft may be investigated
-- **AND** a review already saved before investigation was introduced keeps its earlier behavior; a post-wide issue keeps its existing handling and cannot be cleared by event results
+- **AND** a review already saved without investigation uses the quick review's event verdicts; a post-wide issue cannot be cleared by event results
+
+#### Scenario: An investigator tool call fails
+- **WHEN** a tool call fails validation or cannot complete
+- **THEN** the investigator receives a short, safe error message without process commands or local paths; validation errors identify the field when applicable
+- **AND** if the HTML search endpoint returns no result links, the tool tries the lite endpoint before returning an empty list
+- **AND** if both public search endpoints fail for a query containing straight or curly double quotes, the tool retries once in the same order with the quotes removed and whitespace collapsed, provided keywords remain
+- **AND** if public search is still unavailable, the tool tells the investigator to research a known URL instead
+
+#### Scenario: The investigator false-positive release
+- **WHEN** the investigator resolves a quick-review `wrong` as `ok` with evidence for the same revision, frames hash, and saved content
+- **THEN** that flag no longer blocks automatic publishing. The post verdict and every other event must still pass. An unresolved `wrong` never auto-publishes; a repair needs a rebuilt revision that passes review
 
 #### Scenario: The investigation completes
 - **WHEN** every flagged event is resolved as `ok` with evidence, or the investigator returns `fixed`, `exclude`, or `ask` entries
-- **THEN** the job replies with one line per event if a preview exists or if the findings require one
-- **AND** all `ok` clears the event gate for that exact revision only; a `fixed` or `exclude` result without any `ask` rebuilds with cumulative exclusions and a fresh review, at most twice per draft per Buenos Aires day before the cutoff; if too few qualify it skips in the old thread
+- **THEN** the job replies with each flagged event's conclusion and review resources if a preview exists or if the findings require one
+- **AND** all `ok` clears the event gate for that exact revision only; a `fixed` or `exclude` result without any `ask` rebuilds with cumulative exclusions and a fresh review when the approval and cutoff rules allow it. It rebuilds at most twice per draft per Buenos Aires day; if too few qualify it skips in the old thread
 - **AND** a confirmed error the investigator cannot correct is excluded and the evidence and requested correction go to Hermes without blocking the rebuild
-- **AND** an `ask`, including doubts after the investigation limit, requires ✅, even when Hermes also gets a fix request
+- **AND** an investigator's `ask` or an unresolved quick-review question after the investigation limit requires ✅, even when Hermes also gets a fix request
+
+#### Scenario: Only confirmed errors block an automatic publication
+- **WHEN** the review marks the post or an event `wrong`, or the investigator returns `fixed` or `exclude`, and there is no question requiring a decision
+- **THEN** the publisher does not request approval for an automatic destination. Event corrections or exclusions can still trigger a bounded rebuild; a post-wide error alone does not trigger an unchanged rebuild
+- **AND** the publisher sends confirmed errors requiring follow-up to Hermes through review-fix alerts. Without an approved or passing revision, the publication skips at cutoff or deadline under the normal rules
+- **AND** a rebuilt revision that passes review can auto-publish without a new preview or ✅
+
+#### Scenario: Only one destination has been approved
+- **WHEN** Hanif approves just one destination of a revision with a review flag
+- **THEN** the ✅ overrides review only for that destination. The publisher continues processing findings for the other open destination and sends confirmed errors on its automatic publication to Hermes through review-fix alerts
+- **AND** if only Threads has been approved, a bounded rebuild of Instagram may proceed once the original Threads send is dispatched or its publication window closes or holds. The publisher does not replace Threads content while that approved send can still start
+- **AND** a ❌ on any preview continues to veto both destinations
+
+#### Scenario: Public evidence answers a pending question
+- **WHEN** a quick-review event question or a fallback question would otherwise need Hanif's decision
+- **THEN** the publisher asks its configured reviewer model to check every linked source's full caption and stored excerpts, regardless of intake tags, and all official page excerpts
+- **AND** it may clear or confirm the flag only with a public URL and a verified verbatim quote about the flagged fact. For an address or barrio question, the model must identify a quoted street and number for this event's performance venue, not a ticket office or another location. The publisher verifies that both values appear verbatim in the cited quote without interpreting its layout. The reviewer checks that they are the complete street and number of the same performance address. The publisher uses USIG only when the public sources agree. It compares the official USIG barrio directly with the card for a barrio question; the catalog's own address cannot substitute for public proof. It records the original question, conclusion, and citations on that revision
+- **AND** a confirmed contradiction goes to Hermes even when a replacement can be built immediately. Missing, conflicting, unverified, or unavailable evidence leaves the original question open. A fallback answer never overrides a hold for an unreconciled catalog correction
 
 #### Scenario: An unresolved review needs Hanif's decision
-- **WHEN** a current Slack preview has an unresolved review question, including a post-wide question or an investigator's `ask`, and Hanif has not reacted ✅ or ❌ and approval remains open
+- **WHEN** a current Slack preview has an unresolved review question, including a post-wide question or an investigator's `ask`, and at least one destination it showed still needs a decision while approval remains open and Hanif has not vetoed the draft
 - **THEN** the job sends the question and any investigation evidence to #alerts (`C0CG3EGKKP1`) regardless of `slack.channel`: it broadcasts the preview thread reply when the preview is already there, or posts a top-level message quoting the question and linking to the preview without replying in the other channel
 - **AND** for a preview in another channel, the job uses Slack's permalink when available and builds a link from the preview's channel and timestamp if the lookup fails
 - **AND** the job reserves one notice per draft before sending it and skips it if the older notification was already reserved. An explicit Slack refusal releases the reservation for a later tick; an unclear response keeps it
 
+#### Scenario: A review reply asks for a decision or reports a problem
+- **WHEN** the job sends a quick-review or investigation reply with an event question or problem
+- **THEN** for each flagged event it includes a one-line question or problem, the public catalog event link, and every linked public source post and official page URL. For each URL it shows a short verbatim excerpt the model selected for the current flag. If the model provides no valid selection, the reply shows the start of the source caption or available excerpt instead. Event-specific fix alerts include the same links and excerpts
+- **AND** for an address or barrio flag with a verified performance address, it reports the result or failure of the short anonymous USIG lookup and includes the lookup link
+- **AND** it includes recorded investigator conclusions and their cited URLs for that event from this or earlier rounds of the same draft, including exclusion evidence recorded in `hermes`. If none were recorded, it says why the event was not investigated instead of presenting a cap or failure as evidence. Event-specific fix alerts carry the investigator's conclusion, `checked` notes, and cited URLs from the current and earlier rounds, even if a rebuild removed the event without creating a Slack preview
+- **AND** untrusted text cannot inject Slack formatting or mentions. The job saves every part of an ordinary multipart reply before sending and reconciles uncertain sends, including its first part, before retrying. Overflow continues in order in its Slack thread without cutting links or broadcasting a second decision notice. An unreconciled send does not block delivery to other threads
+
 #### Scenario: Investigation fails
 - **WHEN** the investigator cannot start, times out, or exits without a complete, valid, on-time result
-- **THEN** the revision requires ✅, and the infrastructure failure goes to Hermes and does not trigger a decision broadcast
+- **THEN** an unresolved quick-review question still requires ✅, and the infrastructure failure goes to Hermes without a decision broadcast for the failure itself. Confirmed errors go to Hermes for correction, not to Hanif for approval of an automatic destination
 - **AND** before the time limit, the job does not infer a crash from a missing result without two consecutive unsuccessful unit checks
 
 #### Scenario: The investigator corrects the catalog
