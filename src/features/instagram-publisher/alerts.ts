@@ -73,21 +73,26 @@ export function threadsFailed(item: Item, reason: string | null, unclear: boolea
   }
 }
 
-export function reviewFix(draft: Draft, id: string | null, finding: Verdict) {
-  const issue = [finding.field, finding.reason].join(': ')
+export function reviewFix(draft: Draft, id: string | null, finding: Verdict, checked?: string) {
+  const issue = [finding.field, finding.reason].filter(Boolean).join(': ')
   return {
     key: id ? `review-fix/${id}` : `${draftKey(draft)}/review-fix`,
     title: 'Publisher review found incorrect content',
     text: [`⚠️ *Fix a problem found by the publisher review*. ${TRIAGE}`,
       'Hermes should check the linked evidence and correct the catalog or the publisher.',
       codes(`Draft ${draft.id} r${draft.revision}`, `Event ${id ?? 'not specific to one event'}`, slackLiteral(issue))].join('\n'),
-    fingerprint: issue,
+    fingerprint: checked ? JSON.stringify([issue, checked]) : issue,
+    event: id ? { id, flag: finding, card: draft.events.find(event => event.id === id), checked } : undefined,
   }
 }
 
 /** Quote short model and catalog excerpts without allowing Slack mentions or markup. */
-export const slackLiteral = (value: string) => value.replace(/[\r\n]+/g, ' ').replaceAll('`', "'")
-  .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replace(/[*_~]/g, '')
+export function slackLiteral(value: string, format: 'plain' | 'quote' = 'plain') {
+  const escaped = value.replace(/[\r\n]+/g, ' ').replaceAll('`', "'")
+    .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
+  // Slack doesn't interpret emphasis inside code spans. Preserve punctuation in cited text.
+  return format === 'quote' && /[*_~]/u.test(escaped) ? `\`${escaped}\`` : escaped.replace(/[*_~]/g, '')
+}
 
 export function investigatorFailed(draft: Draft, reason: string, dir: string) {
   return [`⚠️ *The ${label(draft)} investigation did not finish*. ${TRIAGE}`,

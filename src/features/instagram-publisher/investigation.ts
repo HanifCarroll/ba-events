@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { z } from 'zod'
 import { line } from './catalog-fix.ts'
@@ -22,11 +22,12 @@ export interface InvestigationRequest {
 }
 
 const webUrl = z.url({ protocol: /^https?$/u }).max(500)
+const checked = line(500)
 export const finding = z.discriminatedUnion('verdict', [
-  z.strictObject({ verdict: z.literal('ok'), reason: line(300), url: webUrl }),
-  z.strictObject({ verdict: z.literal('fixed'), fixes: z.array(z.uuid()).min(1).max(12) }),
-  z.strictObject({ verdict: z.literal('exclude'), reason: line(300), hermes: line(300).optional() }),
-  z.strictObject({ verdict: z.literal('ask'), question: line(300), checked: line(500), hermes: line(300).optional() }),
+  z.strictObject({ verdict: z.literal('ok'), reason: line(300), url: webUrl, checked: checked.optional() }),
+  z.strictObject({ verdict: z.literal('fixed'), fixes: z.array(z.uuid()).min(1).max(12), checked: checked.optional() }),
+  z.strictObject({ verdict: z.literal('exclude'), reason: line(300), hermes: line(300).optional(), checked: checked.optional() }),
+  z.strictObject({ verdict: z.literal('ask'), question: line(300), field: line(40).optional(), checked, hermes: line(300).optional() }),
 ])
 export type Finding = z.infer<typeof finding>
 export type Findings = Record<string, Finding>
@@ -39,6 +40,8 @@ export interface Investigation {
   fallback?: boolean
   repairAlertQueued?: boolean
   failure?: string
+  /** This revision may no longer match the catalog after a submitted correction. */
+  catalogWriteHold?: boolean
   failureAlerted?: boolean
   replied?: boolean
 }
@@ -75,3 +78,33 @@ export function readFindings(dir: string, request: InvestigationRequest, now: nu
 }
 
 export const hasCompleted = (dir: string) => existsSync(join(dir, 'completed.json'))
+
+const recordedRequest = z.object({ id: z.string(), revision: z.number(), startsAt: z.number(), endsAt: z.number(), events: z.array(z.object({ id: z.string() })) })
+const recordedResult = z.object({ at: z.number(), finding })
+export type RecordedCheck = { revision: number; finding: Finding }
+
+/** Individual on-time findings are useful evidence even if the round didn't finish. Never use them to clear a review gate. */
+export function readRecordedChecks(stateDir: string, draft: Pick<Draft, 'id' | 'revision'>, ids: string[], now: number, includeCurrent: boolean) {
+  const root = join(stateDir, 'drafts', draft.id)
+  const checks = new Map<string, RecordedCheck[]>()
+  if (!existsSync(root)) return checks
+  const revisions = readdirSync(root).flatMap(name => {
+    const number = /^investigation-(\d+)$/u.exec(name)?.[1]
+    return number ? [Number(number)] : []
+  }).filter(revision => revision < draft.revision || (includeCurrent && revision === draft.revision)).sort((a, b) => a - b)
+  for (const revision of revisions) {
+    const dir = location(stateDir, { id: draft.id, revision })
+    const request = recordedRequest.safeParse(readJson(join(dir, 'request.json')))
+    if (!request.success || request.data.id !== draft.id || request.data.revision !== revision) continue
+    const { startsAt, endsAt, events } = request.data
+    for (const id of ids) {
+      if (!/^[\da-f-]{36}$/u.test(id) || !events.some(event => event.id === id)) continue
+      const saved = recordedResult.safeParse(readJson(join(dir, `${id}.result.json`)))
+      if (!saved.success || saved.data.at < startsAt || saved.data.at > Math.min(now, endsAt)) continue
+      const items = checks.get(id) ?? []
+      items.push({ revision, finding: saved.data.finding })
+      checks.set(id, items)
+    }
+  }
+  return checks
+}

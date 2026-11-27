@@ -6,6 +6,8 @@ import { expect, it, vi } from 'vitest'
 import { freshD1 } from '../../../tests/support/d1.ts'
 import { OK, readReviewKey, reviewWithOpenAI, type ReviewInput } from './review.ts'
 import { loadReviewSources } from './review-evidence.ts'
+import { lookupReviewBarrio } from './review-reply.ts'
+import { adjudicateReviewQuestions, resolveReviewQuestionsWithOpenAI, type ReviewQuestion } from './review-resolution.ts'
 
 const id = '00000000-0000-4000-8000-000000000001'
 const from = '2026-11-25'
@@ -30,6 +32,8 @@ it('reads linked D1 evidence and sends the 18 mundos contradiction with the actu
   const dir = mkdtempSync(join(tmpdir(), 'ig-review-fixture-'))
   const key = `${'a'.repeat(64)}.jpg`
   const flyer = await sharp(photo(flyerText)).jpeg().toBuffer()
+  const officialUrl = 'https://sala.example.org/funcion'
+  const olderExcerpt = 'Apertura a las 20:30, función a las 21:00.'
   try {
     await db.batch([
       db.prepare("INSERT INTO events (id, name, starts_at, source) VALUES (?, '18 mundos', ?, 'instagram')").bind(id, startsAt),
@@ -40,8 +44,10 @@ it('reads linked D1 evidence and sends the 18 mundos contradiction with the actu
         ('curator-post', 'test', 'post2', 'synthetic_curator', 'https://www.instagram.com/p/synthetic-repost/', 'Synthetic repost', '2026-11-23T12:00:00.000Z', ?)`)
         .bind(sourceUrl, caption, 'a'.repeat(64), 'b'.repeat(64)),
       db.prepare("INSERT INTO intake_candidates (id, revision, payload) VALUES ('candidate', 2, '{}')"),
-      db.prepare(`INSERT INTO intake_candidate_revisions (candidate_id, revision, payload) VALUES ('candidate', 1, ?)`)
-        .bind(JSON.stringify({ evidence: [{ media_id: 'flyer' }, { kind: 'official_page', excerpt: 'Miércoles 25, función 21:00', fields: ['time'] }] })),
+      db.prepare(`INSERT INTO intake_candidate_revisions (candidate_id, revision, payload) VALUES ('candidate', 1, ?), ('candidate', 2, ?)`)
+        .bind(JSON.stringify({ evidence: [{ observation_id: 'venue-post', media_id: 'flyer', fields: ['description'], excerpt: flyerText }] }),
+          JSON.stringify({ evidence: [{ observation_id: 'curator-post', media_id: null, fields: ['time'], excerpt: olderExcerpt },
+            { kind: 'official_page', url: officialUrl, excerpt: 'Miércoles 25, función 21:00', fields: ['time'] }] })),
       db.prepare("INSERT INTO event_source_evidence (event_id, candidate_id, observation_id, revision) VALUES (?, 'candidate', 'venue-post', 1), (?, 'candidate', 'curator-post', 2)").bind(id, id),
       db.prepare(`INSERT INTO intake_media (id, observation_id, position, object_key, content_type, sha256)
         VALUES ('flyer', 'venue-post', 1, ?, 'image/jpeg', ?), ('unrelated', 'venue-post', 0, ?, 'image/jpeg', ?)`)
@@ -50,7 +56,10 @@ it('reads linked D1 evidence and sends the 18 mundos contradiction with the actu
     const retained = vi.fn(async () => flyer)
     const sources = await loadReviewSources([id], async sql => (await db.prepare(sql).all()).results, retained)
     expect(retained.mock.calls).toEqual([[key]])
-    expect(sources.get(id)).toMatchObject({ caption, postUrl: sourceUrl, officialExcerpts: expect.stringContaining('función 21:00'), flyer: expect.stringMatching(/^data:image\/jpeg;base64,/) })
+    expect(sources.get(id)).toMatchObject({ observations: [
+      { caption, postUrl: sourceUrl, excerpts: [{ excerpt: flyerText }] },
+      { caption: 'Synthetic repost', postUrl: 'https://www.instagram.com/p/synthetic-repost/', excerpts: [{ excerpt: olderExcerpt }] },
+    ], officialPages: [{ url: officialUrl, excerpt: 'Miércoles 25, función 21:00' }], flyer: expect.stringMatching(/^data:image\/jpeg;base64,/) })
     const frames = await Promise.all(['Hoy en Buenos Aires', 'Entrenamiento canino', 'Más planes'].map(async (text, index) => {
       const file = join(dir, `frame-${index}.jpg`)
       await sharp(photo(text)).jpeg().toFile(file)
@@ -66,7 +75,10 @@ it('reads linked D1 evidence and sends the 18 mundos contradiction with the actu
       expect(JSON.stringify(parts)).toContain('Entrenamiento canino')
       expect(JSON.stringify(parts)).toContain(caption)
       expect(JSON.stringify(parts)).toContain(input.threads)
-      expect(JSON.stringify(parts)).not.toContain('Synthetic repost')
+      expect(JSON.stringify(parts)).toContain('Synthetic repost')
+      expect(JSON.stringify(parts)).toContain(olderExcerpt)
+      expect(JSON.stringify(parts)).toContain(flyerText)
+      expect(JSON.stringify(parts)).toContain(officialUrl)
       expect(parts.filter((part: { type: string }) => part.type === 'input_image')).toEqual([
         expect.objectContaining({ image_url: `data:image/jpeg;base64,${readFileSync(frames[0]!).toString('base64')}` }),
         expect.objectContaining({ image_url: `data:image/jpeg;base64,${readFileSync(frames[1]!).toString('base64')}` }),
@@ -87,6 +99,80 @@ it('refuses missing, duplicate, invalid, or invented event verdicts', async () =
       .rejects.toThrow('invalid or incomplete verdicts')
   }
 })
+
+it.each(['venue field', 'venue citation', 'untagged unrelated caption', 'venue-only quote from mixed price excerpt'])('keeps a price question open despite a real %s', async mode => {
+  const url = sourceUrl
+  const quote = 'Venue: Sala de ensayo.'
+  const question: ReviewQuestion = { id, field: 'price', question: 'Is admission free?', evidence: { address: null, officialPages: [],
+    observations: [{ postUrl: url, caption: quote, publishedAt: null, excerpts: mode === 'untagged unrelated caption' ? []
+      : [{ fields: mode === 'venue-only quote from mixed price excerpt' ? ['venue', 'price'] : ['venue'], excerpt: quote }] }] } }
+  const formats: string[] = []
+  const resolution = await resolveReviewQuestionsWithOpenAI(config, 'synthetic', 'test', input, [question], async (_url, request) => {
+    const format = JSON.parse(String(request?.body)).text.format.name
+    formats.push(format)
+    return modelOutput(format === 'publisher_citation_check' ? { direct: [], venue: [] } : { selections: [],
+      resolved: [{ id, field: mode === 'venue field' ? 'venue' : 'price', verdict: 'ok', reason: 'The venue is listed.', citations: [{ url, quote }] }],
+    })
+  })
+  expect(resolution.resolved).toEqual([])
+  expect(formats).toEqual(mode === 'venue field' ? ['publisher_question_resolution'] : ['publisher_question_resolution', 'publisher_citation_check'])
+})
+
+const modelOutput = (value: object) => Response.json({ status: 'completed', model: 'fake', output: [{ type: 'message', content: [{ type: 'output_text', text: JSON.stringify(value) }] }] })
+
+it('checks a description-tagged flyer quote for price and rejects invented display quotes and mismatched URLs', async () => {
+  const quote = 'FUNCIONES GRATUITAS'
+  const evidence = { address: null, officialPages: [], observations: [{ postUrl: sourceUrl, publishedAt: null, caption: 'Montaje anual de teatro.',
+    excerpts: [{ fields: ['description'], excerpt: flyerText }] }] }
+  const citation = { url: sourceUrl, quote }
+  const resolved = [{ id, field: 'price', verdict: 'ok', reason: 'The flyer explicitly says that the performances are free.', citations: [citation] }]
+  const result = await resolveReviewQuestionsWithOpenAI(config, 'test', prompt, input, [{ id, field: 'price', question: 'Is it free?', evidence }], async (_url, options) => {
+    const body = JSON.parse(String(options?.body))
+    const payload = JSON.parse(body.input[0].content[0].text)
+    if (body.text.format.name === 'publisher_citation_check') {
+      expect(payload.claims[0].proposed.citations).toEqual([citation])
+      return modelOutput({ direct: [id], venue: [] })
+    }
+    expect(payload.events[0].posts).toEqual([{ url: sourceUrl, publishedAt: null, caption: 'Montaje anual de teatro.', excerpts: [flyerText] }])
+    return modelOutput({ resolved, selections: [{ id, topic: 'other', quotes: [{ url: sourceUrl, quote: 'Invented' },
+      { url: 'https://sala.example.org/wrong', quote }, citation], addresses: [], conflictingAddresses: false }] })
+  })
+  expect(result.resolved).toMatchObject(resolved)
+  expect(result.selections?.[0]?.quotes).toEqual([citation])
+})
+
+it.each(['caption', 'official page', 'ticket office', 'catalog only', 'conflicting sources', 'wrong number', 'invented quote'] as const)(
+  'uses USIG only for the verified performance venue (%s)', async mode => {
+    const venueQuote = 'Thames 1500'
+    const ticketOffice = `Retirá las entradas en ${venueQuote}. La función es en Café Artigas.`
+    const officialUrl = 'https://sala.example.org/funcion'
+    const quote = mode === 'ticket office' ? ticketOffice : venueQuote
+    const address = { url: mode === 'official page' ? officialUrl : sourceUrl, quote, role: 'performance_venue', street: 'Thames', number: mode === 'wrong number' ? '150' : '1500' }
+    const officialPages = mode === 'official page' ? [{ url: officialUrl, excerpt: `La función es en Café Artigas, ${venueQuote}.`, fields: ['description'] }]
+      : mode === 'conflicting sources' ? [{ url: officialUrl, excerpt: 'La función es en Café Artigas, Bogado 4500.', fields: ['venue'] }] : []
+    const evidence = { address: venueQuote, officialPages, observations: [{ postUrl: sourceUrl, publishedAt: null,
+      caption: mode === 'official page' || mode === 'catalog only' || mode === 'invented quote' ? 'La función es en Café Artigas.'
+        : mode === 'ticket office' ? ticketOffice : `La función es en Café Artigas.\n${venueQuote}`,
+      excerpts: [{ fields: ['time'], excerpt: 'Función a las 21.' }] }] }
+    const subject = { id, field: 'barrio', question: 'Is the performance venue in Almagro?', evidence }
+    const api = vi.fn<typeof fetch>(async () => Response.json({ barrio: 'Palermo' }))
+    const resolver = vi.fn<typeof fetch>(async (_url, options) => {
+      if (JSON.parse(String(options?.body)).text.format.name === 'publisher_citation_check') return modelOutput({ direct: [id], venue: mode === 'ticket office' ? [] : [id] })
+      const addresses = mode === 'catalog only' ? [] : mode === 'conflicting sources' ? [address, { ...address, url: officialUrl, quote: 'Bogado 4500', street: 'Bogado', number: '4500' }] : [address]
+      return modelOutput({ selections: [{ id, topic: 'barrio', quotes: [], addresses, conflictingAddresses: false }],
+        resolved: [{ id, field: 'barrio', verdict: 'ok', reason: 'Model agrees with the card.', citations: [{ url: sourceUrl, quote }] }] })
+    })
+    const state = await adjudicateReviewQuestions(input, [subject], (content, questions) =>
+      resolveReviewQuestionsWithOpenAI(config, 'test', prompt, content, questions, resolver), item => lookupReviewBarrio(item, api))
+    if (mode === 'caption' || mode === 'official page') {
+      const url = 'https://ws.usig.buenosaires.gob.ar/datos_utiles?calle=THAMES&altura=1500'
+      expect(api).toHaveBeenCalledExactlyOnceWith(url, expect.objectContaining({ redirect: 'error' }))
+      expect(state.resolved).toMatchObject([{ id, verdict: 'wrong', field: 'barrio', citations: [{ url: address.url, quote }, { url, quote: 'Palermo' }] }])
+    } else {
+      expect(api).not.toHaveBeenCalled()
+      expect(state.resolved).toEqual([])
+    }
+  })
 
 it('reads the OpenAI key only from a mode-600 file', () => {
   const dir = mkdtempSync(join(tmpdir(), 'ig-review-key-'))
