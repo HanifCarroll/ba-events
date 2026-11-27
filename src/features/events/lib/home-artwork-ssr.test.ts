@@ -51,7 +51,7 @@ describe('homepage server-rendered agenda', () => {
     expect(body).toContain(`href="/events/${events[0].id}"`)
     expect(body).toContain('href="https://www.instagram.com/p/synthetic/"')
     expect(body).toContain('alt="Jam sintética"')
-    expect(body).toMatch(/Sala sintética · Almagro.*\$5\.000 ARS/s)
+    expect(body).toMatch(/Sala sintética · <a[^>]+href="\/agenda\/barrio\/almagro"[^>]*>Almagro<\/a>.*\$5\.000 ARS/s)
     expect(body.match(/<img\b[^>]*alt="[^"]+"[^>]*loading="eager"/g)).toHaveLength(4)
     expect(body.match(/fetchpriority="high"/g)).toHaveLength(1)
     const firstImage = body.match(/<img\b[^>]*>/)?.[0]
@@ -96,7 +96,7 @@ describe('homepage server-rendered agenda', () => {
     const title = cards[0]?.match(/<h2\b.*?<\/h2>/s)?.[0]
     const meta = cards[1]?.match(/<p\b.*?<\/p>/s)?.[0]
     expect(title).toMatch(/<button\b[^>]*aria-controls="gloss-[^"]+"[^>]*>Jam<\/button>.* sintética/s)
-    expect(meta).toMatch(/Sala sintética · Almagro.*<button\b[^>]*>A la gorra<\/button>/s)
+    expect(meta).toMatch(/Sala sintética · .*Almagro<\/a>.*<button\b[^>]*>A la gorra<\/button>/s)
     expect(cards[0]?.match(/<a\b.*?<\/a>/s)?.[0]).not.toContain('<button')
     expect(body.match(/aria-controls="gloss-/g)).toHaveLength(2)
   })

@@ -183,6 +183,14 @@ The site SHALL serve and list in the sitemap weekly agendas for theatre, live mu
 - **THEN** the listing is not selected solely for that wording
 - **AND** a concert at a theatre can appear on both the theatre and live music agendas because the theatre page explicitly includes other events at theatre venues
 
+### Requirement: Barrio and venue agendas use public Catalog locations
+The site SHALL serve a page for each listed barrio even if its weekly Agenda is empty, and an index that links to barrios with current or upcoming eligible events. It SHALL show today's remaining events first, omit hidden and unconfirmed locations, and rank other barrio links by weekly card count rather than distance. A venue page SHALL show up to 30 current or upcoming eligible cards and omit unset public details. Venue pages and the barrio index SHALL use the Agenda’s occurrence cutoff. Venues without current or upcoming eligible events SHALL return a themed Spanish 404 and SHALL NOT appear in the sitemap. The initial document and card labels on venue URLs SHALL be Spanish without changing the visitor's language preference.
+
+#### Scenario: Two venues have the same readable slug
+- **WHEN** two venue names normalize to the same slug
+- **THEN** the oldest record gets the bare slug, using the venue ID to break creation-time ties, and the other venues have ID-suffixed slugs
+- **AND** venue eligibility does not change which slug belongs to each venue
+
 ### Requirement: Card artwork preserves complete posters with a subtle background
 Event artwork SHALL preserve the full image without cropping inside a softly tinted container. The container SHALL remain visually quieter than the card content when artwork dimensions leave unused space.
 
