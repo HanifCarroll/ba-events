@@ -8,6 +8,7 @@ import { d1Intake } from './store-d1.ts'
 import { collectInstagramEffect, type ApifyRequest } from './collection.ts'
 import { commitPlanEffect, readEvidenceEffect, previewCandidateEffect, submitCandidateEffect } from './service.ts'
 import { readOfficialPage } from './official-page.ts'
+import { clockPairs } from './clock-pairs.fixture.ts'
 import { decodeCandidate } from './schema.ts'
 import { ImportOperationError } from '../core/effect-utils.ts'
 import type { CollectionStore, IntakePlanRow, IntakeStore, Reservation } from './store.ts'
@@ -144,6 +145,37 @@ describe('page-level doors on D1', () => {
     store = d1Intake({ db, evidence: fakeR2(), artwork: fakeR2(), vectors: fakeVectorize().index })
   }, 60_000)
   afterAll(async () => { await dispose?.() })
+
+  const previewPairs = clockPairs.filter(pair => pair.previewAt)
+  it.each(previewPairs.flatMap(pair => (['caption', 'official page'] as const).map(source => ({ ...pair, source }))))(
+    'previews paired clock claims from $source: $name', async ({ accepted, rejected, source, previewAt }) => {
+      const name = 'Concierto Sintético'
+      const dateLine = `${name} en ${venue.name}, el lunes 23 de noviembre.`
+      const url = `${venue.website}/reloj`
+      async function previewClaim({ quote, time, source: visible = quote }: typeof accepted) {
+        const id = crypto.randomUUID()
+        const caption = source === 'caption' ? `${dateLine}\n${visible}` : dateLine
+        const post = await Effect.runPromise(store.upsertObservation({ run_id: runId, post_id: id, source_username: 'sala_nube',
+          post_url: `https://www.instagram.com/p/${id}/`, caption, published_at: null, content_hash: id.replaceAll('-', '').repeat(2), media_urls: [] }))
+        const timeEvidence = source === 'caption' ? { observation_id: post.id, fields: ['time'], excerpt: quote, media_id: null }
+          : { kind: 'official_page', url, fields: ['time'], excerpt: quote }
+        await Effect.runPromise(submitCandidateEffect(store, {
+          id, expected_revision: 0, intent: 'create', target_event_id: null, name, date, time,
+          venue_name: venue.name, venue_id: venue.id, description_es: null, description_en: null, categories: ['music'], status: 'scheduled',
+          price_kind: 'unknown', price_ars: null, price_note: null, ticket_url: null, artwork_media_id: null, artwork_note: 'Synthetic clock fixture',
+          issues: [], notes: '', evidence: [{ observation_id: post.id, fields: ['name', 'venue', 'date'], excerpt: dateLine, media_id: null }, timeEvidence],
+        }))
+        const readPage = (url: string, sites: ReadonlySet<string>) => readOfficialPage(url, sites, async () => new Response(
+          `<h1>${name}</h1><p>${visible}</p>`, { headers: { 'content-type': 'text/html' } }))
+        return Effect.runPromise(previewCandidateEffect(store, id, now, readPage))
+      }
+
+      expect(await previewClaim(accepted)).toMatchObject({ action: 'create', reasons: [], payload: { starts_at: previewAt, time_tba: false } })
+      const held = await previewClaim(rejected)
+      expect(held.action).toBe('held')
+      expect(held.reasons.join('\n')).toMatch(/time|clock/i)
+    }, 20_000,
+  )
 
   it.each([
     { name: 'Trío Nube', excerpt: 'Abrimos las puertas a las 21h', time: '21:00', dateSource: 'page', doorsAt: '2026-11-24T00:00:00.000Z' },

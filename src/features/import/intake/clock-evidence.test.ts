@@ -1,24 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import { citesClock, citesDateAndClock } from './clock-evidence.ts'
+import { clockPairs } from './clock-pairs.fixture.ts'
+
+describe('paired Spanish clock citations', () => {
+  it.each(clockPairs)('$name', ({ accepted, rejected }) => {
+    expect(citesClock(accepted.quote, accepted.time, accepted.source), 'complete claim').toBe(true)
+    expect(citesClock(rejected.quote, rejected.time, rejected.source), 'near miss').toBe(false)
+  })
+})
 
 describe('intake clock tokens', () => {
-  it.each([
-    ['21h', '21:00'], ['21 hs', '21:00'], ['21:30', '21:30'], ['20.30', '20:30'],
-    ['20.00', '20:00'], ['a las 21', '21:00'], ['9 p. m.', '21:00'], ['12 a.m.', '00:00'],
-  ])('matches %s as %s', (excerpt, time) => {
-    expect(citesClock(excerpt, time)).toBe(true)
-  })
-
-  it.each([
-    ['de 20 a 24 h', '20:00'], ['de 20 a 24 hs', '20:00'], ['de 20 a 24 horas', '20:00'],
-    ['20 a 24 h', '20:00'], ['20 - 24 hs', '20:00'], ['20–2 h', '20:00'], ['de 21 a 23 h', '21:00'],
-    ['de 9 a 13 hs', '09:00'], ['20 a 24hs', '20:00'], ['de 20.30 a 24 h', '20:30'],
-    ['de 20 a 0 h', '20:00'], ['de 20 a 00 h', '20:00'], ['20–23:30', '20:00'],
-    ['desde 20 hasta 24 h', '20:00'], ['20-24:00', '20:00'],
-  ])('matches the start of %s as %s', (excerpt, time) => {
-    expect(citesClock(excerpt, time)).toBe(true)
-  })
-
   it.each([
     'del 20 al 24 de noviembre', 'de 20 a 24 años', 'entre 20 y 24 personas', '20 a 24 cuotas',
     'de 20 a 23 personas. Puertas 22 h', '20 en sala A - 24 h', 'de 20 a 23, 22 hs',
@@ -128,9 +119,14 @@ describe('intake clock tokens', () => {
     expect(citesClock(excerpt, '21:00')).toBe(false)
   })
 
-  it('still reads a clock range when the end has a colon or a time unit and the price is separate', () => {
+  it('still reads a colon-ended clock range after a separate price', () => {
     expect(citesClock('Precios: 10–15.50 USD. Horario: 20–23:30', '20:00')).toBe(true)
-    expect(citesClock('Horario: 20–23.30 hs; precio $10', '20:00')).toBe(true)
+  })
+
+  it('requires the hours unit in the quote when a dotted range end establishes the start', () => {
+    const source = 'Horario: 20–23.30 hs; precio $10'
+    expect(citesClock(source, '20:00')).toBe(true)
+    expect(citesClock('Horario: 20–23.30', '20:00', source)).toBe(false)
   })
 
   it.each(['Duración: de 2 a 3 horas', 'dura 2 a 3 hs', 'Duración estimada: 02:00 a 03:00', 'de 2 a 3 horas de duración'])('does not use either duration bound in %s', duration => {
