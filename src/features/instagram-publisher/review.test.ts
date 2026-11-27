@@ -141,31 +141,38 @@ it('checks a description-tagged flyer quote for price and rejects invented displ
   expect(result.selections?.[0]?.quotes).toEqual([citation])
 })
 
-it.each(['caption', 'official page', 'ticket office', 'catalog only', 'conflicting sources', 'wrong number', 'invented quote'] as const)(
+it.each(['caption', 'official page', 'labeled address', 'ticket office', 'catalog only', 'conflicting sources', 'wrong number', 'invented quote'] as const)(
   'uses USIG only for the verified performance venue (%s)', async mode => {
     const venueQuote = 'Thames 1500'
+    const labeledAddress = 'Sede de la función: Café Artigas. Calle: Thames. Altura: 1573.'
     const ticketOffice = `Retirá las entradas en ${venueQuote}. La función es en Café Artigas.`
     const officialUrl = 'https://sala.example.org/funcion'
-    const quote = mode === 'ticket office' ? ticketOffice : venueQuote
-    const address = { url: mode === 'official page' ? officialUrl : sourceUrl, quote, role: 'performance_venue', street: 'Thames', number: mode === 'wrong number' ? '150' : '1500' }
-    const officialPages = mode === 'official page' ? [{ url: officialUrl, excerpt: `La función es en Café Artigas, ${venueQuote}.`, fields: ['description'] }]
+    const fromPage = mode === 'official page' || mode === 'labeled address'
+    const quote = mode === 'ticket office' ? ticketOffice : mode === 'labeled address' ? labeledAddress : venueQuote
+    const number = mode === 'wrong number' ? '150' : mode === 'labeled address' ? '1573' : '1500'
+    const address = { url: fromPage ? officialUrl : sourceUrl, quote, role: 'performance_venue', street: 'Thames', number }
+    const officialPages = fromPage ? [{ url: officialUrl, excerpt: mode === 'labeled address' ? labeledAddress : `La función es en Café Artigas, ${venueQuote}.`, fields: ['description'] }]
       : mode === 'conflicting sources' ? [{ url: officialUrl, excerpt: 'La función es en Café Artigas, Bogado 4500.', fields: ['venue'] }] : []
     const evidence = { address: venueQuote, officialPages, observations: [{ postUrl: sourceUrl, publishedAt: null,
-      caption: mode === 'official page' || mode === 'catalog only' || mode === 'invented quote' ? 'La función es en Café Artigas.'
+      caption: fromPage || mode === 'catalog only' || mode === 'invented quote' ? 'La función es en Café Artigas.'
         : mode === 'ticket office' ? ticketOffice : `La función es en Café Artigas.\n${venueQuote}`,
       excerpts: [{ fields: ['time'], excerpt: 'Función a las 21.' }] }] }
     const subject = { id, field: 'barrio', question: 'Is the performance venue in Almagro?', evidence }
     const api = vi.fn<typeof fetch>(async () => Response.json({ barrio: 'Palermo' }))
     const resolver = vi.fn<typeof fetch>(async (_url, options) => {
-      if (JSON.parse(String(options?.body)).text.format.name === 'publisher_citation_check') return modelOutput({ direct: [id], venue: mode === 'ticket office' ? [] : [id] })
+      const body = JSON.parse(String(options?.body))
+      if (body.text.format.name === 'publisher_citation_check') {
+        expect(JSON.parse(body.input[0].content[0].text).claims[0].venue).toEqual(address)
+        return modelOutput({ direct: [id], venue: mode === 'ticket office' ? [] : [id] })
+      }
       const addresses = mode === 'catalog only' ? [] : mode === 'conflicting sources' ? [address, { ...address, url: officialUrl, quote: 'Bogado 4500', street: 'Bogado', number: '4500' }] : [address]
       return modelOutput({ selections: [{ id, topic: 'barrio', quotes: [], addresses, conflictingAddresses: false }],
         resolved: [{ id, field: 'barrio', verdict: 'ok', reason: 'Model agrees with the card.', citations: [{ url: sourceUrl, quote }] }] })
     })
     const state = await adjudicateReviewQuestions(input, [subject], (content, questions) =>
       resolveReviewQuestionsWithOpenAI(config, 'test', prompt, content, questions, resolver), item => lookupReviewBarrio(item, api))
-    if (mode === 'caption' || mode === 'official page') {
-      const url = 'https://ws.usig.buenosaires.gob.ar/datos_utiles?calle=THAMES&altura=1500'
+    if (mode === 'caption' || fromPage) {
+      const url = `https://ws.usig.buenosaires.gob.ar/datos_utiles?calle=THAMES&altura=${number}`
       expect(api).toHaveBeenCalledExactlyOnceWith(url, expect.objectContaining({ redirect: 'error' }))
       expect(state.resolved).toMatchObject([{ id, verdict: 'wrong', field: 'barrio', citations: [{ url: address.url, quote }, { url, quote: 'Palermo' }] }])
     } else {

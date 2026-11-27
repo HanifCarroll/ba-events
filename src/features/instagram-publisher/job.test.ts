@@ -1049,17 +1049,40 @@ describe('tick: publisher investigation', () => {
     const alert = job.s.alert
     job.s.alert = async (...args) => args[0].startsWith('review-fix/') ? false : alert(...args)
     await job.tick()
-    expect(w.draft()).toMatchObject({ revision: 2, exclude: [flaggedId], pendingReviewFixes: [{ event: { checked } }] })
+    expect(w.draft()).toMatchObject({ revision: 2, exclude: [flaggedId], pendingReviewFixes: [{ event: { recorded: { revision: 1, finding: { reason, checked } } } }] })
     expect(w.reviewCalls).toBe(2)
     expect(w.slackCalls).toEqual([])
     await w.job().tick()
     const fix = w.alerts.find(alert => alert.key === `review-fix/${flaggedId}`)
     expect(fix?.text).toContain(hermes)
-    expect(fix?.text).toContain(`Checked: The venue posted a correction to its announcement: <${correction}>`)
+    expect(fix?.text).toContain(`Checked (r1): The venue posted a correction to its announcement: <${correction}>`)
     slot(w)
     await w.job().tick()
     expect(w.draft()).toMatchObject({ state: 'published', threads: { state: 'published' } })
     expect(w.broadcasts()).toEqual([])
+  })
+
+  it('includes the exclusion conclusion and earlier recorded findings in the fix alert after rebuilding', async () => {
+    const { w, finish } = world(wrong)
+    const job = w.job()
+    await job.tick()
+    during(w)
+    const priorUrl = 'https://venue.example/previous-announcement'
+    finish({ ...ask, checked: `The first announcement gives a different venue: ${priorUrl}` })
+    // Regenerate before consuming r1; leave its on-time finding in the recorded research.
+    await job.regenerate(w.draft().id, [])
+    await job.tick()
+
+    during(w, 20)
+    const currentUrl = 'https://venue.example/correction'
+    finish({ verdict: 'exclude', reason: `The venue moved the performance: ${currentUrl}`, hermes: 'Correct the catalog venue.' })
+    await job.tick()
+    expect(w.draft()).toMatchObject({ revision: 3, exclude: [flaggedId] })
+    expect(w.slackCalls).toEqual([])
+    const fix = w.alerts.find(alert => alert.key === `review-fix/${flaggedId}`)
+    expect(fix?.text).toContain('Correct the catalog venue.')
+    expect(fix?.text).toContain(`Checked (r2): The venue moved the performance: <${currentUrl}>`)
+    expect(fix?.text).toContain(`Checked (r1): The first announcement gives a different venue: <${priorUrl}>`)
   })
 
   it.each(['fixed', 'exclude'] as const)('routes a %s finding to Hermes when the rebuild budget is exhausted', async verdict => {
@@ -1143,6 +1166,79 @@ describe('tick: publisher investigation', () => {
     expect(posts.map(post => post.text.split('\n')[0])).toEqual(['Revisión: investigación', 'Revisión: continuación'])
     for (const link of links) expect(posts.filter(post => post.text.includes(`<${link}>`))).toHaveLength(1)
     expect(w.broadcasts()).toEqual([])
+  })
+
+  it.each(['missing', 'unreadable'] as const)('delivers a new thread report even when the old notice is %s', async oldNotice => {
+    const { w, finish } = world()
+    w.config.auto.finde = false
+    w.config.slack.channel = 'C_TEST_APPROVALS'
+    const job = w.job()
+    const links = Array.from({ length: 37 }, (_, i) => `https://www.instagram.com/p/${i}${'s'.repeat(65)}/`)
+    job.s.reviewResources = async () => new Map([[flaggedId, { address: null, officialPages: [],
+      observations: links.map(postUrl => ({ postUrl, caption: 'Función de teatro físico.', publishedAt: null, excerpts: [] })),
+    }]])
+    const post = job.s.slackPost
+    let notices = 0
+    job.s.slackPost = async (...args) => {
+      if (!args[1] && args[0].includes('> Revisión: investigación')) {
+        notices++
+        throw new Error('Stopped before the notice reached Slack')
+      }
+      return post(...args)
+    }
+    job.s.slackReviewReceipt = async () => {
+      if (oldNotice === 'unreadable') throw new Error('The Slack history read failed')
+      return null
+    }
+
+    await job.tick()
+    during(w)
+    finish(ask)
+    await job.tick()
+    const draft = w.draft()
+    expect(draft).toMatchObject({ decisionBroadcastAttempted: true, pendingReviewReplies: [{ threadTs: null, parent: expect.any(Object) }] })
+    await job.regenerate(draft.id, [])
+    const revised = w.draft()
+    expect(revised.slack.ts).toBeTruthy()
+    expect(revised.slack.ts).not.toBe(draft.slack.ts)
+    await job.tick()
+    during(w, 20)
+    finish(ask)
+    await job.tick()
+
+    const posts = w.slackCalls.filter(call => call.ts === revised.slack.ts && call.text?.startsWith('Revisión:'))
+    expect(posts.map(post => post.text?.split('\n')[0])).toEqual(['Revisión: investigación', 'Revisión: continuación'])
+    for (const link of links) expect(posts.filter(post => post.text?.includes(`<${link}>`))).toHaveLength(1)
+    expect(w.draft().pendingReviewReplies).toEqual(draft.pendingReviewReplies)
+    expect(notices).toBe(1)
+    expect(w.broadcasts()).toEqual([])
+  })
+
+  it('keeps a later part of the same thread behind an uncertain send', async () => {
+    const { w } = world()
+    w.config.auto.finde = false
+    const job = w.job()
+    await job.tick()
+    const draft = w.draft()
+    const destination = { channel: w.config.slack.channel, threadTs: draft.slack.ts }
+    const older = 'Revisión: primera parte'
+    const newer = 'Revisión: segunda parte'
+    const sentTo = (ts: string | null) => w.slackCalls.filter(call => call.ts === ts && call.text?.startsWith('Revisión:')).map(call => call.text)
+    draft.pendingReviewReplies = [
+      { ...destination, parts: [older], inFlight: { id: uuid(30), since: w.clock.getTime() } },
+      { ...destination, parts: [newer] },
+      { ...destination, threadTs: '99.0', parts: ['Revisión: otro hilo'] },
+    ]
+    writeFileSync(job.draftFile(draft.id), JSON.stringify(draft))
+    job.s.slackReviewReceipt = async () => { throw new Error('Could not confirm the first send') }
+    await job.tick()
+    expect(sentTo(destination.threadTs)).toEqual([])
+    expect(sentTo('99.0')).toEqual(['Revisión: otro hilo'])
+
+    job.s.slackReviewReceipt = async () => null
+    await job.tick()
+    expect(sentTo(destination.threadTs)).toEqual([older, newer])
+    expect(w.draft().pendingReviewReplies).toEqual([])
   })
 
   it('uses the new investigator question for sources and USIG instead of the old summary flag', async () => {
