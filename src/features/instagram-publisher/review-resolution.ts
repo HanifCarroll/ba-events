@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { line } from './catalog-fix.ts'
 import type { ReviewResources } from './review-evidence.ts'
-import type { RecordedCheck } from './investigation.ts'
+import { recordedEvidenceNotes, type RecordedCheck } from './investigation.ts'
 import { publicReviewUrl, sourceReadings, streetForUsig, type ReviewBarrioLookup } from './review-reply.ts'
 import { requestReviewJson, type ReviewConfig, type ReviewInput } from './review.ts'
 
@@ -40,7 +40,8 @@ export interface QuestionResolution {
   incomplete?: string[]
   records?: QuestionEvidence[]
 }
-export interface QuestionEvidenceRef { revision: number; stage: 'quick' | 'fallback' }
+export type QuestionEvidenceStage = 'quick' | 'fallback' | 'rechecked'
+export interface QuestionEvidenceRef { revision: number; stage: QuestionEvidenceStage }
 
 export const sameQuestion = (a: ReviewSubject, b: ReviewSubject) => a.id === b.id && a.field === b.field && a.question === b.question
 export const questionRecord = (audit: QuestionResolution | undefined, id: string) => audit?.records?.find(record => record.id === id)
@@ -88,10 +89,11 @@ export async function adjudicateReviewQuestions(input: ReviewInput, questions: R
 
 /** Only a public URL with a separately quoted excerpt adds source text. A prior verdict is not evidence. */
 function researchExcerpts(history: RecordedCheck[] = []) {
-  return history.flatMap(({ revision, finding }) => [...(finding.checked ?? '').matchAll(/(https?:\/\/[^\s<>|“”]+)\s+—\s+“([^”]+)”/gu)].flatMap(([, url, quote]) => {
-    const parsed = citation.safeParse({ url, quote })
-    return parsed.success && publicReviewUrl(parsed.data.url) ? [{ revision, url: parsed.data.url, excerpt: parsed.data.quote }] : []
-  }))
+  return history.flatMap(check => recordedEvidenceNotes(check).flatMap(note =>
+    [...(note ?? '').matchAll(/(https?:\/\/[^\s<>|“”]+)\s+—\s+“([^”]+)”/gu)].flatMap(([, url, quote]) => {
+      const parsed = citation.safeParse({ url, quote })
+      return parsed.success && publicReviewUrl(parsed.data.url) ? [{ revision: check.revision, url: parsed.data.url, excerpt: parsed.data.quote }] : []
+    })))
 }
 
 function documents(evidence: ReviewResources | undefined, history: RecordedCheck[] | undefined) {

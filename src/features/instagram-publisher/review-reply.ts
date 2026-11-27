@@ -1,7 +1,7 @@
 import { NEIGHBORHOODS } from '#shared/lib/types.ts'
 import { slackLiteral } from './alerts.ts'
 import type { FixReceipt } from './catalog-fix.ts'
-import type { RecordedCheck } from './investigation.ts'
+import { recordedEvidenceNotes, type RecordedCheck } from './investigation.ts'
 import type { ReviewEvidenceFlag } from './review.ts'
 import type { ReviewResources } from './review-evidence.ts'
 import type { QuestionEvidence, ReviewSelection, VenueAddress } from './review-resolution.ts'
@@ -80,12 +80,10 @@ function barrioLine({ lookup, conflictingAddresses }: ReviewSelection) {
   return lookup.barrio ? `${link} — barrio oficial: ${slackLiteral(lookup.barrio)}.` : `${link} — la consulta no confirmó el barrio.`
 }
 
-function checkText({ finding }: RecordedCheck, fixes: FixReceipt[]) {
-  if (finding.verdict === 'ask') return [finding.checked]
-  if (finding.verdict === 'ok') return [`${finding.reason} (${finding.url})`, finding.checked]
-  // The investigator may cite the correction in the instruction to Hermes, with or without a checked note.
-  if (finding.verdict === 'exclude') return [finding.reason, finding.checked, finding.hermes]
-  return [finding.checked, ...fixes.filter(fix => finding.fixes.includes(fix.operation)).map(fix => fix.evidence)]
+function checkText(check: RecordedCheck, fixes: FixReceipt[]) {
+  const { finding } = check
+  const notes = recordedEvidenceNotes(check, fixes)
+  return finding.verdict === 'ok' ? [`${finding.reason} (${finding.url})`, ...notes] : notes
 }
 
 export function recordedCheckLines(checks: RecordedCheck[], fixes: FixReceipt[]) {

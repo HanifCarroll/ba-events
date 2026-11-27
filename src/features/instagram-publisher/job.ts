@@ -668,12 +668,12 @@ export class Job {
 
   private reviewPreviewRouting(draft: Draft, result: ReviewResult | null, reviewed: boolean): 'normal' | 'investigating' | 'fix-only' {
     if (!result) return 'normal'
-    const { quick, fallback } = result.questionResolution ?? {}
+    const { quick, fallback, rechecked } = result.questionResolution ?? {}
     const investigation = draft.review?.investigation
     const activeAudit = investigation?.findings ? fallback : quick
     const eventQuestion = investigation?.findings ? investigation.request.events.some(event => this.investigationAsks(investigation, event))
       : result.events.some(event => event.verdict === 'question')
-    if (eventQuestion && (!activeAudit?.records || evidenceUnavailable(activeAudit))) return 'investigating'
+    if (eventQuestion && (!activeAudit?.records || evidenceUnavailable(activeAudit) || evidenceUnavailable(rechecked))) return 'investigating'
     if (result.post.verdict === 'question') return 'normal'
     const events = flagged(result)
     const wrong = result.post.verdict === 'wrong' || events.some(event => event.verdict === 'wrong')
@@ -702,8 +702,8 @@ export class Job {
     if (finding?.verdict !== 'ask' || !this.investigationAsks(investigation, event)) return null
     const checked = questionRecord(result.questionResolution?.fallback, event.id)
     if (!checked?.conclusion) return finding.question
-    const original = questionRecord(result.questionResolution?.quick, event.id)
-    // Answering a different question does not clear the original fact. Ask it only if its own check completed.
+    const original = questionRecord(result.questionResolution?.rechecked, event.id)
+    // A quick check predates the investigation. Only a fresh, still-open check can return the original question.
     return !this.answersOriginalQuestion(event, checked.conclusion.field, finding.field) && original?.state === 'complete' && !original.conclusion
       ? event.question : null
   }
@@ -715,7 +715,9 @@ export class Job {
   private queueReviewFix(draft: Draft, id: string, finding: Verdict, { checked, recorded, record }: alerts.ReviewFixEvidence = {}) {
     const audit = draft.review?.result?.questionResolution
     const quick = questionRecord(audit?.quick, id)
-    if (!record && quick?.conclusion?.verdict === 'wrong') record = { revision: draft.revision, stage: 'quick' }
+    if (!record && quick?.conclusion?.verdict === 'wrong' && quick.conclusion.field === finding.field && quick.conclusion.reason === finding.reason) {
+      record = { revision: draft.revision, stage: 'quick' }
+    }
     const answer = record && questionRecord(audit?.[record.stage], id)?.conclusion
     const pending = draft.pendingReviewFixes ??= []
     pending.push(alerts.reviewFix(draft, id, finding, { checked: checked ?? (answer ? this.citationText(answer.citations) : undefined), recorded, record }))
@@ -919,7 +921,8 @@ export class Job {
     const count = draft.reviewRebuilds?.day === day ? draft.reviewRebuilds.count : 0
     const canRebuild = !overridden && !holdsCatalogWrite(investigation) && this.canAutoRebuild(draft, window, decision)
     const hasAsk = request.events.some(event => this.investigationQuestion(investigation, event, result))
-    const willRebuild = repair && canRebuild && !hasAsk
+    const checking = evidenceUnavailable(result.questionResolution?.fallback) || evidenceUnavailable(result.questionResolution?.rechecked)
+    const willRebuild = repair && canRebuild && !hasAsk && !checking
     // A split approval does not resolve the other destination's error, even if it can be rebuilt later.
     if (!overridden && repair && (anyApproval(decision) || !willRebuild)) this.queueInvestigationRepairAlert(draft, investigation)
     if (!hadFindings && !willRebuild && !overridden && open) await this.trySendPreview(draft, window, failures)
@@ -928,27 +931,30 @@ export class Job {
       description_summary_es: 'Spanish summary', description_summary_en: 'English summary', name: 'title', starts_at: 'start time',
       price: 'price', is_free: 'free admission', status: 'status' } as const
     const hasQuestion = Boolean(result.post.question)
-    if (ts && (!hasAsk || !evidenceUnavailable(result.questionResolution?.fallback))) await this.postReviewReply(draft, ts, async () => {
+    if (ts && !checking) await this.postReviewReply(draft, ts, async () => {
       const events = request.events.flatMap(event => {
         const { id, title } = event
         const item = findings[id]!
         const answer = questionRecord(result.questionResolution?.fallback, id)
         const original = questionRecord(result.questionResolution?.quick, id)
+        const rechecked = questionRecord(result.questionResolution?.rechecked, id)
         const openQuestion = this.investigationQuestion(investigation, event, result)
-        const detail = item.verdict === 'ok' ? item.reason : item.verdict === 'exclude' ? `Exclude: ${item.reason}`
-          : item.verdict === 'ask' ? answer?.conclusion ? `Dato verificado: ${answer.conclusion.reason}${event.reason ? ` Problema pendiente: ${event.reason}` : ''}`
-            : openQuestion ?? event.reason ?? item.question
-            : `Corrected ${draft.catalogFixes?.filter(fix => item.fixes.includes(fix.operation)).map(fix => {
+        const detail = answer?.conclusion && (item.verdict === 'ask' || rechecked) ? `Dato verificado: ${answer.conclusion.reason}`
+          : item.verdict === 'ok' ? item.reason : item.verdict === 'exclude' ? `Exclude: ${item.reason}`
+            : item.verdict === 'ask' ? openQuestion ?? event.reason ?? item.question
+              : `Corrected ${draft.catalogFixes?.filter(fix => item.fixes.includes(fix.operation)).map(fix => {
               const n = fix.changes.length
               return `${fieldLabel[fix.field]} on ${n} occurrence${n === 1 ? '' : 's'}`
             }).join(', ')}.`
         const flag = item.verdict === 'ask' ? { field: item.field ?? event.field, question: item.question, reason: null } : event
         const blocks: ReviewEventReply[] = [{ id, title, detail, flag, record: answer ?? original,
-          checks: investigation.fallback && item.verdict === 'ask' ? [] : [{ revision: draft.revision, finding: item }],
+          checks: answer || (investigation.fallback && item.verdict === 'ask') ? [] : [{ revision: draft.revision, finding: item }],
           notInvestigated: investigation.fallback && item.verdict === 'ask' ? item.checked : 'No sources were recorded.' }]
-        if (openQuestion && answer?.conclusion && original) blocks.push({
-          id, title, detail: openQuestion, flag: event, record: original, notInvestigated: 'Only the quick review ran.',
-        })
+        if (rechecked) blocks.push({ id, title, flag: event, record: rechecked,
+          detail: rechecked.conclusion ? `Dato verificado: ${rechecked.conclusion.reason}` : rechecked.question,
+          notInvestigated: 'No sources were recorded.' })
+        if (answer?.conclusion && event.verdict === 'wrong') blocks.push({ id, title, flag: event, record: original,
+          detail: `Problema pendiente: ${event.reason!}`, notInvestigated: 'Only the quick review ran.' })
         return blocks
       })
       const blocks = await this.reviewEventBlocks(draft, events, investigation.fallback)
@@ -1014,8 +1020,7 @@ export class Job {
   }
 
   private async resolveInvestigationQuestions(draft: Draft, investigation: Investigation, result: ReviewResult) {
-    const saved = result.questionResolution?.fallback
-    if (investigation.replied || (saved?.records && !evidenceUnavailable(saved))) return
+    if (investigation.replied || investigation.questionChecksApplied) return
     const { findings, fallback } = investigation
     if (!findings) return
     const questions = investigation.request.events.flatMap(event => {
@@ -1032,23 +1037,48 @@ export class Job {
         investigation.catalogWriteHold = uncertain || applied.length > 0 || existsSync(join(dir, 'catalog-fix.lock')) || undefined
       } catch { investigation.catalogWriteHold = true }
     }
-    const audit = await this.adjudicateQuestions(draft, questions, { previous: saved, includeCurrent: true })
-    result.questionResolution = { ...result.questionResolution, fallback: audit }
-    for (const item of evidenceUnavailable(audit) ? [] : audit.resolved) {
-      const url = item.citations[0]?.url
-      const original = investigation.request.events.find(event => event.id === item.id)
-      if (!url || !original) continue
-      const record = { revision: draft.revision, stage: 'fallback' } as const
-      // A verified answer does not release a separate flag or a pending catalog correction.
-      const finding = findings[item.id]
-      if (!holdsCatalogWrite(investigation) && finding?.verdict === 'ask' && this.answersOriginalQuestion(original, item.field, finding.field)) {
-        const checked = this.citationText(item.citations)
-        findings[item.id] = item.verdict === 'ok' ? { verdict: 'ok', reason: item.reason, url, checked }
-          : { verdict: 'exclude', reason: item.reason, checked, hermes: item.reason }
-      }
-      if (original.verdict === 'wrong') this.queueReviewFix(draft, item.id, original, { record })
-      else if (item.verdict === 'wrong') this.queueReviewFix(draft, item.id, { verdict: 'wrong', field: item.field, reason: item.reason, question: null }, { record })
+    const audits = result.questionResolution ??= {}
+    if (!audits.fallback?.records || evidenceUnavailable(audits.fallback)) {
+      audits.fallback = await this.adjudicateQuestions(draft, questions, { previous: audits.fallback, includeCurrent: true })
+      this.save(draft)
     }
+    if (evidenceUnavailable(audits.fallback)) return
+
+    // Check the original facts in a separate batch: the verifier accepts only one question per event per call.
+    const originals = investigation.request.events.flatMap(event => {
+      const finding = findings[event.id]
+      const answer = questionRecord(audits.fallback, event.id)?.conclusion
+      return event.verdict === 'question' && event.question && finding?.verdict === 'ask' && answer &&
+        !this.answersOriginalQuestion(event, answer.field, finding.field) ? [{ id: event.id, field: event.field, question: event.question }] : []
+    })
+    if (originals.length && (!audits.rechecked?.records || evidenceUnavailable(audits.rechecked))) {
+      audits.rechecked = await this.adjudicateQuestions(draft, originals, { previous: audits.rechecked, includeCurrent: true })
+      this.save(draft)
+    }
+    if (evidenceUnavailable(audits.rechecked)) return
+
+    for (const original of investigation.request.events) {
+      const { id } = original
+      const finding = findings[id]
+      const answer = questionRecord(audits.fallback, id)?.conclusion
+      if (finding?.verdict !== 'ask' || !answer) continue
+      const rechecked = questionRecord(audits.rechecked, id)?.conclusion
+      const primary = this.answersOriginalQuestion(original, answer.field, finding.field) ? answer : rechecked
+      const wrong = primary?.verdict === 'wrong' ? primary : answer.verdict === 'wrong' ? answer : undefined
+      // Both facts must agree with the card. Neither can override a pending catalog write.
+      const gate = wrong ?? primary
+      const url = gate?.citations[0]?.url
+      if (!holdsCatalogWrite(investigation) && primary && gate && url) {
+        const checked = this.citationText(gate.citations)
+        findings[id] = gate.verdict === 'ok' ? { verdict: 'ok', reason: gate.reason, url, checked }
+          : { verdict: 'exclude', reason: gate.reason, checked, hermes: gate.reason }
+      }
+      if (original.verdict === 'wrong') this.queueReviewFix(draft, id, original)
+      else if (wrong) this.queueReviewFix(draft, id, { verdict: 'wrong', field: wrong.field, reason: wrong.reason, question: null }, {
+        record: { revision: draft.revision, stage: wrong === rechecked ? 'rechecked' : 'fallback' },
+      })
+    }
+    investigation.questionChecksApplied = true
     this.save(draft)
   }
 
@@ -1636,7 +1666,7 @@ export class Job {
           }], { evidence, input, includeCurrent: !recorded }), event.id)
           if (record?.conclusion) text += `\nDato verificado: ${withReviewLinks(record.conclusion.reason)}`
           if (event.checked) text += `\nChecked: ${withReviewLinks(event.checked)}`
-          const earlier = record?.history ?? readRecordedChecks(this.s.stateDir, { id: draft.id, revision: recorded?.revision ?? draft.revision },
+          const earlier = record?.history ?? readRecordedChecks(this.s.stateDir, { id: draft.id, revision: recorded?.revision ?? draft.revision, catalogFixes: draft.catalogFixes },
             [event.id], this.s.now().getTime(), !recorded).get(event.id) ?? []
           const checks = recorded ? [recorded, ...earlier] : earlier
           text += `\n${[...recordedCheckLines(checks, draft.catalogFixes ?? []), ...eventResourceLines(event.id, evidence?.get(event.id), record ?? selection, record)].join('\n')}`

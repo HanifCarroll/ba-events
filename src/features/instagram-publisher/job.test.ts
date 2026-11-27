@@ -955,7 +955,7 @@ describe('tick: publisher investigation', () => {
     expect(w.slackCalls).toEqual([])
   })
 
-  it('answers an investigator ask using current and older research excerpts without reusing a prior verdict', async () => {
+  it.each(['checked note', 'exclusion note', 'referenced fix receipt'] as const)('verifies cited research from a %s without reusing a prior verdict', async source => {
     const { w, runs, finish } = world()
     const job = w.job()
     await job.tick()
@@ -964,40 +964,138 @@ describe('tick: publisher investigation', () => {
     const tickets = 'https://tickets.example.org/event'
     const doors = 'Apertura de puertas: 20:00.'
     const excerpt = 'Corrección: la función comienza a las 21:00.'
+    const olderQuote = source === 'checked note' ? doors : excerpt
+    const currentQuote = source === 'checked note' ? excerpt : doors
+    const citedUrl = source === 'checked note' ? tickets : older
+    const bareUrl = 'https://notes.example.org/no-quote'
+    const olderEvidence = `${older} — “${olderQuote}”; ${bareUrl}`
     during(w)
-    finish({ ...ok, reason: 'Earlier unproven conclusion.', checked: `${older} — “${doors}”` })
+    if (source === 'checked note') finish({ ...ok, reason: 'Earlier unproven conclusion.', checked: olderEvidence })
+    else if (source === 'exclusion note') finish({ verdict: 'exclude', reason: 'Earlier unproven conclusion.', hermes: olderEvidence })
+    else {
+      const receipt = { operation: uuid(20), id: flaggedId, field: 'starts_at', from: '2026-11-20T23:00:00.000Z', to: w.catalog[0]!.startsAt,
+        allOccurrences: false, at: w.clock.toISOString(), evidence: olderEvidence,
+        changes: [{ id: flaggedId, from: '2026-11-20T23:00:00.000Z', to: w.catalog[0]!.startsAt }] }
+      const unreferenced = { ...receipt, operation: uuid(21), evidence: 'https://notes.example.org/unreferenced — “Otro evento.”' }
+      writeFileSync(join(runs[0]!.dir, 'fixes.jsonl'), [receipt, unreferenced].map(item => JSON.stringify({ state: 'applied', receipt: item })).join('\n') + '\n')
+      finish({ verdict: 'fixed', fixes: [receipt.operation] })
+    }
     await job.regenerate(w.draft().id, [])
     await job.tick()
     expect(runs.map(run => run.request.revision)).toEqual([1, 2])
     job.s.reviewResources = async () => new Map([[flaggedId, { address: null, observations: [], officialPages: [
       { url: venue, excerpt: 'La función comienza a las 20:00.', fields: ['time'] },
     ] }]])
-    const research = [{ revision: 1, url: older, excerpt: doors }, { revision: 2, url: tickets, excerpt }]
+    const research = [{ revision: 1, url: older, excerpt: olderQuote }, { revision: 2, url: tickets, excerpt: currentQuote }]
     job.s.resolveQuestions = (input, subjects) => resolveReviewQuestionsWithOpenAI(DEFAULT_REVIEW, 'synthetic-key', 'test', input, subjects, async (_url, request) => {
       const { input: messages, text } = JSON.parse(String(request?.body))
       const payload = JSON.parse(messages[0].content[0].text)
-      expect(JSON.stringify(payload)).not.toContain('Earlier unproven conclusion.')
+      for (const ignored of ['Earlier unproven conclusion.', bareUrl, 'unreferenced']) expect(JSON.stringify(payload)).not.toContain(ignored)
       if (text.format.name === 'publisher_citation_check') {
-        expect(payload.claims).toMatchObject([{ id: flaggedId, research, proposed: { citations: [{ url: tickets, quote: excerpt }] } }])
+        expect(payload.claims).toMatchObject([{ id: flaggedId, research, proposed: { citations: [{ url: citedUrl, quote: excerpt }] } }])
         return modelResponse({ direct: [flaggedId], venue: [] })
       }
       expect(payload.events).toMatchObject([{ id: flaggedId, question: ask.question, pages: [{ url: venue }], research }])
-      return resolverResponse([{ id: flaggedId, field: 'starts_at', verdict: 'ok', reason: 'The ticket page corrects the earlier start.', citations: [{ url: tickets, quote: excerpt }] }])
+      return resolverResponse([{ id: flaggedId, field: 'starts_at', verdict: 'ok', reason: 'The correction confirms the start.', citations: [{ url: citedUrl, quote: excerpt }] }])
     })
     during(w, 20)
-    finish({ ...ask, checked: `${tickets} — “${excerpt}”` })
+    finish({ ...ask, checked: `${tickets} — “${currentQuote}”` })
     await job.tick()
     const draft = w.draft()
     expect(draft.review?.result?.questionResolution?.fallback?.records).toMatchObject([
       { id: flaggedId, question: ask.question, history: [{ revision: 1 }, { revision: 2 }],
-        sources: [{ url: venue }, { url: older, quote: doors }, { url: tickets, quote: excerpt }],
-        conclusion: { verdict: 'ok', citations: [{ url: tickets, quote: excerpt }] } },
+        sources: [{ url: venue }, { url: older, quote: olderQuote }, { url: tickets, quote: currentQuote }],
+        conclusion: { verdict: 'ok', citations: [{ url: citedUrl, quote: excerpt }] } },
     ])
     expect(draft.slack.ts).toBeNull()
     expect(w.broadcasts()).toEqual([])
     slot(w)
     await job.tick()
     expect(w.draft()).toMatchObject({ state: 'published', threads: { state: 'published' } })
+  })
+
+  it.each(['answered', 'still open', 'retry', 'contradicted'] as const)('rechecks the original admission question after a barrio answer (%s)', async outcome => {
+    const priceFlag = { ...question, field: 'price', question: 'Is general admission free?' }
+    const { w, finish } = world(priceFlag)
+    w.catalog[0]!.barrio = 'Agronomía'
+    const job = w.job()
+    const venue = 'https://venue.example.org/performance'
+    const venueQuote = 'La función es en Av. San Martín 5885.'
+    const tickets = 'https://tickets.example.org/performance'
+    const ticketQuote = outcome === 'still open' ? 'Entrada libre hasta las 20:00.'
+      : outcome === 'contradicted' ? 'La entrada general cuesta $5000.' : 'La entrada general es libre y gratuita.'
+    const barrioQuestion = 'Which barrio is the performance venue in?'
+    job.s.reviewResources = async () => new Map([[flaggedId, { address: null, observations: [],
+      officialPages: [{ url: venue, excerpt: venueQuote, fields: ['venue'] }],
+    }]])
+    job.s.fetchUsig = async () => Response.json({ barrio: 'Agronomia' })
+    let rechecks = 0
+    const scanned: string[] = []
+    job.s.resolveQuestions = (input, subjects) => resolveReviewQuestionsWithOpenAI(DEFAULT_REVIEW, 'synthetic', 'test', input, subjects, async (_url, request) => {
+      const { input: messages, text } = JSON.parse(String(request?.body))
+      const payload = JSON.parse(messages[0].content[0].text)
+      if (text.format.name === 'publisher_citation_check') {
+        return modelResponse(payload.claims[0].topic === 'barrio' ? { direct: [], venue: [flaggedId] } : { direct: [flaggedId], venue: [] })
+      }
+      const [subject] = payload.events
+      scanned.push(subject.field)
+      if (subject.field === 'barrio') return resolverResponse([], [selection(flaggedId, [{ url: venue, quote: venueQuote }],
+        { url: venue, quote: venueQuote, street: 'Av. San Martín', number: '5885' })])
+      if (!subject.research.length) return resolverResponse([])
+      expect(subject).toMatchObject({ question: priceFlag.question, research: [{ revision: 1, url: tickets, excerpt: ticketQuote }] })
+      rechecks++
+      if (outcome === 'retry' && rechecks === 1) throw new Error('Price verifier unavailable')
+      return resolverResponse(outcome === 'still open' ? [] : [
+        { id: flaggedId, field: 'price', verdict: outcome === 'contradicted' ? 'wrong' : 'ok',
+          reason: outcome === 'contradicted' ? 'The ticket page confirms paid admission.' : 'The ticket page confirms free admission.',
+          citations: [{ url: tickets, quote: ticketQuote }] },
+      ])
+    })
+    await job.tick()
+    expect(w.draft().review?.result?.questionResolution?.quick).toMatchObject({ resolved: [], records: [{ state: 'complete' }] })
+    if (outcome === 'contradicted') {
+      const draft = w.draft()
+      draft.reviewRebuilds = { day: '2026-11-18', count: 2 }
+      writeFileSync(job.draftFile(draft.id), JSON.stringify(draft))
+    }
+    during(w)
+    finish({ ...ask, field: 'barrio', question: barrioQuestion, checked: `${tickets} — “${ticketQuote}”` })
+    await job.tick()
+    const first = w.draft().review?.result?.questionResolution
+    if (outcome === 'retry') {
+      expect(first?.rechecked?.records).toMatchObject([{ state: 'unavailable' }])
+      expect(w.broadcasts()).toEqual([])
+      during(w, 20)
+      await job.tick()
+      expect(w.draft().review?.result?.questionResolution?.fallback).toEqual(first?.fallback)
+    }
+    const draft = w.draft()
+    expect(scanned).toEqual(outcome === 'retry' ? ['price', 'barrio', 'price', 'price'] : ['price', 'barrio', 'price'])
+    expect(draft.review?.result?.questionResolution?.fallback?.records).toMatchObject([{ field: 'barrio', conclusion: { verdict: 'ok' } }])
+    const checked = draft.review?.result?.questionResolution?.rechecked?.records?.[0]
+    expect(checked).toMatchObject({ field: 'price', question: priceFlag.question, state: 'complete', sources: expect.arrayContaining([{ url: tickets, label: 'Fuente de la investigación', quote: ticketQuote }]) })
+    if (outcome === 'still open') {
+      expect(checked?.conclusion).toBeUndefined()
+      expect(w.broadcasts()).toHaveLength(1)
+      const text = w.broadcasts()[0]?.text
+      for (const line of [priceFlag.question, 'Por qué sigue abierta la pregunta:', `<${tickets}>\n“${ticketQuote}”`]) expect(text).toContain(line)
+      expect(text).not.toContain(barrioQuestion)
+    } else if (outcome === 'contradicted') {
+      expect(checked?.conclusion).toMatchObject({ verdict: 'wrong', citations: [{ url: tickets, quote: ticketQuote }] })
+      expect(draft.review?.investigation?.findings?.[flaggedId]).toMatchObject({ verdict: 'exclude' })
+      expect(w.broadcasts()).toEqual([])
+      const fix = w.alerts.find(item => item.key === `review-fix/${flaggedId}`)?.text
+      expect(fix).toContain('The ticket page confirms paid admission.')
+      expect(fix).toContain(`<${tickets}>\n“${ticketQuote}”`)
+      expect(fix).not.toContain('barrio oficial:')
+    } else {
+      expect(checked?.conclusion).toMatchObject({ verdict: 'ok', citations: [{ url: tickets, quote: ticketQuote }] })
+      expect(draft.review?.investigation?.findings?.[flaggedId]).toMatchObject({ verdict: 'ok' })
+      expect(w.broadcasts()).toEqual([])
+      slot(w)
+      await job.tick()
+      expect(w.draft()).toMatchObject({ state: 'published', threads: { state: 'published' } })
+    }
   })
 
   it('uses the saved answer to a reworded investigator question in a mixed decision notice', async () => {
@@ -1543,6 +1641,55 @@ describe('tick: publisher investigation', () => {
     expect(w.broadcasts()).toEqual([])
     expect(w.ig.published).toEqual([])
     expect(w.threads.posts).toEqual([])
+  })
+
+  it('keeps the quick price contradiction in the repair alert and reports the barrio separately', async () => {
+    const priceFlag = { ...question, field: 'price', question: 'Is general admission free?' }
+    const { w, finish, runs } = world(priceFlag)
+    w.config.auto.finde = false
+    w.catalog[0]!.barrio = 'Agronomía'
+    const job = w.job()
+    const tickets = 'https://tickets.example.org/paid-performance'
+    const price = 'La entrada general cuesta $5000.'
+    const priceReason = 'The ticket page contradicts free admission.'
+    const venue = 'https://venue.example.org/performance-address'
+    const address = 'Av. San Martín 5885'
+    let reads = 0
+    job.s.reviewResources = async () => new Map([[flaggedId, { address: null, observations: [], officialPages: [++reads === 1
+      ? { url: tickets, excerpt: price, fields: ['price'] } : { url: venue, excerpt: address, fields: ['venue'] },
+    ] }]])
+    job.s.fetchUsig = async () => Response.json({ barrio: 'Agronomia' })
+    job.s.resolveQuestions = (input, subjects) => resolveReviewQuestionsWithOpenAI(DEFAULT_REVIEW, 'synthetic', 'test', input, subjects, async (_url, request) => {
+      const { input: messages, text } = JSON.parse(String(request?.body))
+      const payload = JSON.parse(messages[0].content[0].text)
+      if (text.format.name === 'publisher_citation_check') return modelResponse({ direct: [flaggedId], venue: [flaggedId] })
+      return payload.events[0].field === 'price' ? resolverResponse([
+        { id: flaggedId, field: 'price', verdict: 'wrong', reason: priceReason, citations: [{ url: tickets, quote: price }] },
+      ]) : resolverResponse([], [selection(flaggedId, [{ url: venue, quote: address }], { url: venue, quote: address, street: 'Av. San Martín', number: '5885' })])
+    })
+    await job.tick()
+    expect(runs[0]?.request.events).toMatchObject([{ id: flaggedId, field: 'price', verdict: 'wrong', reason: priceReason }])
+    const alert = job.s.alert
+    job.s.alert = async (...args) => args[0] === `review-fix/${flaggedId}` ? false : alert(...args)
+    during(w)
+    const barrioQuestion = 'Which barrio is the performance venue in?'
+    finish({ ...ask, field: 'barrio', question: barrioQuestion })
+    await job.tick()
+    const draft = w.draft()
+    expect(draft.pendingReviewFixes?.map(fix => fix.event?.record)).toEqual([{ revision: 1, stage: 'quick' }])
+    expect(draft.review?.result?.questionResolution?.quick?.records).toMatchObject([{ field: 'price', conclusion: { verdict: 'wrong', reason: priceReason } }])
+    expect(draft.review?.result?.questionResolution?.fallback?.records).toMatchObject([{ field: 'barrio', conclusion: { verdict: 'ok' } }])
+    expect(draft.review?.investigation?.findings?.[flaggedId]).toMatchObject({ verdict: 'ask' })
+    const thread = w.reviewPosts.find(post => post.text.startsWith('Revisión: investigación'))?.text
+    for (const line of [priceReason, `<${tickets}>\n“${price}”`, `<${venue}>\n“${address}”`, 'barrio oficial: Agronomia']) expect(thread).toContain(line)
+    expect(thread).not.toContain(barrioQuestion)
+    expect(w.broadcasts()).toEqual([])
+    job.s.alert = alert
+    await job.tick()
+    expect(reads).toBe(2)
+    const fix = w.alerts.find(item => item.key === `review-fix/${flaggedId}`)?.text
+    for (const line of [priceReason, `<${tickets}>\n“${price}”`]) expect(fix).toContain(line)
+    for (const unrelated of [venue, address, 'Agronomia']) expect(fix).not.toContain(unrelated)
   })
 
   it.each(['legacy notification', 'approval', 'rejection', 'cutoff'] as const)('does not broadcast finished findings after %s', async blocker => {
