@@ -67,7 +67,7 @@ export function* clockTokens(source: string) {
     const rightClock = right.standalone || right.sharedEnd || articleJoin && right.sharedStart
     const openedWordRange = wordJoin && left.opensRange && rightClock
     if (left.nonClock || right.nonClock) return 'non-clock'
-    if (left.standalone && rightClock || bareStart && (right.sharedEnd || openedWordRange && left.opensWithArticle)) return 'clock'
+    if (left.standalone && rightClock || bareStart && (right.sharedEnd || openedWordRange && left.opensWithArticle && !right.meridiem)) return 'clock'
     if (openedWordRange || bareStart && right.standalone && right.meridiem) return 'closing-only'
   })
   for (const [index, { start, end, time, standalone, bareAfterColon, nonClock }] of tokens.entries()) {

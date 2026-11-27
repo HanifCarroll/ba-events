@@ -151,8 +151,7 @@ describe('intake clock tokens', () => {
     }
   })
 
-  it('requires a separate citation for either hour of an ambiguous meridiem range', () => {
-    const ambiguous = 'de 8 a 11 pm'
+  it.each(['de 8 a 11 pm', 'Música de las 8 a las 11 pm'])('requires a separate citation for either hour in %s', ambiguous => {
     for (const time of ['08:00', '20:00', '23:00']) expect(citesClock(ambiguous, time)).toBe(false)
     expect(citesClock(`${ambiguous}. Show: 11 pm`, '23:00')).toBe(true)
     expect(citesClock('de 8 pm a 11 pm', '20:00')).toBe(true)
