@@ -32,6 +32,9 @@ describe('official-page evidence', () => {
   it.each([
     ['Lunes 23 de noviembre, de 20 a 24 h', '20:00', '00:00'],
     ['Lunes 23 - 21 hs', '21:00', '23:00'],
+    ['Lunes 23 de noviembre: 18 a 21 hs', '18:00', '21:00'],
+    ['Lunes 23 de noviembre, 18–21 hs', '18:00', '21:00'],
+    ['Show 21 hs $8000 anticipada', '21:00', '20:00'],
     ['Precios: 10–15:50 USD. Show: 21 hs', '21:00', '10:00'],
     ['Duración: de 2 a 3 horas. Show: 21 hs', '21:00', '02:00'],
     ['de 9 a 13 horas. Show: 13 horas', '13:00', '12:00'],
@@ -134,7 +137,7 @@ describe('official-page evidence', () => {
     ['20/11/2026 entradas', '2026-11-20', '20:00', 'time 20:00'],
     ['21:23 hs', '2026-11-23', '21:23', 'day 23'],
     ['Viernes, 20 de Noviembre 21:00 - 23:30 hs', '2026-11-20', '23:30', 'time 23:30'],
-    ['viernes 20 de noviembre de 21:00 a las 23:30 hs', '2026-11-20', '23:30', 'time 23:30'],
+    ['viernes 20 de noviembre de 21:00 a 23:30 hs', '2026-11-20', '23:30', 'time 23:30'],
     ['viernes 20 de noviembre de 21 a 23 hs', '2026-11-20', '23:00', 'time 23:00'],
     ['20/11/2026 de 21 a 23 hs', '2026-11-20', '23:00', 'time 23:00'],
     ['20/11/2026 de 21 a 23:30 hs', '2026-11-20', '23:30', 'time 23:30'],

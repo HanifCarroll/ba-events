@@ -14,7 +14,7 @@ describe('intake clock tokens', () => {
     ['20 a 24 h', '20:00'], ['20 - 24 hs', '20:00'], ['20–2 h', '20:00'], ['de 21 a 23 h', '21:00'],
     ['de 9 a 13 hs', '09:00'], ['20 a 24hs', '20:00'], ['de 20.30 a 24 h', '20:30'],
     ['de 20 a 0 h', '20:00'], ['de 20 a 00 h', '20:00'], ['20–23:30', '20:00'],
-    ['desde 20 hasta las 24 h', '20:00'], ['20-24:00', '20:00'],
+    ['desde 20 hasta 24 h', '20:00'], ['20-24:00', '20:00'],
   ])('matches the start of %s as %s', (excerpt, time) => {
     expect(citesClock(excerpt, time)).toBe(true)
   })
@@ -60,7 +60,7 @@ describe('intake clock tokens', () => {
   })
 
   it.each([
-    'Viernes de 20 - 23 hs', 'Viernes desde 20 – 23 hs', 'Viernes de las 20 a las 23 hs',
+    'Viernes de 20 - 23 hs', 'Viernes desde 20 – 23 hs', 'Viernes de las 20 a 23 hs',
     'Viernes. Horario: 20 - 23 hs', 'Viernes\n20 - 23 hs', 'Viernes 20 hs - 23 hs',
   ])('accepts a real range start in %s', excerpt => {
     expect(citesClock(excerpt, '20:00')).toBe(true)
@@ -68,12 +68,43 @@ describe('intake clock tokens', () => {
   })
 
   it.each([
+    ['Sábado 14 a 18 hs', '14:00', '18:00'], ['Domingo 15 hasta 20 hs', '15:00', '20:00'],
+    ['20 de noviembre: 18 a 21 hs', '18:00', '21:00'],
+    ['20 de noviembre, 18–21 hs', '18:00', '21:00'],
+    ['20 de setiembre: 18 - 21 hs', '18:00', '21:00'],
+  ])('uses the opening clock in %s rather than its closing hour', (excerpt, start, end) => {
+    expect(citesClock(excerpt, start)).toBe(true)
+    expect(citesClock(excerpt, end)).toBe(false)
+  })
+
+  it.each([
+    ['Funciones: 20 y 21 a las 18:00 hs', '18:00', ['20:00', '21:00']],
+    ['Funciones: 12 y 13 a la 1:00', '01:00', ['12:00', '13:00']],
+    ['Viernes de las 20 a las 23 hs', '23:00', ['20:00']],
+    ['desde 20 hasta las 23 hs', '23:00', ['20:00']],
+    ['20—23 hs', '23:00', ['20:00']],
+  ] as const)('does not use a clock introducer or unrelated punctuation as a range gap in %s', (excerpt, time, wrong) => {
+    expect(citesClock(excerpt, time)).toBe(true)
+    for (const value of wrong) expect(citesClock(excerpt, value)).toBe(false)
+  })
+
+  it.each([
     ['10–15.50', '10:00'], ['Precios: 10–15.50 USD', '15:50'], ['10–15.50 USD', '10:00'],
-    ['10–15:50 ARS', '10:00'], ['10 a 15 hs pesos', '10:00'], ['10 a 15 hs $', '15:00'],
-    ['10:00–15:50 (USD)', '10:00'], ['Precios: 10–15:50', '10:00'],
-    ['10–15:50 $', '15:50'], ['$10–15 hs', '15:00'],
+    ['Precios: 10–15:50 ARS', '10:00'], ['10 a 15 pesos', '10:00'], ['10 a 15 $', '15:00'],
+    ['10:00–15.50 (USD)', '10:00'], ['Precios: 10–15:50', '10:00'],
+    ['10–15.50 $', '15:50'], ['$10–15 hs', '15:00'],
   ])('does not infer or cite a price as a clock in %s', (excerpt, time) => {
     expect(citesClock(excerpt, time)).toBe(false)
+  })
+
+  it.each(['Show 21 hs $8000 anticipada', '21 hs - $5000', '21:00 $8000', '21 hs - $20'])('keeps the stated clock in %s next to a price', excerpt => {
+    expect(citesClock(excerpt, '21:00')).toBe(true)
+    expect(citesClock(excerpt, '20:00')).toBe(false)
+  })
+
+  it.each(['20 a 21 hs $8000', '20 a 21:00 ARS $8000'])('keeps the range ending in an explicit clock before a price: %s', excerpt => {
+    expect(citesClock(excerpt, '20:00')).toBe(true)
+    expect(citesClock(excerpt, '21:00')).toBe(false)
   })
 
   it('still reads a clock range when the end has a colon or a time unit and the price is separate', () => {
@@ -99,10 +130,11 @@ describe('intake clock tokens', () => {
     }
   })
 
-  it('does not infer an ambiguous start from an end with meridiem', () => {
-    expect(citesClock('de 8 a 11 pm', '08:00')).toBe(false)
-    expect(citesClock('de 8 a 11 pm', '20:00')).toBe(false)
-    expect(citesClock('de 8 a 11 pm', '23:00')).toBe(true)
+  it('requires a separate citation for either hour of an ambiguous meridiem range', () => {
+    const ambiguous = 'de 8 a 11 pm'
+    for (const time of ['08:00', '20:00', '23:00']) expect(citesClock(ambiguous, time)).toBe(false)
+    expect(citesClock(`${ambiguous}. Show: 11 pm`, '23:00')).toBe(true)
+    expect(citesClock('de 8 pm a 11 pm', '20:00')).toBe(true)
   })
 
   it('requires the closing clock and its unit in the quote when they establish the start', () => {
