@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { EMBEDDING_TASK_LIMIT } from '../src/jobs-worker/catalog-maintenance.ts'
+import { EMBEDDING_TASK_LIMIT } from '../src/shared/lib/db/vector-sync.ts'
 
 export function submitEmbeddingTask(task: 'populate-embeddings' | 'reembed-stale', args: string[]) {
   const usage = `bun scripts/${task}.ts --staging|--production [--limit 1..${EMBEDDING_TASK_LIMIT}]`

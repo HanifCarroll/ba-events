@@ -1,8 +1,10 @@
 import type { D1Database } from '@cloudflare/workers-types'
 import { randomUUID } from 'node:crypto'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { freshD1 } from '../../../tests/support/d1.ts'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { buildSearchDocument, CURRENT_EMBEDDING_VERSION } from '#shared/lib/ai/embeddings.ts'
+import { reconcileCatalog } from '#shared/lib/db/vector-sync.ts'
+import { freshD1 } from '../../../tests/support/d1.ts'
+import { fakeVectorize } from '../../../tests/support/vectorize.ts'
 import { applyCatalogFix, type CatalogQuery, type FixInput } from './catalog-fix.ts'
 
 const old = 'Entrenamiento canino.'
@@ -72,15 +74,25 @@ describe('catalog-fix on real D1', () => {
     expect(await query('SELECT operation FROM publisher_catalog_fixes WHERE operation = ?', [operation])).toEqual([])
   })
 
-  it('changes one title and its canonical search document without pretending the vector was refreshed', async () => {
+  it('marks a publisher correction stale and refreshes its existing vector on reconcile', async () => {
     const { ids, input, name } = await fixture()
+    const { index, vectors } = fakeVectorize()
+    const id = input.id
+    const metadata = { status: 'scheduled', starts_at: Date.parse('2026-12-03T00:00:00.000Z') }
+    vectors.set(id, { id, values: [0.1], metadata })
     const title = '18 mundos de teatro físico'
+    const document = buildSearchDocument({ name: title, description_es: corrected, venue_name: name })
     await applyCatalogFix(query, { ...input, field: 'name', from: show, to: title, allOccurrences: false }, () => randomUUID())
-    expect(await query('SELECT name, search_document, embedding_version FROM events WHERE id = ?', [input.id])).toEqual([{
-      name: title, search_document: buildSearchDocument({ name: title, description_es: corrected, venue_name: name }),
-      embedding_version: CURRENT_EMBEDDING_VERSION - 1,
+    expect(await query('SELECT name, search_document, embedding_version FROM events WHERE id = ?', [id])).toEqual([{
+      name: title, search_document: document, embedding_version: CURRENT_EMBEDDING_VERSION - 1,
     }])
     expect(await query('SELECT name FROM events WHERE id = ?', [ids[1]!])).toEqual([{ name: show }])
+    expect(vectors.get(id)?.values).toEqual([0.1])
+    const embed = vi.fn(async () => ({ embedding: [0.9], searchDocument: document }))
+    expect(await reconcileCatalog(db, index, { embed, maxEmbeds: 1 })).toMatchObject({ reembedded: 1 })
+    expect(embed).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ name: title, venue_name: name }))
+    expect(vectors.get(id)).toEqual({ id, values: [0.9], metadata })
+    expect(await query('SELECT embedding_version FROM events WHERE id = ?', [id])).toEqual([{ embedding_version: CURRENT_EMBEDDING_VERSION }])
   })
 
   it('applies a shared start-clock correction to different dates, but refuses a date shift', async () => {

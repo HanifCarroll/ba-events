@@ -6,14 +6,13 @@
  * serializes with every other write, so the Postgres advisory locks and `FOR UPDATE` have nothing left to guard. Checks
  * that must hold when the batch commits are `batchAssert` statements inside it, with the Postgres error messages. A
  * commit runs inside `intakeCommitBatch`, which sets `write_context` so the protection trigger lets it change protected
- * facts. Embeddings live in Vectorize (id = event id, metadata `{ status, starts_at }` in epoch ms, delivery PR 03).
- * A commit that affects the vector queues the event in `vector_sync`. A newly prepared vector clears the entry on
- * upsert; a metadata-only write leaves it for nightly reconcile because the vector read may have been stale.
+ * facts. The shared vector module plans index work for the batch and settles it after commit or on receipt replay.
  */
 import type { D1Database, R2Bucket, Vectorize } from '@cloudflare/workers-types'
 import { Effect } from 'effect'
 import { batchAssert, intakeCommitBatch } from '#shared/lib/db/d1.server.ts'
 import { eventColumnsWith } from '#shared/lib/db/event-columns.ts'
+import { planVectorWrite } from '#shared/lib/db/vector-sync.ts'
 import type { EventInsert } from '#shared/lib/types.ts'
 import { importTry, ImportOperationError } from '../core/effect-utils.ts'
 import { mostSimilarVenue, similarIntakeVenues } from '../core/venue-similarity-d1.ts'
@@ -114,24 +113,8 @@ export function d1Intake({ db, evidence, artwork, vectors }: IntakeBindings, sit
       WHERE o.id IS NULL AND json_extract(x.value, '$.kind') IS NOT 'official_page')`, JSON.stringify(plan.evidence)),
   ]
 
-  const vectorMetadataChanged = (previous: Row | null, event: EventInsert) => previous !== null &&
-    (previous.status !== event.status || Date.parse(String(previous.starts_at)) !== Date.parse(event.starts_at))
-
-  const upsertVector = async (plan: IntakePlanRow, previous: Row | null) => {
-    if (plan.action === 'link') return
-    // For a reschedule or status change, keep the same vector values if only its metadata changed.
-    const embedding = plan.payload.embedding ?? (vectorMetadataChanged(previous, plan.payload)
-      ? (await vectors.getByIds([plan.event_id]))[0]?.values : undefined)
-    if (!embedding) return
-    const event = await db.prepare('SELECT status, starts_at, search_document, embedding_version FROM events WHERE id = ?').bind(plan.event_id)
-      .first<{ status: string; starts_at: string; search_document: string | null; embedding_version: number }>()
-    // A nightly rebuild can supersede a still-current intake receipt's prepared embedding.
-    if (!event || plan.payload.embedding && (event.search_document !== plan.payload.search_document ||
-      event.embedding_version !== (plan.payload.embedding_version ?? 1))) return
-    await vectors.upsert([{ id: plan.event_id, values: embedding, metadata: { status: event.status, starts_at: Date.parse(event.starts_at) } }])
-    // A metadata-only refresh may have reused a stale vector. Leave any pending embedding repair queued.
-    if (plan.payload.embedding) await db.prepare('DELETE FROM vector_sync WHERE event_id = ?').bind(plan.event_id).run()
-  }
+  const vectorWrite = (plan: IntakePlanRow, previous: Row | null) => plan.action === 'link' ? null :
+    planVectorWrite(db, plan.event_id, { source: 'intake', patch: plan.payload, previous })
 
   const store: IntakeStore = {
     // ---------------------------------------------------------------------------------------------------------------
@@ -445,6 +428,7 @@ export function d1Intake({ db, evidence, artwork, vectors }: IntakeBindings, sit
         e.doors_at ?? retainedDoors] as const
       const protects = [...PROTECTED_FIELDS, ...detailProtectionColumns.filter(column =>
         e[column === 'organizer_url' ? 'organizer_name' : column] !== undefined)]
+      const vector = vectorWrite(plan, previous)
       const writes = []
       if (plan.action === 'create') {
         writes.push(db.prepare(INSERT_INTAKE_EVENT).bind(
@@ -466,10 +450,7 @@ export function d1Intake({ db, evidence, artwork, vectors }: IntakeBindings, sit
         ON CONFLICT (event_id, candidate_id, observation_id) DO UPDATE SET revision = excluded.revision`)
         .bind(plan.event_id, plan.candidate_id, plan.revision, JSON.stringify(plan.evidence)))
       if (plan.action !== 'link') {
-        // A missed write or a stale Vectorize read can be repaired from the stored search document.
-        if (e.embedding || vectorMetadataChanged(previous, e)) {
-          writes.push(db.prepare('INSERT INTO vector_sync (event_id) VALUES (?) ON CONFLICT (event_id) DO NOTHING').bind(plan.event_id))
-        }
+        if (vector?.queue) writes.push(vector.queue)
         writes.push(db.prepare(`INSERT INTO event_intake_protection (event_id, fields, plan_id, authority, observed_at) VALUES (?, ?, ?, ?, ?)
           ON CONFLICT (event_id) DO UPDATE SET fields = (SELECT json_group_array(value) FROM (
               SELECT value FROM json_each(event_intake_protection.fields) UNION SELECT value FROM json_each(excluded.fields)
@@ -492,15 +473,11 @@ export function d1Intake({ db, evidence, artwork, vectors }: IntakeBindings, sit
         if (committed?.receipt) return committed.receipt
         throw error
       }
-      await upsertVector(plan, previous)
+      await vector?.settle(vectors)
       return receipt
     }),
     replayReceipt: plan => d1('intake.commit', async () => {
-      // Repair the vector only while this plan is still the event's accepted state: every create or update commit points
-      // the protection row at itself, so a later correction makes an older plan's embedding stale.
-      const current = await db.prepare(`SELECT 1 FROM event_intake_protection p JOIN vector_sync q ON q.event_id = p.event_id
-        WHERE p.event_id = ? AND p.plan_id = ?`).bind(plan.event_id, plan.id).first()
-      if (current) await upsertVector(plan, (plan.receipt!.previous_event as Row | null) ?? null)
+      await vectorWrite(plan, (plan.receipt!.previous_event as Row | null) ?? null)?.settle(vectors, plan.id)
       return plan.receipt!
     }),
 

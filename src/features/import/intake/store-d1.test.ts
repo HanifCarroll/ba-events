@@ -10,7 +10,7 @@ import { freshD1 } from '../../../../tests/support/d1.ts'
 import { fakeVectorize } from '../../../../tests/support/vectorize.ts'
 import { fakeR2 } from '../../../../tests/support/r2.ts'
 import { buildSearchDocument, CURRENT_EMBEDDING_VERSION } from '#shared/lib/ai/embeddings.ts'
-import { reconcileCatalog } from '../../../jobs-worker/catalog-maintenance.ts'
+import { reconcileCatalog } from '#shared/lib/db/vector-sync.ts'
 import { describeImage } from './collection.ts'
 import { readOfficialPage } from './official-page.ts'
 import { commitPlanEffect, previewCandidateEffect, submitCandidateEffect } from './service.ts'
@@ -366,7 +366,10 @@ describe.skipIf(bun)('the operator flow on D1', () => {
     expect(artwork.objects.has(image.object_key)).toBe(true)
     expect(await db.prepare('SELECT source, external_id, search_document, embedding_version, time_tba, is_free FROM events WHERE id = ?').bind(preview.event_id).first())
       .toEqual({ source: 'instagram', external_id: candidate, search_document: 'Synthetic Jazz | Synthetic Venue', embedding_version: 2, time_tba: 0, is_free: 0 })
-    expect(vectors.vectors.get(preview.event_id)?.values[0]).toBeCloseTo(0.2)
+    const indexed = vectors.vectors.get(preview.event_id)
+    expect(indexed).toMatchObject({ id: preview.event_id, metadata: { status: 'scheduled', starts_at: Date.parse(preview.payload.starts_at) } })
+    expect(indexed?.values[0]).toBeCloseTo(0.2)
+    expect(await db.prepare('SELECT event_id FROM vector_sync').first()).toBeNull()
 
     // A second candidate held for its venue, with a hint from the importers' matcher.
     const other = id()
