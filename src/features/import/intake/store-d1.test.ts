@@ -214,6 +214,36 @@ describe.skipIf(bun)('commit_intake_plan on D1', () => {
     expect((await run(store.plan(stale))).receipt).toBeNull()
   })
 
+  it('refuses new and previously prepared venue text for a hidden-location target', async () => {
+    await source()
+    const venueId = await venue('PrivateVenueToken')
+    const post = await observation((await run(store.reserveCollection)).id)
+    const candidate = id(), event = id()
+    await db.prepare(`INSERT INTO events (id, name, starts_at, source, location_hidden, search_document)
+      VALUES (?, 'Synthetic Jazz', '2026-11-21T00:00:00.000Z', 'luma', 1, 'Synthetic Jazz')`).bind(event).run()
+    const metadata = { status: 'scheduled', starts_at: Date.parse('2026-11-21T00:00:00Z') }
+    vectors.vectors.set(event, { id: event, values: [0.1], metadata })
+    await run(store.submitCandidate(candidate, 0, { name: 'Synthetic Jazz' } as never))
+    const cited = [{ observation_id: post, fields: ['venue'] }]
+    const unprepared = await plan(candidate, 1, 'update', event, body(venueId, { embedding: undefined, search_document: undefined }), cited)
+    const embed = vi.fn(async () => ({ searchDocument: 'Synthetic Jazz. Venue: PrivateVenueToken', embedding: Array(1536).fill(0.9) }))
+    const presentation = vi.fn(async () => ({ description_display_es: null, description_display_en: null,
+      description_summary_es: null, description_summary_en: null }))
+    const reason = 'Intake cannot attach a venue to a hidden-location event'
+    expect(await fails(commitPlanEffect(store, unprepared, { embed, presentation }))).toBe(reason)
+    expect(embed).not.toHaveBeenCalled()
+    expect((await run(store.plan(unprepared))).receipt).toBeNull()
+
+    const prepared = await plan(candidate, 1, 'update', event, body(venueId, { search_document: 'Synthetic Jazz. Venue: PrivateVenueToken' }), cited)
+    expect(await fails(store.commitPlan(prepared))).toBe(reason)
+    expect((await run(store.plan(prepared))).receipt).toBeNull()
+    expect(await db.prepare('SELECT venue_id, search_document FROM events WHERE id = ?').bind(event).first())
+      .toEqual({ venue_id: null, search_document: 'Synthetic Jazz' })
+    expect(await db.prepare("SELECT count(*) AS n FROM events_fts WHERE events_fts MATCH 'PrivateVenueToken'").first('n')).toBe(0)
+    expect(vectors.vectors.get(event)).toEqual({ id: event, values: [0.1], metadata })
+    expect(await db.prepare('SELECT event_id FROM vector_sync WHERE event_id = ?').bind(event).first()).toBeNull()
+  }, 15_000)
+
   it('rejects a stale intake plan after a publisher correction; fresh direct intake evidence can supersede it', async () => {
     await source()
     const venueId = await venue()

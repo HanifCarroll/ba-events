@@ -222,9 +222,11 @@ export function d1Catalog(db: D1Database, vectors: Vectorize): CatalogStore {
       return insertImportedEvent(db, vectors, crypto.randomUUID(), { ...encodeEvent(row), embedding })
     },
 
-    updateEvent(id, patch, writer = 'importer') {
+    async updateEvent(id, patch, writer = 'importer') {
       const { embedding, ...row } = patch
-      return writeEvent(db, vectors, { writer, id, patch: { ...encodeEvent(row), embedding } })
+      const result = await writeEvent(db, vectors, { writer, id, patch: { ...encodeEvent(row), embedding } })
+      if (result.vectorFailure) console.error('[catalog] Vectorize settlement failed after commit; repair stays queued', { id, writer })
+      return result
     },
 
     async eventsNeedingEnrichment(query) {

@@ -134,6 +134,15 @@ async function syncMetadata(vectors: Vectorize, rows: readonly VectorRow[], rewr
   return { updated, missing }
 }
 
+async function clearSettledRows(db: D1Database, queue: 'vector_sync' | 'vector_metadata_sync', rows: readonly StoredVector[]) {
+  for (let offset = 0; offset < rows.length; offset += VECTOR_CHUNK) {
+    await db.prepare(`DELETE FROM ${queue} WHERE event_id IN (
+      SELECT e.id FROM json_each(?) s JOIN events e ON e.id = json_extract(s.value, '$.id')
+      WHERE ${vectorFields.slice(1).map(key => `e.${key} IS json_extract(s.value, '$.${key}')`).join(' AND ')})`)
+      .bind(JSON.stringify(rows.slice(offset, offset + VECTOR_CHUNK))).run()
+  }
+}
+
 /** Queue hourly aging in the event batch, then rewrite metadata without regenerating embeddings. */
 export function planPastVectors(db: D1Database, eligibility: string, values: readonly unknown[]) {
   return {
@@ -144,12 +153,7 @@ export function planPastVectors(db: D1Database, eligibility: string, values: rea
       const owned = new Set(queued)
       const absent = new Set(missing)
       const settled = applied.filter(row => owned.has(row.id) && !absent.has(row.id))
-      for (let offset = 0; offset < settled.length; offset += VECTOR_CHUNK) {
-        await db.prepare(`DELETE FROM vector_sync WHERE event_id IN (
-          SELECT e.id FROM json_each(?) s JOIN events e ON e.id = json_extract(s.value, '$.id')
-          WHERE ${vectorFields.slice(1).map(key => `e.${key} IS json_extract(s.value, '$.${key}')`).join(' AND ')})`)
-          .bind(JSON.stringify(settled.slice(offset, offset + VECTOR_CHUNK))).run()
-      }
+      await clearSettledRows(db, 'vector_sync', settled)
       return { marked: applied.length, vectorsUpdated: updated }
     },
   }
@@ -170,7 +174,13 @@ export function planCorrectedVector(before: DocumentState, field: EventColumn, a
   const changed = document !== before.search_document
   // The HTTP transport has no index binding. The SQL envelope queues this for nightly settlement.
   return { document, version: changed ? CURRENT_EMBEDDING_VERSION - 1 : before.embedding_version,
-    sync: changed || field === 'status' || field === 'starts_at' }
+    sync: changed ? 'document' : field === 'status' || field === 'starts_at' ? 'metadata' : null }
+}
+
+function rebuildGuard(row: StaleRow, scheduled: boolean) {
+  return { sql: `${scheduled ? "status = 'scheduled' AND " : ''}embedding_version IS ? AND search_document IS ?
+    AND EXISTS (SELECT 1 FROM events_with_venues v WHERE v.id = events.id AND ${searchViewInputs.map(key => `v.${key} IS ?`).join(' AND ')})`,
+    values: [row.embedding_version, row.search_document, ...searchViewInputs.map(key => row[key])] }
 }
 
 interface ReconcileOptions {
@@ -210,10 +220,9 @@ export async function reconcileCatalog(db: D1Database, vectors: Vectorize, optio
     const { embedding, searchDocument } = await embed(input)
     const write = await writeEvent(db, vectors, { writer: 'maintenance', id: row.id,
       patch: { embedding, search_document: searchDocument, embedding_version: CURRENT_EMBEDDING_VERSION },
-      guard: { sql: `status = 'scheduled' AND embedding_version IS ? AND search_document IS ?
-        AND EXISTS (SELECT 1 FROM events_with_venues v WHERE v.id = events.id AND ${searchViewInputs.map(key => `v.${key} IS ?`).join(' AND ')})`,
-        values: [row.embedding_version, row.search_document, ...searchViewInputs.map(key => row[key])] },
+      guard: rebuildGuard(row, true),
     })
+    if (write.vectorFailure) throw write.vectorFailure.error
     if (!write.vectorUpdated) { result.deferred++; continue }
     reembedded.add(row.id)
     result.reembedded++
@@ -232,14 +241,17 @@ export async function reconcileCatalog(db: D1Database, vectors: Vectorize, optio
     result.resynced++
   }
 
-  // 3. Every live or recently changed event should have current metadata. Restore only searchable missing vectors.
-  const { results: live } = await db.prepare(`SELECT ${VECTOR_FIELDS} FROM events
-    WHERE status NOT IN ('canceled', 'past') OR updated_at >= ? ORDER BY id`)
-    .bind(new Date(now.getTime() - 48 * HOUR).toISOString()).all<StoredVector>()
+  // 3. Metadata-only publisher work needs no fresh embedding. Include it even outside the normal drift scan.
+  const metadataQueued = 'EXISTS (SELECT 1 FROM vector_metadata_sync m WHERE m.event_id = e.id)'
+  const { results: live } = await db.prepare(`SELECT ${VECTOR_FIELDS}, (${metadataQueued}) AS metadata_queued FROM events e
+    WHERE status NOT IN ('canceled', 'past') OR updated_at >= ? OR ${metadataQueued} ORDER BY id`)
+    .bind(new Date(now.getTime() - 48 * HOUR).toISOString()).all<StoredVector & { metadata_queued: number }>()
   const toCheck = live.filter(row => !reembedded.has(row.id))
   result.checked = toCheck.length
   const { updated, missing } = await syncMetadata(vectors, toCheck)
   result.metadataUpdated = updated
+  // A missing vector has no metadata to refresh. The ordinary live-vector restoration path below still applies.
+  await clearSettledRows(db, 'vector_metadata_sync', live.filter(row => row.metadata_queued))
   const byId = new Map(toCheck.map(row => [row.id, row]))
   for (const id of missing) {
     const row = byId.get(id)!
@@ -269,7 +281,8 @@ export async function runEmbeddingTask(
     }
     const { embedding, searchDocument } = await embed(sourceForEmbedding(row))
     const write = await writeEvent(db, vectors, { writer: 'manual-repair', id: row.id,
-      patch: { embedding, search_document: searchDocument, embedding_version: CURRENT_EMBEDDING_VERSION } })
+      patch: { embedding, search_document: searchDocument, embedding_version: CURRENT_EMBEDDING_VERSION }, guard: rebuildGuard(row, rebuild) })
+    if (write.vectorFailure) throw write.vectorFailure.error
     if (write.vectorUpdated) result.updated++
     else result.blocked++
   }

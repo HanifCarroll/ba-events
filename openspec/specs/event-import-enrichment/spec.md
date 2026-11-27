@@ -147,6 +147,11 @@ Imports, venue settlement, the venue review queue, enrichment, the blocklist, an
 - **THEN** the catalog reports the protected fields it kept and applies any permitted changes
 - **AND** the daily scrape counts the event as updated only if at least one stored field changed
 
+#### Scenario: A venue review settles a mix of event rows
+- **WHEN** a venue review assigns a venue to several event IDs
+- **THEN** the result identifies the assignments it applied and those it kept because of intake authority or a hidden location
+- **AND** unchanged or missing rows are counted as neither applied nor kept
+
 #### Scenario: Enrichment finds a missing page for an event whose status intake protected
 - **WHEN** enrichment receives a 404 and the catalog keeps the current status
 - **THEN** enrichment does not count the event as canceled
@@ -158,6 +163,7 @@ Imports, venue settlement, the venue review queue, enrichment, the blocklist, an
 #### Scenario: An event is imported on D1
 - **WHEN** an importer inserts or re-embeds an event
 - **THEN** the event row and its vector are written, and the vector's metadata matches the row's status and start
+- **AND** if Vectorize rejects a write after an event update commits, the run still counts the applied update, reports the index failure separately, and leaves the work queued
 
 #### Scenario: An event passes its end
 - **WHEN** the hourly task finds a timed event whose explicit end passed, or, without an explicit end, a timed event more than 4 hours after its start or a date-only event more than 28 hours after its start
@@ -361,6 +367,11 @@ The shared preview/commit interface SHALL persist candidate revisions, proposed 
 - **THEN** the commit updates the same catalog UUID without replacing an existing platform source identity
 - **AND** subsequent legacy importer/enrichment writes cannot undo accepted facts or replace their corresponding search document
 - **AND** a curator repost cannot authorize a correction
+
+#### Scenario: An intake correction proposes a venue for a hidden-location event
+- **WHEN** a plan would attach a venue to a hidden-location event
+- **THEN** intake refuses to prepare or commit that plan, including when it already contains a prepared document and embedding
+- **AND** it leaves the event's search document and vector unchanged
 
 #### Scenario: A correction only adds artwork
 - **WHEN** an existing event gains a selected retained image without changing its other facts

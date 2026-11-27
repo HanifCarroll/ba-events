@@ -306,16 +306,34 @@ describe('venues on D1', () => {
 		expect(await db.prepare("SELECT count(*) AS n FROM venues WHERE name = 'San Telmo'").first('n')).toBe(1)
 	})
 
-	it('approving a review re-points its events', async () => {
+	it('reports applied and kept venues for every event in an approved review', async () => {
 		const { catalog } = store()
 		const keep = await catalog.createVenue(venue('Sala Sintética', null))
 		const input = event()
 		await catalog.insertEvent(input)
 		const id = await eventId(input.external_id)
-		await catalog.queueVenueReview({ scrape_run_id: null, source: 'luma', source_venue_name: 'Sala S.', match_confidence: 0.7, source_event_ids: [id], status: 'pending' })
+		const original = await catalog.createVenue(venue('Sala Confirmada', 'Calle Norte 34'))
+		const protectedEvent = event({ venue_id: original.id })
+		const hiddenEvent = event({ location_hidden: true })
+		const unchangedEvent = event({ venue_id: keep.id })
+		for (const row of [protectedEvent, hiddenEvent, unchangedEvent]) await catalog.insertEvent(row)
+		const protectedId = await eventId(protectedEvent.external_id)
+		const hiddenId = await eventId(hiddenEvent.external_id)
+		const unchangedId = await eventId(unchangedEvent.external_id)
+		const missingId = crypto.randomUUID()
+		await protectIntakeName(protectedId)
+		await db.prepare(`UPDATE event_intake_protection SET fields = '["venue_id"]' WHERE event_id = ?`).bind(protectedId).run()
+		await catalog.queueVenueReview({ scrape_run_id: null, source: 'luma', source_venue_name: 'Sala S.', match_confidence: 0.7,
+			source_event_ids: [id, protectedId, hiddenId, unchangedId, missingId], status: 'pending' })
 		const reviewId = (await db.prepare('SELECT id FROM venue_review_queue').first<string>('id'))!
-		await approveVenueReview(catalog, { id: reviewId, venueId: keep.id, notes: 'same place' })
-		expect(await db.prepare('SELECT venue_id FROM events WHERE id = ?').bind(id).first('venue_id')).toBe(keep.id)
+		expect(await approveVenueReview(catalog, { id: reviewId, venueId: keep.id, notes: 'same place' })).toEqual({ success: true, venueWrites: [
+			{ id, applied: ['venue_id'], kept: [] }, { id: protectedId, applied: [], kept: ['venue_id'] },
+			{ id: hiddenId, applied: [], kept: ['venue_id'] }, { id: unchangedId, applied: [], kept: [] }, { id: missingId, applied: [], kept: [] },
+		] })
+		const venueFor = (id: string) => db.prepare('SELECT venue_id FROM events WHERE id = ?').bind(id).first('venue_id')
+		expect(await venueFor(id)).toBe(keep.id)
+		expect(await venueFor(protectedId)).toBe(original.id)
+		expect(await venueFor(hiddenId)).toBeNull()
 		expect(await db.prepare('SELECT status, final_venue_id, notes FROM venue_review_queue').first()).toEqual({ status: 'approved', final_venue_id: keep.id, notes: 'same place' })
 	})
 })

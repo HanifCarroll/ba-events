@@ -15,6 +15,9 @@ export interface EventWriteResult {
   kept: EventColumn[]
 }
 
+export type VenueWriteResult = EventWriteResult & { id: string }
+export type CatalogUpdateResult = EventWriteResult & { vectorFailure?: { error: unknown } }
+
 const facts = new Set<string>(eventColumnsWith('protection', 'facts'))
 const details = new Set<string>(eventColumnsWith('protection', 'details'))
 const derived = ['search_document', 'embedding_version'] as const
@@ -69,7 +72,7 @@ const staleWrite = 'Event write snapshot changed'
 /** Read authority on the primary, then check the same revision fields and ledger inside the write batch. */
 export async function writeEvent(db: D1Database, vectors: Vectorize | null, request: {
   writer: Writer; id: string; patch: Patch & VectorPatch; guard?: Guard
-}): Promise<EventWriteResult & { vectorUpdated: boolean }> {
+}): Promise<CatalogUpdateResult & { vectorUpdated: boolean }> {
   const { writer, id, guard, patch: { embedding, ...patch } } = request
   const repair = writer === 'maintenance'
   const requested = pairs(patch, repair || writer === 'manual-repair' ? derived : catalogFields)
@@ -121,16 +124,28 @@ export async function writeEvent(db: D1Database, vectors: Vectorize | null, requ
       if (attempt === 2 || !(error instanceof Error && error.message.includes(`${staleWrite}: SQLITE_CONSTRAINT`))) throw error
       continue
     }
-    return { applied, kept, vectorUpdated: vectors ? await vector.settle(vectors, queued) : false }
+    try {
+      return { applied, kept, vectorUpdated: vectors ? await vector.settle(vectors, queued) : false }
+    } catch (error) {
+      // The catalog and its retry entry have committed. Let callers report indexing failure without counting a failed write.
+      return { applied, kept, vectorUpdated: false, vectorFailure: { error } }
+    }
   }
 }
 
-/** Venue review retains a single bounded statement and does not replace search text or metadata. */
-export async function setEventVenues(db: D1Database, ids: readonly string[], venue: string) {
-  await db.prepare(`UPDATE events SET venue_id = ? WHERE id IN (SELECT value FROM json_each(?))
-    AND venue_id IS NOT ? AND location_hidden IS NOT 1
-    AND NOT EXISTS (SELECT 1 FROM json_each(${protectionFields}) WHERE value = 'venue_id')`)
-    .bind(venue, JSON.stringify(ids), venue).run()
+/** Classify and apply venue review assignments together. No search text or metadata changes. */
+export async function setEventVenues(db: D1Database, ids: readonly string[], venue: string): Promise<VenueWriteResult[]> {
+  if (!ids.length) return []
+  const targets = 'id IN (SELECT value FROM json_each(?)) AND venue_id IS NOT ?'
+  const blocked = `(location_hidden IS 1 OR EXISTS (SELECT 1 FROM json_each(${protectionFields}) WHERE value = 'venue_id'))`
+  const params = [JSON.stringify(ids), venue]
+  const [kept, applied] = await db.batch<{ id: string }>([
+    db.prepare(`SELECT id FROM events WHERE ${targets} AND ${blocked}`).bind(...params),
+    db.prepare(`UPDATE events SET venue_id = ? WHERE ${targets} AND NOT ${blocked} RETURNING id`).bind(venue, ...params),
+  ])
+  const keptIds = new Set(kept.results.map(row => row.id))
+  const appliedIds = new Set(applied.results.map(row => row.id))
+  return ids.map(id => ({ id, applied: appliedIds.has(id) ? ['venue_id'] : [], kept: keptIds.has(id) ? ['venue_id'] : [] }))
 }
 
 export async function expireEvents(db: D1Database, vectors: Vectorize, { sql, values }: Guard) {
@@ -162,6 +177,12 @@ export const INTAKE_UPDATE_WITHOUT_EMBEDDING = `EXISTS (
   SELECT 1 FROM event_intake_protection p JOIN intake_plans i ON i.id = p.plan_id
   WHERE p.event_id = e.id AND i.action = 'update' AND json_extract(i.payload, '$.embedding') IS NULL)`
 
+/** A prepared document can contain the proposed venue. Reject it before preparation and again in the commit batch. */
+export function intakeVenueChecks(db: D1Database, id: string, venue: unknown): D1PreparedStatement[] {
+  return venue == null ? [] : [batchAssert(db, 'Intake cannot attach a venue to a hidden-location event',
+    'NOT EXISTS (SELECT 1 FROM events WHERE id = ? AND location_hidden = 1)', id)]
+}
+
 export async function commitIntakeEvent(db: D1Database, vectors: Vectorize, request: {
   id: string; planId: string; action: 'create' | 'update' | 'link'; patch: IntakeEventPatch
   create: { link: string | null; external_id: string }; previous: Row | null; vectorPatch: VectorPatch
@@ -170,8 +191,7 @@ export async function commitIntakeEvent(db: D1Database, vectors: Vectorize, requ
 }): Promise<{ result: EventWriteResult; settle: () => Promise<boolean | undefined> }> {
   const { id, action, previous, evidence, planId } = request
   const linked = action === 'link'
-  const patch = { ...request.patch }
-  if (previous?.location_hidden === 1) patch.venue_id = null
+  const { patch } = request
   const fields = linked ? [] : pairs(action === 'create' ? { ...patch, ...request.create, source: 'instagram' } : patch,
     action === 'create' ? eventColumnsWith('intakeWrite', 'create', 'both') : intakeFields)
   const applied = fields.filter(([key, value]) => !previous || previous[key] !== value).map(([key]) => key)
@@ -189,7 +209,8 @@ export async function commitIntakeEvent(db: D1Database, vectors: Vectorize, requ
       .bind(id, JSON.stringify(protects), planId, evidence.authority, evidence.observedAt))
   }
   writes.push(request.recordReceipt)
-  await db.batch(withProtectionOverride(db, request.checks, writes))
+  const checks = [...request.checks, ...(action === 'update' ? intakeVenueChecks(db, id, patch.venue_id) : [])]
+  await db.batch(withProtectionOverride(db, checks, writes))
   // The caller must settle outside the catch that handles a concurrent receipt.
   return { result: { applied, kept: [] }, settle: async () => vector?.settle(vectors) }
 }

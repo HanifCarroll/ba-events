@@ -11,7 +11,7 @@ import type { D1Database, R2Bucket, Vectorize } from '@cloudflare/workers-types'
 import { Effect } from 'effect'
 import { batchAssert } from '#shared/lib/db/d1.server.ts'
 import { eventColumnsWith } from '#shared/lib/db/event-columns.ts'
-import { checkIntakeAuthority, commitIntakeEvent, replayIntakeVector, type IntakeEventPatch } from '#shared/lib/db/event-write.ts'
+import { checkIntakeAuthority, commitIntakeEvent, intakeVenueChecks, replayIntakeVector, type IntakeEventPatch } from '#shared/lib/db/event-write.ts'
 import type { EventInsert } from '#shared/lib/types.ts'
 import { importTry, ImportOperationError } from '../core/effect-utils.ts'
 import { mostSimilarVenue, similarIntakeVenues } from '../core/venue-similarity-d1.ts'
@@ -95,6 +95,9 @@ export function d1Intake({ db, evidence, artwork, vectors }: IntakeBindings, sit
     batchAssert(db, 'Evidence is missing', `NOT EXISTS (SELECT 1 FROM json_each(?) x
       LEFT JOIN intake_observations o ON o.id = json_extract(x.value, '$.observation_id')
       WHERE o.id IS NULL AND json_extract(x.value, '$.kind') IS NOT 'official_page')`, JSON.stringify(plan.evidence)),
+  ]
+  const preflightChecks = (plan: IntakePlanRow, at: string) => [
+    ...planChecks(plan, at), ...(plan.action === 'update' ? intakeVenueChecks(db, plan.event_id, plan.payload.venue_id) : []),
   ]
 
   const store: IntakeStore = {
@@ -297,7 +300,7 @@ export function d1Intake({ db, evidence, artwork, vectors }: IntakeBindings, sit
     checkPlan: id => d1('intake.check-plan', async () => {
       const plan = await planRow(id)
       if (!plan) throw new Error('Plan not found')
-      if (!plan.receipt) await db.batch(planChecks(plan, now()))
+      if (!plan.receipt) await db.batch(preflightChecks(plan, now()))
     }),
     preparePlan: (id, payload) => d1('intake.prepare', async () => {
       const row = await db.prepare('UPDATE intake_plans SET payload = ? WHERE id = ? AND receipt IS NULL RETURNING id').bind(JSON.stringify(payload), id).first()
@@ -324,7 +327,7 @@ export function d1Intake({ db, evidence, artwork, vectors }: IntakeBindings, sit
       if (!plan) throw new Error('Plan not found')
       if (plan.receipt) return plan.receipt
       const at = now()
-      await db.batch(planChecks(plan, at))
+      await db.batch(preflightChecks(plan, at))
       const e = plan.payload
       const startsAt = iso(e.starts_at)!
       if (plan.action === 'create') {
