@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { expect, it, vi } from 'vitest'
+import { recordDelegatedVeto } from './delegation.ts'
 import { endTime, type InvestigationRequest } from './investigation.ts'
 import { startInvestigator } from './investigator-run.ts'
 import { publicResearchUrl } from './investigator-web.ts'
@@ -60,9 +61,9 @@ it('returns a safe finish validation message and accepts a corrected finding', (
       copyHash: 'copy', events: [{ id: eventId }] }
     mkdirSync(dir, { recursive: true })
     writeFileSync(join(dir, 'request.json'), JSON.stringify(request))
-    writeFileSync(join(state, 'drafts', `${id}.json`), JSON.stringify({
-      revision: 1, state: 'previewed', framesHash: 'frames', review: { investigation: { request } },
-    }))
+    const draftFile = join(state, 'drafts', `${id}.json`)
+    const draft = { revision: 1, state: 'previewed', framesHash: 'frames', review: { investigation: { request } } }
+    writeFileSync(draftFile, JSON.stringify(draft))
     const result = join(dir, `${eventId}.result.json`)
     const invoke = (action: string, data: unknown) => invokeTool(action, JSON.stringify(data), {
       BA_INSTAGRAM_STATE_DIR: state, BA_INVESTIGATION_DIR: dir,
@@ -83,6 +84,19 @@ it('returns a safe finish validation message and accepts a corrected finding', (
     const fix = { id: eventId, field: 'status', from: 'scheduled', to: 'canceled', evidence: 'https://source.example/', allOccurrences: false }
     mkdirSync(join(dir, 'catalog-fix.lock'))
     expect(invoke('catalog-fix', fix)).toEqual([{ type: 'text', text: 'The operation could not complete.' }])
+
+    const receipt = { actor: 'hermes' as const, at: new Date(startsAt).toISOString(), reason: 'Synthetic instruction',
+      preview: { revision: 1, channel: 'C_TEST', ts: '1.0', instagram: false, threads: true } }
+    writeFileSync(draftFile, JSON.stringify({ ...draft, approvedSeenAt: null, delegatedApprovals: [receipt] }))
+    // A Threads-only approval reaches the (held) catalog lock rather than losing ownership of the preview.
+    expect(invoke('catalog-fix', fix)).toEqual([{ type: 'text', text: 'The operation could not complete.' }])
+    writeFileSync(draftFile, JSON.stringify({ ...draft, approvedSeenAt: receipt.at,
+      delegatedApprovals: [{ ...receipt, preview: { ...receipt.preview, instagram: true } }] }))
+    const inactive = [{ type: 'text', text: 'The investigation no longer owns this preview.' }]
+    expect(invoke('catalog-fix', fix)).toEqual(inactive)
+    writeFileSync(draftFile, JSON.stringify(draft))
+    recordDelegatedVeto(state, id, receipt)
+    expect(invoke('catalog-fix', fix)).toEqual(inactive)
   } finally {
     rmSync(state, { recursive: true, force: true })
   }

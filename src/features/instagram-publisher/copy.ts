@@ -77,11 +77,17 @@ export function slackPreview(format: FormatKey, window: RunWindow, captionText: 
   return `Instagram draft: ${FORMATS[format].slackName} for ${englishDates(window.from, window.to)}. ${gate}\n\n${captionText ?? 'Stories have no caption.'}${music}`
 }
 
-export type SkipReason = { kind: 'rejected' } | { kind: 'no-approval'; by: Date } | { kind: 'late'; by: Date } | { kind: 'too-few'; count: number }
+export const delegatedReply = {
+  approve: 'Aprobado por Hermes a pedido de Hanif.',
+  skip: 'Descartado por Hermes a pedido de Hanif.',
+} as const
+
+export type SkipReason = { kind: 'rejected' } | { kind: 'delegated-skip' } | { kind: 'no-approval'; by: Date } | { kind: 'late'; by: Date } | { kind: 'too-few'; count: number }
 
 export function skipText(reason: SkipReason): string {
   switch (reason.kind) {
     case 'rejected': return 'Skipped: you reacted ❌'
+    case 'delegated-skip': return delegatedReply.skip
     case 'no-approval': return `Skipped: no ✅ by ${hhmm(baLocal(reason.by))}`
     case 'late': return `Skipped: not published by ${hhmm(baLocal(reason.by))}`
     case 'too-few': return `Skipped: only ${reason.count} events qualified`
