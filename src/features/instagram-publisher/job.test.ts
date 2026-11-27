@@ -2034,9 +2034,9 @@ describe.each(['Slack', 'Hermes'] as const)('publisher decision matrix: %s', cha
     await job.tick()
     const saved = w.draft()
     const first = saved.slack.ts!
-    const approve = async (ts = first, instruction = reason) => {
-      if (channel === 'Slack') votes.set(ts, [{ name: 'white_check_mark', users: [HANIF] }])
-      else await job.delegateDecision('approve', saved.id, w.draft().revision, instruction, ts)
+    const approve = async (ts?: string, instruction = reason) => {
+      if (channel === 'Hermes') return job.delegateDecision('approve', saved.id, w.draft().revision, instruction, ts)
+      votes.set(ts ?? first, [{ name: 'white_check_mark', users: [HANIF] }])
     }
     const veto = async () => {
       if (channel === 'Slack') votes.set(first, [{ name: 'x', users: [HANIF] }])
@@ -2047,28 +2047,50 @@ describe.each(['Slack', 'Hermes'] as const)('publisher decision matrix: %s', cha
     return { w, job, saved, first, approve, veto, writes, unreadable }
   }
 
+  async function approvedSplitWorld() {
+    const world = await checkWorld(true)
+    const { w, job, saved, first, approve, writes } = world
+    expect(saved.slack.previews).toEqual([expect.objectContaining({ revision: 1, ts: first, instagram: true, threads: false })])
+    await approve()
+    const receipt = w.draft().delegatedApprovals
+    if (channel === 'Hermes') expect(receipt).toEqual([{
+      actor: 'hermes', at: w.clock.toISOString(), reason, preview: saved.slack.previews?.[0],
+    }])
+    w.config.threads.enabled = true
+    w.at('2026-11-19', 12)
+    const load = job.s.loadToken
+    job.s.loadToken = async () => ({ state: 'missing' }) // Show both previews while Hermes can still record approval.
+    await job.tick()
+    job.s.loadToken = load
+    const split = w.draft()
+    const second = split.slack.previews?.at(-1)
+    expect(split).toMatchObject({ revision: 1, state: 'previewed', threads: { state: 'waiting' } })
+    expect(second).toMatchObject({ revision: 1, instagram: false, threads: true })
+    expect(second!.ts).not.toBe(first)
+    expect(writes()).toEqual({ instagram: [], threads: [] })
+    return { ...world, second: second!, receipt }
+  }
+
   it.each([
-    { name: 'split previews and a retried approval stay scoped to the shown destination', run: async () => {
-      const { w, job, saved, first, approve, writes } = await checkWorld(true)
-      expect(saved.slack.previews).toEqual([expect.objectContaining({ revision: 1, ts: first, instagram: true, threads: false })])
-      await approve()
-      w.config.threads.enabled = true
-      w.at('2026-11-19', 12)
-      const load = job.s.loadToken
-      job.s.loadToken = async () => ({ state: 'missing' })
+    { name: 'replaying Instagram approval after a split still publishes only Instagram', run: async () => {
+      const { w, job, approve, writes, receipt } = await approvedSplitWorld()
+      const repliesBefore = w.slackPosts.length
+      const replayed = await approve() // Replay the same instruction without a preview timestamp.
+      if (channel === 'Hermes') {
+        expect(replayed).toBe(false)
+        expect(w.draft().delegatedApprovals).toEqual(receipt)
+        expect(w.slackPosts).toHaveLength(repliesBefore)
+      }
+      w.at('2026-11-19', 12, 10)
       await job.tick()
-      const split = w.draft()
-      const second = split.slack.previews?.at(-1)
-      expect(second).toMatchObject({ revision: 1, instagram: false, threads: true })
-      expect(second?.ts).not.toBe(first)
-      await approve() // Retry the original decision after the second preview exists.
-      if (channel === 'Hermes') expect(w.draft().delegatedApprovals?.map(entry => entry.preview)).toEqual([saved.slack.previews?.[0]])
-      await job.tick()
-      expect(w.draft()).toMatchObject({ revision: 1, threads: { state: 'waiting' } })
-      expect(writes()).toEqual({ instagram: [], threads: [] })
-      await approve(second!.ts, 'Synthetic instruction 2')
+      expect(w.draft()).toMatchObject({ revision: 1, state: 'published', threads: { state: 'waiting' } })
+      expect(w.ig.published).toHaveLength(1)
+      expect(writes().threads).toEqual([])
+    } },
+    { name: 'explicit approval of the Threads preview releases the second destination', run: async () => {
+      const { w, job, saved, approve, writes, second } = await approvedSplitWorld()
+      await approve(second.ts, 'Synthetic instruction 2')
       if (channel === 'Hermes') expect(w.draft().delegatedApprovals?.map(entry => entry.preview)).toEqual([saved.slack.previews?.[0], second])
-      job.s.loadToken = load
       w.at('2026-11-19', 12, 10)
       await job.tick()
       expect(w.draft()).toMatchObject({ revision: 1, state: 'published', threads: { state: 'published' } })
@@ -2095,29 +2117,35 @@ describe.each(['Slack', 'Hermes'] as const)('publisher decision matrix: %s', cha
       await approve()
       w.config.auto.finde = w.config.threads.auto.finde = true
       await job.regenerate(saved.id, [uuid(2)])
-      expect(w.draft()).toMatchObject({ revision: 2, slack: { ts: first, revision: 1 } })
+      const retained = { ts: first, channel: w.config.slack.channel, revision: 1, instagram: true, threads: true }
+      expect(w.draft()).toMatchObject({ revision: 2, slack: { ts: first, revision: 1, previews: [retained] } })
       expect(w.draft().delegatedApprovals).toBeUndefined()
+      const vetoAt = w.clock.toISOString()
       await veto()
       w.at('2026-11-19', 12)
       await job.tick()
       expect(w.draft()).toMatchObject({ revision: 2, state: 'skipped', threads: { state: 'skipped' } })
+      if (channel === 'Hermes') expect(JSON.parse(readFileSync(join(w.dir, 'vetoes', `${saved.id}.json`), 'utf8'))).toEqual({
+        actor: 'hermes', at: vetoAt, reason: 'Synthetic veto', preview: retained,
+      })
       expect(writes()).toEqual({ instagram: [], threads: [] })
     } },
-    { name: 'a veto preserves published Instagram and stops an unsent Threads container', run: async () => {
+    { name: 'a veto during Threads polling stops its send without undoing Instagram', run: async () => {
       const { w, job, approve, veto, writes } = await checkWorld()
       await approve()
-      w.threads.containerStatus = 'IN_PROGRESS'
+      const status = w.threads.status.bind(w.threads)
+      let before: Draft | undefined
+      w.threads.status = async id => {
+        const result = await status(id)
+        before = w.draft()
+        await veto()
+        return result
+      }
       w.at('2026-11-19', 12)
-      await job.tick()
-      const before = w.draft()
-      expect(before).toMatchObject({ revision: 1, state: 'published', threads: { state: 'publishing', containerId: 'c1' } })
-      const sent = writes()
-      await veto()
-      w.threads.containerStatus = 'FINISHED'
-      w.at('2026-11-19', 12, 10)
-      await job.tick()
-      expect(w.draft()).toMatchObject({ revision: 1, state: 'published', publish: { permalink: before.publish!.permalink }, threads: { state: 'skipped' } })
-      expect(writes()).toEqual(sent)
+      await withLock(() => job.tick(), w.dir)
+      expect(before).toMatchObject({ revision: 1, state: 'published', threads: { state: 'publishing', containerId: 'c1', attemptedAt: null } })
+      expect(w.draft()).toMatchObject({ revision: 1, state: 'published', publish: { permalink: before!.publish!.permalink }, threads: { state: 'skipped' } })
+      expect(writes().threads).toEqual(['create'])
       expect(w.ig.published).toHaveLength(1)
       expect(w.threads.posts).toEqual([])
     } },
@@ -2127,15 +2155,18 @@ describe.each(['Slack', 'Hermes'] as const)('publisher decision matrix: %s', cha
       w.ig.publishFault = w.threads.publishFault = 'after'
       w.at('2026-11-19', 12)
       await job.tick()
-      expect(w.draft()).toMatchObject({ revision: 1, state: 'publishing', threads: { state: 'publishing', mediaId: null } })
+      expect(w.draft()).toMatchObject({ revision: 1, state: 'publishing', publish: { units: [{ mediaId: null }] }, threads: { state: 'publishing', mediaId: null } })
       expect(w.ig.published).toHaveLength(1)
       expect(w.threads.posts).toHaveLength(1)
+      const { id: instagramId } = w.ig.published[0]!
+      const [threadsPost] = w.threads.posts
       const sent = writes()
       await veto()
       w.at('2026-11-19', 12, 10)
       await job.tick()
-      expect(w.draft()).toMatchObject({ revision: 1, state: 'published', publish: { permalink: expect.any(String) },
-        threads: { state: 'published', mediaId: w.threads.posts[0]?.id, permalink: w.threads.posts[0]?.permalink } })
+      expect(w.draft()).toMatchObject({ revision: 1, state: 'published',
+        publish: { units: [{ mediaId: instagramId }], permalink: `https://www.instagram.com/p/${instagramId}/` },
+        threads: { state: 'published', mediaId: threadsPost!.id, permalink: threadsPost!.permalink } })
       expect(writes()).toEqual(sent)
     } },
   ])('$name', ({ run }) => run())
