@@ -76,6 +76,10 @@
 	{/each}{rest}
 {/snippet}
 
+{#snippet startDate()}
+	<time datetime={event.starts_at}>{formatShortDate(event.starts_at)}</time>{#if hasTime}{' · '}{/if}
+{/snippet}
+
 <article data-section="event-card" class="agenda-card flex min-w-0 flex-col border-b border-[#3b3b42] pb-3">
 	<div class="card-content group relative">
 		<a href={`/events/${encodeURIComponent(event.id)}`} class="card-art block after:absolute after:inset-0 after:z-1">
@@ -95,7 +99,11 @@
 		</a>
 		<div class="card-copy space-y-1 pt-2 wrap-anywhere">
 			<div class={['text-xs font-medium text-[#d0ff36] tabular-nums sm:text-sm', !hasTime && !showStartDateOnMobile && 'hidden md:block']}>
-				<span class={showStartDateOnMobile ? undefined : 'hidden md:inline'}><time datetime={event.starts_at}>{formatShortDate(event.starts_at)}</time>{#if hasTime}{' · '}{/if}</span>
+				{#if showStartDateOnMobile}
+					{@render startDate()}
+				{:else}
+					<span class="hidden md:inline">{@render startDate()}</span>
+				{/if}
 				{#if event.slotStarts}
 					{#each event.slotStarts as slot, i (slot)}{#if i}{' · '}{/if}<time datetime={slot}>{formatTime(slot)}</time>{/each}
 				{:else if event.time_tba}
