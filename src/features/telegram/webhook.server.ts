@@ -9,6 +9,7 @@ import {
   claimTelegramUpdate,
   markTelegramUpdateFailed,
 } from './delivery.server.ts'
+import { EXTERNAL_CHANNEL } from '#features/chat/api/channels.ts'
 import { getOrCreateExternalConversation } from '#features/chat/api/external-conversations.server.ts'
 
 import { parseTelegramPlaintextPayload, type TelegramTaskPayload } from './task-payload.ts'
@@ -173,7 +174,7 @@ export function handleTelegramWebhookEffect(
       const shouldCheckRateLimit = Boolean(claim.checkRateLimit && (ordinaryText || promptCallback))
       const conversationEffect = promiseEffect(
         () => (dependencies.getOrCreateConversation ?? getOrCreateExternalConversation)({
-          channel: 'telegram',
+          channel: EXTERNAL_CHANNEL.telegram,
           externalIdentityHash: identityHash,
           metadata: { locale, ...(startSource ? { startSource } : {}) },
         }),

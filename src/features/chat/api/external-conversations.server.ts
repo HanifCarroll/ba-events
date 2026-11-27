@@ -1,7 +1,7 @@
 import { Data, Effect } from 'effect'
+import type { D1Database, D1PreparedStatement } from '@cloudflare/workers-types'
 import type {
   Conversation,
-  ConversationChannel,
   Json,
   Message,
   MessageExecutionStep,
@@ -10,8 +10,8 @@ import { CHAT_CONTRACT_VERSION } from '#shared/lib/types.ts'
 import { sortMessagesByTurnOrderAsc } from '#features/chat/lib/message-order.ts'
 import { requireD1 } from '#shared/lib/db/d1-binding.server.ts'
 import * as d1 from './chat-d1.server.ts'
+import type { ExternalChannel } from './channels.ts'
 
-export type ExternalConversationChannel = Exclude<ConversationChannel, 'web'>
 export type ExternalConversation = Pick<
   Conversation,
   'id' | 'channel' | 'title' | 'created_at' | 'updated_at' | 'metadata'
@@ -40,7 +40,7 @@ function requireIdentityHash(hash: string): string {
 /** Effect-native external conversation creation/idempotency program. */
 export function getOrCreateExternalConversationEffect(
   input: {
-    channel: ExternalConversationChannel
+    channel: ExternalChannel
     externalIdentityHash: string
     title?: string
     metadata?: Record<string, Json>
@@ -58,7 +58,7 @@ export function getOrCreateExternalConversationEffect(
 
 export function getOrCreateExternalConversation(
   input: {
-    channel: ExternalConversationChannel
+    channel: ExternalChannel
     externalIdentityHash: string
     title?: string
     metadata?: Record<string, Json>
@@ -69,28 +69,28 @@ export function getOrCreateExternalConversation(
 
 /** Effect-native external conversation lookup program. */
 export function getExternalConversationEffect(
-  input: { channel: ExternalConversationChannel; conversationId: string },
+  input: { channel: ExternalChannel; conversationId: string },
 ): Effect.Effect<ExternalConversation, ExternalConversationError> {
   return Effect.flatMap(d1Effect(() => d1.getExternalConversation(requireD1(), input.channel, input.conversationId), 'External conversation not found'),
     (conversation) => conversation ? Effect.succeed(external(conversation)) : Effect.fail(externalFailure('External conversation not found')))
 }
 
 export function getExternalConversation(
-  input: { channel: ExternalConversationChannel; conversationId: string },
+  input: { channel: ExternalChannel; conversationId: string },
 ) {
   return Effect.runPromise(getExternalConversationEffect(input))
 }
 
 /** Effect-native external conversation message read program. */
 export function loadExternalConversationMessagesEffect(
-  input: { channel: ExternalConversationChannel; conversationId: string },
+  input: { channel: ExternalChannel; conversationId: string },
 ): Effect.Effect<Message[], ExternalConversationError> {
   return d1Effect(async () => sortMessagesByTurnOrderAsc(await d1.loadExternalMessages(requireD1(), input.channel, input.conversationId)),
     'Failed to load external conversation messages')
 }
 
 export function loadExternalConversationMessages(
-  input: { channel: ExternalConversationChannel; conversationId: string },
+  input: { channel: ExternalChannel; conversationId: string },
 ) {
   return Effect.runPromise(loadExternalConversationMessagesEffect(input))
 }
@@ -98,7 +98,7 @@ export function loadExternalConversationMessages(
 /** Effect-native external message insertion program. */
 export function insertExternalConversationMessageEffect(
   input: {
-    channel: ExternalConversationChannel
+    channel: ExternalChannel
     conversationId: string
     parentMessageId?: string | null
     clientMessageId: string
@@ -120,7 +120,7 @@ export function insertExternalConversationMessageEffect(
 
 export function insertExternalConversationMessage(
   input: {
-    channel: ExternalConversationChannel
+    channel: ExternalChannel
     conversationId: string
     parentMessageId?: string | null
     clientMessageId: string
@@ -138,7 +138,7 @@ export function insertExternalConversationMessage(
 /** Effect-native external metadata update program. */
 export function updateExternalConversationMetadataEffect(
   input: {
-    channel: ExternalConversationChannel
+    channel: ExternalChannel
     conversationId: string
     metadataPatch: Record<string, Json>
   },
@@ -171,7 +171,7 @@ export function updateExternalConversationMetadataEffect(
 
 export function updateExternalConversationMetadata(
   input: {
-    channel: ExternalConversationChannel
+    channel: ExternalChannel
     conversationId: string
     metadataPatch: Record<string, Json>
   },
@@ -181,7 +181,7 @@ export function updateExternalConversationMetadata(
 
 /** Effect-native external message clearing program. */
 export function clearExternalConversationMessagesEffect(
-  input: { channel: ExternalConversationChannel; conversationId: string },
+  input: { channel: ExternalChannel; conversationId: string },
 ): Effect.Effect<void, ExternalConversationError> {
   return Effect.flatMap(d1Effect(() => d1.getExternalConversation(requireD1(), input.channel, input.conversationId), 'External conversation not found'),
     (conversation) => conversation
@@ -190,20 +190,32 @@ export function clearExternalConversationMessagesEffect(
 }
 
 export function clearExternalConversationMessages(
-  input: { channel: ExternalConversationChannel; conversationId: string },
+  input: { channel: ExternalChannel; conversationId: string },
 ) {
   return Effect.runPromise(clearExternalConversationMessagesEffect(input))
 }
 
 /** Effect-native external conversation hard-delete program. */
 export function hardDeleteExternalConversationEffect(
-  input: { channel: ExternalConversationChannel; conversationId: string },
+  input: { channel: ExternalChannel; conversationId: string },
 ): Effect.Effect<void, ExternalConversationError> {
   return d1Effect(() => d1.deleteExternalConversation(requireD1(), input.channel, input.conversationId), 'Failed to delete external conversation')
 }
 
 export function hardDeleteExternalConversation(
-  input: { channel: ExternalConversationChannel; conversationId: string },
+  input: { channel: ExternalChannel; conversationId: string },
 ) {
   return Effect.runPromise(hardDeleteExternalConversationEffect(input))
+}
+
+/** Purges conversations older than cutoff. Optional caller-owned statements run after the purge in the same D1 transaction. */
+export async function purgeExternalConversations(
+  db: D1Database,
+  channel: ExternalChannel,
+  cutoff: string,
+  after: readonly D1PreparedStatement[] = [],
+) {
+  const [purge, ...afterResults] = await db.batch([d1.preparePurgeExternalConversations(db, channel, cutoff), ...after])
+  // D1's meta.changes includes cascades; RETURNING counts only deleted conversations.
+  return { conversations: purge.results.length, afterResults }
 }

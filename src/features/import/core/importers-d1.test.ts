@@ -147,3 +147,45 @@ it.each(Object.entries(coordinators))('imports and updates %s on D1 and Vectoriz
   }
   assert.equal(await db.prepare('SELECT count(*) AS n FROM venues').first('n'), 1, 'a placeholder never becomes a venue')
 }, 30_000)
+
+it('counts a committed Luma update even when its Vectorize write fails', async () => {
+  const { db } = fixture
+  hiddenNow = false
+  await db.batch(['venue_review_queue', 'events', 'venues', 'import_blocklist'].map(table => db.prepare(`DELETE FROM ${table}`)))
+  const { index, vectors, failUpserts } = fakeVectorize()
+  const run = () => coordinators.luma(d1Catalog(db, index))
+  await run()
+  const id = (await db.prepare("SELECT id FROM events WHERE external_id = 'evt-public'").first<string>('id'))!
+  const original = vectors.get(id)
+  await db.prepare("UPDATE events SET name = 'Previous title' WHERE id = ?").bind(id).run()
+  failUpserts(1)
+
+  const result = await run()
+  expect(result).toMatchObject({ eventsUpdated: 1, eventsSkipped: 0 })
+  expect(await db.prepare('SELECT name, search_document FROM events WHERE id = ?').bind(id).first())
+    .toEqual({ name: 'Noche Sintética', search_document: 'doc Noche Sintética' })
+  expect(vectors.get(id)).toEqual(original)
+  expect(await db.prepare('SELECT event_id FROM vector_sync WHERE event_id = ?').bind(id).first('event_id')).toBe(id)
+}, 30_000)
+
+it('does not count a protected-only Luma update in eventsUpdated', async () => {
+  const { db } = fixture
+  hiddenNow = false
+  await db.batch(['venue_review_queue', 'events', 'venues', 'import_blocklist'].map(table => db.prepare(`DELETE FROM ${table}`)))
+  const { index, vectors } = fakeVectorize()
+  const run = () => coordinators.luma(d1Catalog(db, index))
+  await run()
+  const id = await db.prepare("SELECT id FROM events WHERE external_id = 'evt-public'").first<string>('id')
+  const original = vectors.get(id!)
+  await db.batch([
+    db.prepare("UPDATE events SET name = 'Nombre confirmado' WHERE id = ?").bind(id),
+    db.prepare("INSERT INTO intake_candidates (id, revision, payload) VALUES ('protected', 1, '{}')"),
+    db.prepare("INSERT INTO intake_plans (id, candidate_id, revision, action, event_id, payload, evidence, reasons) VALUES ('protected', 'protected', 1, 'update', ?, '{}', '[]', '[]')").bind(id),
+    db.prepare(`INSERT INTO event_intake_protection (event_id, fields, plan_id, authority, observed_at)
+      VALUES (?, '["name"]', 'protected', 2, '2026-11-01T00:00:00.000Z')`).bind(id),
+  ])
+  const outcome = await run()
+  expect(outcome).toMatchObject({ eventsUpdated: 0, eventsInserted: 0, eventsSkipped: 0 })
+  expect(await db.prepare('SELECT name FROM events WHERE id = ?').bind(id).first('name')).toBe('Nombre confirmado')
+  expect(vectors.get(id!)).toEqual(original)
+}, 30_000)

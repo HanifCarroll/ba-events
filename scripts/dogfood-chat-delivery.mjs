@@ -14,7 +14,7 @@ export async function dogfoodChatDelivery({ browser, script, temp, root, live })
  const { POST: stopDelivery } = await import(`${root}/src/routes/api/chat/[turnId]/stop/+server.ts`);
  const { POST: executeDelivery } = await import(`${root}/src/routes/api/chat/execute/+server.ts`);
  const { ChatEventDecoder, eventData } = await import(`${root}/src/features/chat/lib/delivery-protocol.ts`);
- const { openDogfoodCatalog } = await import('./dogfood-chat-catalog.ts');
+ const { openDogfoodCatalog } = await import('../tests/support/dogfood-chat-catalog.ts');
  const { useD1Binding } = await import(`${root}/src/shared/lib/db/d1-binding.server.ts`);
  const { useCloudflareBindings } = await import(`${root}/src/shared/lib/db/search-bindings.server.ts`);
  const secret = crypto.randomUUID() + crypto.randomUUID();

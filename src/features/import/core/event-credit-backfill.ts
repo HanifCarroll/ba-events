@@ -1,5 +1,6 @@
 import type { D1Database } from '@cloudflare/workers-types'
 import type { requestEventCredits } from '#shared/lib/ai/extract-facets.ts'
+import { writeEvent } from '#shared/lib/db/event-write.ts'
 
 interface CreditRow {
   id: string
@@ -11,6 +12,7 @@ interface CreditRow {
   description_en: string | null
   organizer_name: string | null
   performer_count: number
+  enrichment_provenance: string | null
 }
 
 type ExtractCredits = (descriptions: readonly (string | null)[]) => ReturnType<typeof requestEventCredits>
@@ -26,20 +28,12 @@ export async function backfillEventCredits(db: D1Database, options: {
   const migrated = schema.results.some(column => column.name === 'organizer_name')
   if (options.apply && !migrated) throw new Error('Apply the event details migration before writing credits')
   const missingPeople = "((source <> 'ba-tourism' AND nullif(trim(organizer_name), '') IS NULL) OR coalesce(json_array_length(performers), 0) = 0)"
-  const { results } = await db.prepare(`SELECT id, name, source, starts_at, updated_at, description_es, description_en,
+  const { results } = await db.prepare(`SELECT id, name, source, starts_at, updated_at, description_es, description_en, enrichment_provenance,
       ${migrated ? 'organizer_name, coalesce(json_array_length(performers), 0) AS performer_count' : 'NULL AS organizer_name, 0 AS performer_count'} FROM events
     WHERE status = 'scheduled' AND starts_at >= ? AND (trim(coalesce(description_es, '')) <> '' OR trim(coalesce(description_en, '')) <> '')
       AND json_extract(enrichment_provenance, '$.creditsBackfilledAt') IS NULL ${migrated ? `AND ${missingPeople}` : ''}
     ORDER BY starts_at, id LIMIT ?`).bind(options.from, options.limit).all<CreditRow>()
 
-  const write = options.apply ? db.prepare(`UPDATE events SET
-    organizer_url = CASE WHEN nullif(trim(organizer_name), '') IS NULL AND ?1 IS NOT NULL THEN ?2 ELSE organizer_url END,
-    organizer_name = CASE WHEN nullif(trim(organizer_name), '') IS NULL AND ?1 IS NOT NULL THEN ?1 ELSE organizer_name END,
-    performers = CASE WHEN coalesce(json_array_length(performers), 0) = 0 AND ?3 IS NOT NULL THEN ?3 ELSE performers END,
-    enrichment_provenance = json_set(coalesce(enrichment_provenance, '{}'), '$.creditsBackfilledAt', ?4)
-    WHERE id = ?5 AND updated_at = ?6 AND description_es IS ?7 AND description_en IS ?8
-      AND status = 'scheduled' AND starts_at >= ?9 AND ${missingPeople}
-      AND json_extract(enrichment_provenance, '$.creditsBackfilledAt') IS NULL`) : undefined
   const report = []
   for (const row of results) {
     const sample = { id: row.id, name: row.name, starts_at: row.starts_at, description_es: row.description_es, description_en: row.description_en }
@@ -48,10 +42,19 @@ export async function backfillEventCredits(db: D1Database, options: {
     catch { report.push({ ...sample, status: 'extraction-failed' as const }); continue }
     const organizer = row.source === 'ba-tourism' || row.organizer_name?.trim() ? undefined : credits.organizer
     const performers = row.performer_count ? undefined : credits.performers
-    const result = await write?.bind(organizer?.name ?? null, organizer?.url ?? null, performers ? JSON.stringify(performers) : null,
-      new Date().toISOString(), row.id, row.updated_at, row.description_es, row.description_en, options.from).run()
+    const result = options.apply ? await writeEvent(db, null, { writer: 'enrichment', id: row.id,
+      patch: {
+        organizer_name: organizer?.name, organizer_url: organizer ? organizer.url ?? null : undefined,
+        performers: performers ? JSON.stringify(performers) : undefined,
+        enrichment_provenance: JSON.stringify({ ...JSON.parse(row.enrichment_provenance ?? '{}'), creditsBackfilledAt: new Date().toISOString() }),
+      },
+      guard: { sql: `updated_at = ? AND description_es IS ? AND description_en IS ? AND enrichment_provenance IS ?
+        AND status = 'scheduled' AND starts_at >= ? AND source = ? AND organizer_name IS ?
+        AND coalesce(json_array_length(performers), 0) = ? AND ${missingPeople}`,
+      values: [row.updated_at, row.description_es, row.description_en, row.enrichment_provenance, options.from, row.source, row.organizer_name, row.performer_count] },
+    }) : null
     report.push({ ...sample, organizer, performers,
-      status: !result ? 'preview' as const : result.meta.changes > 0 ? 'applied' as const : 'changed-since-read' as const })
+      status: !result ? 'preview' as const : result.applied.length ? 'applied' as const : 'changed-since-read' as const })
   }
   return report
 }

@@ -253,11 +253,11 @@ export function processBATourismImportEffect(
       const itemProgram = Effect.gen(function* () {
         if (existing && updateKind === 'unchanged') return
         if (existing && updateKind === 'mutable-only') {
-          const error = yield* baTourismTry('ba-tourism.update-mutable', () => catalog.updateEvent(existing.id, getChangedMutableFields(transformed, existing)).then(() => null, (error: Error) => error))
-          if (error) {
-            console.error(`[ba-tourism] Failed to update event: ${error.message}`)
+          const write = yield* baTourismTry('ba-tourism.update-mutable', () => catalog.updateEvent(existing.id, getChangedMutableFields(transformed, existing)).catch((error: Error) => error))
+          if (write instanceof Error) {
+            console.error(`[ba-tourism] Failed to update event: ${write.message}`)
             result.eventsSkipped++
-          } else {
+          } else if (write.applied.length) {
             result.eventsUpdated++
           }
           return
@@ -297,7 +297,7 @@ export function processBATourismImportEffect(
         }
 
         if (existing) {
-          const error = yield* baTourismTry('ba-tourism.update-event', () => catalog.updateEvent(existing.id, {
+          const write = yield* baTourismTry('ba-tourism.update-event', () => catalog.updateEvent(existing.id, {
               name: eventWithEmbedding.name,
               description_es: eventWithEmbedding.description_es,
               description_en: eventWithEmbedding.description_en,
@@ -308,12 +308,12 @@ export function processBATourismImportEffect(
               search_document: eventWithEmbedding.search_document,
               embedding_version: eventWithEmbedding.embedding_version,
               ...getChangedMutableFields(eventWithEmbedding, existing),
-            }).then(() => null, (error: Error) => error)
+            }).catch((error: Error) => error)
           )
-          if (error) {
-            console.error(`[ba-tourism] Failed to update event: ${error.message}`)
+          if (write instanceof Error) {
+            console.error(`[ba-tourism] Failed to update event: ${write.message}`)
             result.eventsSkipped++
-          } else {
+          } else if (write.applied.length) {
             result.eventsUpdated++
           }
         } else {

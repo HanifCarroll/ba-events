@@ -3,12 +3,13 @@
  *
  * Rows are decoded with Effect Schema at this edge: D1 gives back 0/1 for booleans and JSON text for arrays and
  * objects. Writes encode the other way and store timestamps in the exact `toISOString()` form the baseline requires.
- * The shared vector-sync module plans the queue and settles the index after the D1 write.
+ * The shared event write gateway resolves authority before changing the catalog.
  */
 import type { D1Database, Vectorize } from '@cloudflare/workers-types'
 import { Schema } from 'effect'
 import { eventColumnsWith } from '#shared/lib/db/event-columns.ts'
-import { planVectorWrite, removeEventVectors } from '#shared/lib/db/vector-sync.ts'
+import { insertImportedEvent, setEventVenues, writeEvent } from '#shared/lib/db/event-write.ts'
+import { removeEventVectors } from '#shared/lib/db/vector-sync.ts'
 import type { BlocklistSource, ImportBlocklistEntry, Venue } from '#shared/lib/types.ts'
 import { trigramSimilarity } from '#shared/lib/search/trigram.ts'
 import type { ExistingEventData } from '../api/duplicate-detection.ts'
@@ -50,6 +51,11 @@ function encodeRow(row: Record<string, unknown>, allowed: Set<string>): [string[
     values.push(encodeColumn(column, value))
   }
   return [columns, values]
+}
+
+function encodeEvent(row: Record<string, unknown>) {
+  const [columns, values] = encodeRow(row, EVENT_COLUMNS)
+  return Object.fromEntries(columns.map((column, index) => [column, values[index]]))
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -198,9 +204,7 @@ export function d1Catalog(db: D1Database, vectors: Vectorize): CatalogStore {
       return ids ? Schema.decodeSync(Strings)(ids) as string[] : []
     },
 
-    async setEventsVenue(eventIds, venueId) {
-      await db.prepare('UPDATE events SET venue_id = ? WHERE id IN (SELECT value FROM json_each(?))').bind(venueId, JSON.stringify(eventIds)).run()
-    },
+    setEventsVenue: (eventIds, venueId) => setEventVenues(db, eventIds, venueId),
 
     async existingEvents(source, externalIds) {
       if (!externalIds.length) return []
@@ -213,25 +217,16 @@ export function d1Catalog(db: D1Database, vectors: Vectorize): CatalogStore {
       })
     },
 
-    async insertEvent(event) {
+    insertEvent(event) {
       const { embedding, ...row } = event
-      const id = crypto.randomUUID()
-      const [columns, values] = encodeRow({ id, ...row }, new Set(['id', ...EVENT_COLUMNS]))
-      const insert = db.prepare(`INSERT INTO events (${columns.join(', ')}) VALUES (${columns.map(() => '?').join(', ')})`).bind(...values)
-      const write = planVectorWrite(db, id, { source: 'catalog', patch: { ...row, embedding } })
-      if (!write.queue) { await insert.run(); return }
-      await db.batch([insert, write.queue])
-      await write.settle(vectors)
+      return insertImportedEvent(db, vectors, crypto.randomUUID(), { ...encodeEvent(row), embedding })
     },
 
-    async updateEvent(id, patch) {
-      const { embedding: _embedding, ...row } = patch
-      const [columns, values] = encodeRow(row, EVENT_COLUMNS)
-      const writes = columns.length ? [db.prepare(`UPDATE events SET ${columns.map(column => `${column} = ?`).join(', ')} WHERE id = ?`).bind(...values, id)] : []
-      const write = planVectorWrite(db, id, { source: 'catalog', patch })
-      if (write.queue) writes.push(write.queue)
-      if (writes.length) await db.batch(writes)
-      await write.settle(vectors)
+    async updateEvent(id, patch, writer = 'importer') {
+      const { embedding, ...row } = patch
+      const result = await writeEvent(db, vectors, { writer, id, patch: { ...encodeEvent(row), embedding } })
+      if (result.vectorFailure) console.error('[catalog] Vectorize settlement failed after commit; repair stays queued', { id, writer })
+      return result
     },
 
     async eventsNeedingEnrichment(query) {

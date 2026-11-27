@@ -7,12 +7,13 @@
  * its claim: every terminal write names the claim id it holds and the claim must still be live.
  *
  * Row-level security does not exist on D1. Every function here takes the owner (a signed-in user's id, or the external
- * channel for Telegram's owner-less conversations) and filters every read and write by it.
+ * channel for owner-less conversations) and filters every read and write by it.
  */
 import type { D1Database, D1PreparedStatement } from '@cloudflare/workers-types'
 import { Schema } from 'effect'
 import { batchAssert } from '#shared/lib/db/d1.server.ts'
 import type { Conversation, ConversationListItem, Json, Message, MessageRole } from '#shared/lib/types.ts'
+import { CONVERSATION_CHANNELS, type ExternalChannel } from './channels.ts'
 import type { ChatTurn } from './turns.server.ts'
 
 export const CLAIM_MS = 2 * 60 * 1000
@@ -53,7 +54,7 @@ const messageRow = Schema.Struct({
 	created_at: Schema.String, sequence_number: Schema.Int, turn_index: Schema.Int,
 })
 const conversationRow = Schema.Struct({
-	id: Schema.String, user_id: Text, channel: Schema.Literals(['web', 'telegram']), external_identity_hash: Text,
+	id: Schema.String, user_id: Text, channel: Schema.Literals(CONVERSATION_CHANNELS), external_identity_hash: Text,
 	title: Schema.String, created_at: Schema.String, updated_at: Schema.String, deleted_at: Text,
 	metadata: Schema.NullOr(JsonText),
 })
@@ -90,7 +91,7 @@ function firstRow(result: { results?: unknown[] } | undefined): unknown {
 // insert_message_with_turn
 
 /** A signed-in user's own conversation, or an owner-less conversation of an external channel. */
-export type ConversationOwner = { userId: string } | { channel: 'telegram' }
+export type ConversationOwner = { userId: string } | { channel: ExternalChannel }
 
 function ownerCondition(owner: ConversationOwner): [string, unknown] {
 	return 'userId' in owner
@@ -477,11 +478,11 @@ export function updateMessageAttachedData(db: D1Database, userId: string, messag
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
-// Owner-less conversations of external channels (Telegram)
+// Owner-less conversations of external channels
 
 const EXTERNAL = 'channel = ? AND user_id IS NULL AND deleted_at IS NULL'
 
-export function findExternalConversation(db: D1Database, channel: 'telegram', hash: string) {
+export function findExternalConversation(db: D1Database, channel: ExternalChannel, hash: string) {
 	return run(async () => {
 		const row = await db.prepare(`SELECT * FROM conversations WHERE external_identity_hash = ? AND ${EXTERNAL}`).bind(hash, channel).first()
 		return row ? decodeConversation(row) : null
@@ -489,7 +490,7 @@ export function findExternalConversation(db: D1Database, channel: 'telegram', ha
 }
 
 export function getOrCreateExternalConversation(
-	db: D1Database, channel: 'telegram', hash: string, title: string, metadata: Record<string, Json>,
+	db: D1Database, channel: ExternalChannel, hash: string, title: string, metadata: Record<string, Json>,
 ) {
 	return run(async () => {
 		const existing = await findExternalConversation(db, channel, hash)
@@ -503,7 +504,7 @@ export function getOrCreateExternalConversation(
 	})
 }
 
-export function getExternalConversation(db: D1Database, channel: 'telegram', conversationId: string) {
+export function getExternalConversation(db: D1Database, channel: ExternalChannel, conversationId: string) {
 	return run(async () => {
 		const row = await db.prepare(`SELECT * FROM conversations WHERE id = ? AND ${EXTERNAL}`).bind(conversationId, channel).first()
 		return row ? decodeConversation(row) : null
@@ -511,7 +512,7 @@ export function getExternalConversation(db: D1Database, channel: 'telegram', con
 }
 
 /** The newest 120 messages of an external conversation. */
-export function loadExternalMessages(db: D1Database, channel: 'telegram', conversationId: string) {
+export function loadExternalMessages(db: D1Database, channel: ExternalChannel, conversationId: string) {
 	return run(async () => {
 		const { results } = await db.prepare(`SELECT m.* FROM messages m JOIN conversations c ON c.id = m.conversation_id
 				WHERE m.conversation_id = ? AND c.channel = ? AND c.user_id IS NULL AND c.deleted_at IS NULL
@@ -520,7 +521,7 @@ export function loadExternalMessages(db: D1Database, channel: 'telegram', conver
 	})
 }
 
-export function setExternalMetadata(db: D1Database, channel: 'telegram', conversationId: string, metadata: Record<string, Json>) {
+export function setExternalMetadata(db: D1Database, channel: ExternalChannel, conversationId: string, metadata: Record<string, Json>) {
 	return run(async () => {
 		const row = await db.prepare(`UPDATE conversations SET metadata = ? WHERE id = ? AND channel = ? AND user_id IS NULL RETURNING *`)
 			.bind(JSON.stringify(metadata), conversationId, channel).first()
@@ -529,15 +530,19 @@ export function setExternalMetadata(db: D1Database, channel: 'telegram', convers
 	})
 }
 
-export function clearExternalMessages(db: D1Database, channel: 'telegram', conversationId: string) {
+export function clearExternalMessages(db: D1Database, channel: ExternalChannel, conversationId: string) {
 	return run(async () => {
 		await db.prepare(`DELETE FROM messages WHERE conversation_id IN (SELECT id FROM conversations WHERE id = ? AND ${EXTERNAL})`)
 			.bind(conversationId, channel).run()
 	})
 }
 
-export function deleteExternalConversation(db: D1Database, channel: 'telegram', conversationId: string) {
+export function deleteExternalConversation(db: D1Database, channel: ExternalChannel, conversationId: string) {
 	return run(async () => {
 		await db.prepare('DELETE FROM conversations WHERE id = ? AND channel = ? AND user_id IS NULL').bind(conversationId, channel).run()
 	})
+}
+
+export function preparePurgeExternalConversations(db: D1Database, channel: ExternalChannel, cutoff: string) {
+	return db.prepare('DELETE FROM conversations WHERE channel = ? AND created_at < ? RETURNING id').bind(channel, cutoff)
 }

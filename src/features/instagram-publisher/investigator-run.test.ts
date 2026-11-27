@@ -50,7 +50,10 @@ it('launches a detached transient user service with the remaining budget and a h
   expect(timeout).toBeLessThan(10_000)
 })
 
-it('returns a safe finish validation message and accepts a corrected finding', () => {
+function withInvestigationFixture(check: (fixture: {
+  state: string; id: string; dir: string; draftFile: string; eventId: string; draft: object
+  receipt: Parameters<typeof recordDelegatedVeto>[2]; invoke: (action: string, data: unknown) => unknown
+}) => void) {
   const state = mkdtempSync(join(tmpdir(), 'publisher-investigation-'))
   try {
     const id = 'hoy-2026-11-25'
@@ -64,12 +67,23 @@ it('returns a safe finish validation message and accepts a corrected finding', (
     const draftFile = join(state, 'drafts', `${id}.json`)
     const draft = { revision: 1, state: 'previewed', framesHash: 'frames', review: { investigation: { request } } }
     writeFileSync(draftFile, JSON.stringify(draft))
-    const result = join(dir, `${eventId}.result.json`)
     const invoke = (action: string, data: unknown) => invokeTool(action, JSON.stringify(data), {
       BA_INSTAGRAM_STATE_DIR: state, BA_INVESTIGATION_DIR: dir,
       BA_INVESTIGATION_ENTRY: fileURLToPath(new URL('../../../scripts/instagram-publisher.ts', import.meta.url)),
       BA_INVESTIGATION_NODE: process.execPath,
+      BA_INSTAGRAM_CATALOG_FIX_TOKEN_FILE: join(state, 'no-token'),
     })
+    const receipt = { actor: 'hermes' as const, at: new Date(startsAt).toISOString(), reason: 'Synthetic instruction',
+      preview: { revision: 1, channel: 'C_TEST', ts: '1.0', instagram: false, threads: true } }
+    check({ state, id, dir, draftFile, eventId, draft, receipt, invoke })
+  } finally {
+    rmSync(state, { recursive: true, force: true })
+  }
+}
+
+it('returns a safe finish validation message and accepts a corrected finding', () => {
+  withInvestigationFixture(({ dir, eventId, invoke }) => {
+    const result = join(dir, `${eventId}.result.json`)
     const finding = { verdict: 'exclude', reason: 'Synthetic event is out of scope.', hermes: 'a'.repeat(301) }
     expect(invoke('finish', [eventId, finding])).toEqual([{ type: 'text', text: 'hermes: Too big: expected string to have <=300 characters' }])
     expect(existsSync(result)).toBe(false)
@@ -80,16 +94,26 @@ it('returns a safe finish validation message and accepts a corrected finding', (
     const missing = join(dir, 'missing.jpg')
     writeFileSync(join(dir, 'evidence.json'), JSON.stringify({ frames: [missing] }))
     expect(invoke('image', 'cover')).toEqual([{ type: 'text', text: 'The operation could not complete.' }])
+  })
+})
 
-    const fix = { id: eventId, field: 'status', from: 'scheduled', to: 'canceled', evidence: 'https://source.example/', allOccurrences: false }
+const cancellation = (id: string) => ({ id, field: 'status', from: 'scheduled', to: 'canceled', evidence: 'https://source.example/', allOccurrences: false })
+
+it('keeps the guarded catalog lock closed before and after a Threads-only approval', () => {
+  withInvestigationFixture(({ dir, draftFile, eventId, draft, receipt, invoke }) => {
+    const fix = cancellation(eventId)
     mkdirSync(join(dir, 'catalog-fix.lock'))
     expect(invoke('catalog-fix', fix)).toEqual([{ type: 'text', text: 'The operation could not complete.' }])
-
-    const receipt = { actor: 'hermes' as const, at: new Date(startsAt).toISOString(), reason: 'Synthetic instruction',
-      preview: { revision: 1, channel: 'C_TEST', ts: '1.0', instagram: false, threads: true } }
     writeFileSync(draftFile, JSON.stringify({ ...draft, approvedSeenAt: null, delegatedApprovals: [receipt] }))
     // A Threads-only approval reaches the (held) catalog lock rather than losing ownership of the preview.
     expect(invoke('catalog-fix', fix)).toEqual([{ type: 'text', text: 'The operation could not complete.' }])
+  })
+})
+
+it('rejects catalog corrections after an Instagram approval or a veto', () => {
+  withInvestigationFixture(({ state, id, dir, draftFile, eventId, draft, receipt, invoke }) => {
+    const fix = cancellation(eventId)
+    mkdirSync(join(dir, 'catalog-fix.lock'))
     writeFileSync(draftFile, JSON.stringify({ ...draft, approvedSeenAt: receipt.at,
       delegatedApprovals: [{ ...receipt, preview: { ...receipt.preview, instagram: true } }] }))
     const inactive = [{ type: 'text', text: 'The investigation no longer owns this preview.' }]
@@ -97,9 +121,7 @@ it('returns a safe finish validation message and accepts a corrected finding', (
     writeFileSync(draftFile, JSON.stringify(draft))
     recordDelegatedVeto(state, id, receipt)
     expect(invoke('catalog-fix', fix)).toEqual(inactive)
-  } finally {
-    rmSync(state, { recursive: true, force: true })
-  }
+  })
 })
 
 it.each(['https://127.0.0.1/', 'https://[::1]/', 'https://0127.0.0.1/', 'https://some.host.local/',

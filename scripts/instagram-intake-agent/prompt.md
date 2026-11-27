@@ -33,7 +33,7 @@ Something that stops you is one of two kinds. Follow the runbook's "Blockers" se
 
 1. Run `preflight`. If setup is missing or disabled, don't collect; append a note saying what setup is required, and stop.
 2. Run `collect` to collect, or resume today's budgeted Apify run. While it answers `running`, wait in this session with `sleep` (a few minutes at a time) and run it again. Follow the runbook for a reservation without an Apify run ID.
-3. Append a note: the outcome, the run's measured `charged_usd` and the intake calendar month's measured `month.charged_usd` against `month.cap_usd` from the `collect` summary (label the total incomplete if `month.unmeasured_runs` is nonzero), Apify's separate account billing-cycle `apify_cycle.usage_usd` against `apify_cycle.limit_usd` (null means unavailable, not zero), the coverage lines (dead, errored, uncovered, and at-ceiling accounts), and the `media` lists from the summary (`server_fetched`, `first_attempt_failed`, `retried_failed`, `expired`, and `deferred`, each with observation IDs and positions, and each failed entry's `reason`, plus any `media.retry.error`). Don't export or review anything.
+3. Append a note: the outcome, the run's measured `charged_usd` and the intake calendar month's measured `month.charged_usd` against `month.cap_usd` from the `collect` summary (label the total incomplete if `month.unmeasured_runs` is nonzero), `month.reserved_or_charged_usd` (the amount used for reservations), `run_cap_usd`, Apify's separate account billing-cycle `apify_cycle.usage_usd` against `apify_cycle.limit_usd` (null means unavailable, not zero), the coverage lines (dead, errored, uncovered, and at-ceiling accounts), and the `media` lists from the summary (`server_fetched`, `first_attempt_failed`, `retried_failed`, `expired`, and `deferred`, each with observation IDs and positions, and each failed entry's `reason`, plus any `media.retry.error`). Don't export or review anything.
 
 ## Phase: review
 
@@ -63,15 +63,19 @@ Do no image work and change nothing in the catalog. Read today's notes from the 
 1. Append one entry to the end of `$INTAKE_MEMORY`: a `## Intake on <ISO time>` heading and at most eight bullets covering the run's charge, what was published, corrected, and held, the remaining backlog, and anything the next run must know (including fixes queued for Hermes). Don't rewrite or delete earlier entries.
 2. Write the fix list to `$INTAKE_FIXES` (replace the file): every `FIX:` line in today's notes, plus any other fix for Hermes the notes describe, including account problems that need follow-up, with duplicates merged. Plain text, one short item per line with no bullet characters, written for Hermes: it may include commands, IDs, error strings, and source URLs, and says how many events each blocks. When there is nothing to fix, leave the file empty. `run.sh` sends this list to Hermes, which fixes it.
 3. Write the report to `$INTAKE_REPORT` (replace the file). It is posted to Slack exactly as written. Hanif wants alerts only: no daily summary, no counts of what was published, no "No action needed" posts. The details belong in the notes and memory.
-   - The file contains exactly `NOTHING TO REPORT` unless at least one of these holds: (a) a product call only Hanif can make is open (a real decision; a failed phase or a fix for Hermes never counts); (b) a phase failed; (c) a configured account is dead, uncovered, or errored (`coverage.dead_sources`, `uncovered_sources`, `errored_sources`); (d) today's intake month total is at or above 80% of its cap, or Apify's account cycle usage is at or above 80% of its limit; (e) the run found no new events and no corrections although accounts were collected (a possible collection problem); (f) a venue was created with `distinct_from`. Fixes queued for Hermes, pending or deferred posts, artwork gaps, and counts alone never trigger a report.
-   - When a trigger holds, write only the lines for the triggers that apply, at most 4 lines, Slack markdown (bold and bullets, no headings, tables, or links). Start with `⚠️ *Instagram intake, <Mon D>:*` and a short plain-words summary of the first trigger. Use bullets for the rest and combine related triggers on one line when needed to fit every trigger within four lines. A decision reads `Needs you: <the decision>`, naming the events and the question. A failed phase reads `<phase> failed; Hermes is checking it.` (`run.sh` already raised a failure alert). Accounts: counts, with names only when there are 3 or fewer. Budget: the figures and the cap, for example `Apify US$22.22 of US$24 this cycle.` A `distinct_from` venue: its name and the reason in a few words.
-   - Except when naming an event for a decision, never mention event names or dates, venues added normally, linked evidence, skipped out-of-scope shows, new-event counts, or cost lines when no budget trigger holds.
+   - Write exactly `NOTHING TO REPORT` unless at least one of these triggers holds:
+     - Decision only Hanif can make.
+     - Venue created with `distinct_from` today.
+     - Collection reservation forecast returns a refusal before a budget resets.
+   - Use the [runbook's reservation forecast](../../docs/instagram-intake.md#reservation-forecast). Report the budget, its current spend and cap, and the first run date that would be refused. Do not infer a refusal from a percentage of spend.
+   - Failed phases already have a separate Hermes alert. Dead, uncovered, and errored accounts that need follow-up go in `$INTAKE_FIXES`. Zero yield, ordinary counts, pending or deferred posts, artwork gaps, failed phases, and fixes for Hermes stay out of the report, even when an allowed trigger applies.
+   - When a trigger holds, write only the lines for the triggers that apply, at most 4 lines, using Slack bold and bullets, with no links. Start with `⚠️ *Instagram intake, <Mon D>:*` and the first trigger. A decision reads `Needs you: <the decision>`, naming the events and the question. A `distinct_from` venue needs its name and the reason so Hanif can check for a duplicate.
 
    For example:
 
    ```
-   ⚠️ *Instagram intake, Nov 23:* 2 accounts missed (aerea_teatro, maquinal.maquinal).
-   • Apify US$22.22 of US$24 this cycle.
+   ⚠️ *Instagram intake, Nov 23:* Needs you: are paid tango classes in scope?
+   • 3 events held until you answer.
    ```
 
 Your final message isn't used; the file is the report.
