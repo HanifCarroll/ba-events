@@ -36,7 +36,17 @@ export function boundVectorize(env: { VECTORIZE?: unknown }): Vectorize | null {
 }
 
 const metadata = (row: VectorRow) => ({ status: row.status, starts_at: Date.parse(row.starts_at) })
-const readVector = (db: D1Database, id: string) => db.prepare(`SELECT ${VECTOR_FIELDS} FROM events WHERE id = ?`).bind(id).first<StoredVector>()
+
+type ExpectedDocument = Pick<VectorPatch, 'search_document' | 'embedding_version'>
+// Unspecified catalog fields are wildcards; an explicit NULL search document must still match D1.
+const DOCUMENT_MATCH = '(? OR search_document IS ?) AND (? OR embedding_version IS ?)'
+const documentMatchParams = (expected: ExpectedDocument) => [
+  Number(expected.search_document === undefined), expected.search_document ?? null,
+  Number(expected.embedding_version === undefined), expected.embedding_version ?? null,
+]
+const readVector = (db: D1Database, id: string, expected: ExpectedDocument) => db
+  .prepare(`SELECT ${VECTOR_FIELDS}, (${DOCUMENT_MATCH}) AS document_matches FROM events WHERE id = ?`)
+  .bind(...documentMatchParams(expected), id).first<StoredVector & { document_matches: number }>()
 
 async function clearQueue(db: D1Database, row: StoredVector) {
   // A newer commit may have arrived while the provider call was in flight. Keep its repair queued.
@@ -46,9 +56,8 @@ async function clearQueue(db: D1Database, row: StoredVector) {
 }
 
 /** Only a document that stuck gets the prepared embedding. A nightly rebuild can supersede an intake receipt, too. */
-async function upsertPrepared(vectors: Vectorize, row: StoredVector, values: number[], expected: Pick<VectorPatch, 'search_document' | 'embedding_version'>) {
-  if (expected.search_document !== undefined && row.search_document !== expected.search_document ||
-      expected.embedding_version !== undefined && row.embedding_version !== expected.embedding_version) return false
+async function upsertPrepared(vectors: Vectorize, row: StoredVector & { document_matches: number }, values: number[]) {
+  if (!row.document_matches) return false
   await vectors.upsert([{ id: row.id, values, metadata: metadata(row) }])
   return true
 }
@@ -66,12 +75,15 @@ export function planVectorWrite(db: D1Database, id: string, write: VectorWrite) 
     ? write.previous !== null && (write.previous.status !== patch.status ||
       Date.parse(String(write.previous.starts_at)) !== Date.parse(patch.starts_at ?? ''))
     : patch.status !== undefined || patch.starts_at !== undefined
-  // Intake retains a pending entry's place in the retry order; importers and rebuilds replace it.
+  // Intake retains a pending entry's place in the retry order. Importers replace it only if the document survived
+  // protection. Default to the insert (and its foreign-key check) if the event doesn't exist.
   const queue = intake ? (embedding || metadataChanged
     ? db.prepare('INSERT INTO vector_sync (event_id) VALUES (?) ON CONFLICT (event_id) DO NOTHING').bind(id) : null)
-    : embedding ? db.prepare(source === 'rebuild'
-      ? 'INSERT OR REPLACE INTO vector_sync (event_id) SELECT ? WHERE changes() > 0'
-      : 'INSERT OR REPLACE INTO vector_sync (event_id) VALUES (?)').bind(id) : null
+    : !embedding ? null : source === 'rebuild'
+      ? db.prepare('INSERT OR REPLACE INTO vector_sync (event_id) SELECT ? WHERE changes() > 0').bind(id)
+      : db.prepare(`INSERT OR REPLACE INTO vector_sync (event_id)
+          SELECT ? WHERE coalesce((SELECT ${DOCUMENT_MATCH} FROM events WHERE id = ?), 1)`)
+        .bind(id, ...documentMatchParams(patch), id)
 
   return {
     queue,
@@ -79,10 +91,10 @@ export function planVectorWrite(db: D1Database, id: string, write: VectorWrite) 
       if (!embedding && !metadataChanged) return false
       if (receiptPlanId && !await db.prepare(`SELECT 1 FROM event_intake_protection p JOIN vector_sync q ON q.event_id = p.event_id
         WHERE p.event_id = ? AND p.plan_id = ?`).bind(id, receiptPlanId).first()) return false
-      const row = await readVector(db, id)
-      if (!row) return false
       const expected = intake ? { ...patch, embedding_version: patch.embedding_version ?? 1 } : patch
-      if (embedding && (!intake || expected.search_document !== undefined) && await upsertPrepared(vectors, row, embedding, expected)) {
+      const row = await readVector(db, id, expected)
+      if (!row) return false
+      if (embedding && (!intake || expected.search_document !== undefined) && await upsertPrepared(vectors, row, embedding)) {
         await clearQueue(db, row)
         return true
       }
@@ -90,9 +102,8 @@ export function planVectorWrite(db: D1Database, id: string, write: VectorWrite) 
         // Intake metadata updates leave the queue: Vectorize can return stale values.
         await syncMetadata(vectors, [row], true)
       } else if (source === 'catalog') {
-        // Protection kept the old search document. Its vector can still need a metadata refresh.
+        // A metadata refresh cannot settle an outstanding document repair.
         await syncMetadata(vectors, [row])
-        if (embedding) await clearQueue(db, row)
       }
       return false
     },
@@ -157,8 +168,8 @@ interface ReconcileOptions {
 }
 
 async function embedStoredDocument(db: D1Database, vectors: Vectorize, row: StoredVector, values: number[], queued = false) {
-  const current = await readVector(db, row.id)
-  if (!current || !await upsertPrepared(vectors, current, values, row)) return false
+  const current = await readVector(db, row.id, row)
+  if (!current || !await upsertPrepared(vectors, current, values)) return false
   if (queued) await clearQueue(db, current)
   return true
 }
