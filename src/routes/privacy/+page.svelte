@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { ArrowLeft, ShieldCheck } from 'lucide-svelte';
 	import { getLocale } from '#paraglide/runtime.js';
+	import * as m from '#paraglide/messages.js';
 
 	const copy = {
 		en: {
@@ -47,7 +48,7 @@
 					title: 'Retention and your choices',
 					body: [
 						'Account data is kept while your account is active. You can delete your account, profile, saved events, and account conversations from Settings. You can delete guest conversations in the app or clear them by removing this site’s browser data. Telegram pilot data is kept for no more than 30 days. Using /delete immediately removes the conversation and HMAC identity; a minimal operational delivery record, without chat or user identifiers or message text, may remain until it ages out. A feedback message may be retained for review after account deletion, without its link to your account.',
-						'You may ask to access, correct, update, or delete your personal data. In Argentina, these rights are protected by Law 25,326. Use the Feedback option in BA Eventos to contact us about a privacy request.'
+						`You may ask to access, correct, update, or delete your personal data. In Argentina, these rights are protected by Law 25,326. Use the ${m.nav_feedback({}, { locale: 'en' })} option in BA Eventos to contact us about a privacy request.`
 					]
 				},
 				{
@@ -102,7 +103,7 @@
 					title: 'Conservación y tus opciones',
 					body: [
 						'Conservamos los datos de la cuenta mientras esté activa. Podés eliminar tu cuenta, perfil, eventos guardados y conversaciones de la cuenta desde Configuración. Podés borrar conversaciones de invitado en la app o eliminar los datos de este sitio del navegador. Los datos del piloto de Telegram se conservan como máximo 30 días. Al usar /delete se borran inmediatamente la conversación y la identidad HMAC; un registro operativo mínimo de entrega, sin identificadores de chat o usuario ni texto de mensajes, puede permanecer hasta vencer. Un comentario puede conservarse para revisión después de eliminar la cuenta, sin el vínculo con tu cuenta.',
-						'Podés pedir acceso, rectificación, actualización o supresión de tus datos personales. En Argentina, estos derechos están protegidos por la Ley 25.326. Usá la opción Comentarios de BA Eventos para contactarnos por una solicitud de privacidad.'
+						`Podés pedir acceso, rectificación, actualización o supresión de tus datos personales. En Argentina, estos derechos están protegidos por la Ley 25.326. Usá la opción ${m.nav_feedback({}, { locale: 'es' })} de BA Eventos para contactarnos por una solicitud de privacidad.`
 					]
 				},
 				{

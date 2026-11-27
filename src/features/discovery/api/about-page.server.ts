@@ -1,4 +1,5 @@
 import { getEnabledInstagramSourceCount } from '#shared/lib/db/client.server.ts'
+import * as m from '#paraglide/messages.js'
 import { getSiteUrl } from '#shared/lib/utils/url.ts'
 import { setDiscoveryHeaders } from './agenda-page.server.ts'
 import { fillCopy, pageCopy } from '../lib/copy.ts'
@@ -16,6 +17,7 @@ export async function loadAboutPage(path: typeof aboutPaths[number], setHeaders:
     n_accounts: rounded && rounded < sources ? `more than ${rounded} accounts` : `${sources} ${sources === 1 ? 'account' : 'accounts'}`,
     mes_anio: 'noviembre de 2026',
     month_year: 'November 2026',
+    feedback_label: m.nav_feedback({}, { locale: lang }),
   }
   setDiscoveryHeaders(setHeaders, signedIn)
   return { ...pageCopy(page, values), path, lang, canonical: getSiteUrl() + path,
