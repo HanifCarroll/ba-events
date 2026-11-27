@@ -3,6 +3,8 @@ import { readFileSync, statSync } from 'node:fs'
 import { z } from 'zod'
 import type { Investigation } from './investigation.ts'
 import type { FormatKey } from './formats.ts'
+import type { SourceEvidence } from './review-evidence.ts'
+import type { QuestionResolution } from './review-resolution.ts'
 import type { PostEvent } from './select.ts'
 
 const fields = {
@@ -16,6 +18,7 @@ const output = z.strictObject({ post: verdict, events: z.array(z.strictObject({ 
 const { $schema: _schemaVersion, ...schema } = z.toJSONSchema(output)
 
 export type Verdict = z.infer<typeof verdict>
+export type ReviewEvidenceFlag = Pick<Verdict, 'field' | 'question' | 'reason'>
 export const OK: Verdict = { verdict: 'ok', field: null, reason: null, question: null }
 export interface ReviewInput {
   format: FormatKey
@@ -35,6 +38,7 @@ export interface ReviewResult extends ReviewOutput {
   copyHash: string
   startedAt: string
   completedAt: string
+  questionResolution?: { quick?: QuestionResolution; fallback?: QuestionResolution }
 }
 export interface ReviewState {
   reelHoldMids?: number[]
@@ -48,14 +52,6 @@ export interface ReviewState {
 }
 export interface ReviewConfig { model: string; keyFile: string }
 
-export interface SourceEvidence {
-  caption: string
-  postUrl: string
-  publishedAt: string | null
-  officialExcerpts: string | null
-  flyer?: string
-}
-
 /** Bind the result to the exact outgoing texts, picks, date window, and Reel card sample times, not just the images. */
 export const copyHash = ({ frames: _paths, ...content }: ReviewInput) => createHash('sha256').update(JSON.stringify(content)).digest('hex')
 export const allOk = ({ post, events }: ReviewOutput) => post.verdict === 'ok' && events.every(event => event.verdict === 'ok')
@@ -66,7 +62,7 @@ export function validateReview<T extends ReviewOutput>(input: ReviewInput, resul
     const line = (text: string | null, max: number) => text !== null && text.length <= max && text.trim() !== '' && !/[\r\n\x00-\x1f\x7f]/u.test(text)
     if (item.verdict === 'ok') return item.field === null && item.reason === null && item.question === null
     if (item.verdict === 'wrong') return line(item.field, 40) && line(item.reason, 300) && item.question === null
-    return item.verdict === 'question' && item.field === null && item.reason === null && line(item.question, 300)
+    return item.verdict === 'question' && (item.field === null || line(item.field, 40)) && item.reason === null && line(item.question, 300)
   }
   if (!result.model?.trim() || !valid(result.post) || !result.events.every(event => expected.delete(event.id) && valid(event)) || expected.size) {
     throw new Error('OpenAI review returned invalid or incomplete verdicts.')
@@ -98,18 +94,27 @@ export async function reviewWithOpenAI(config: ReviewConfig, key: string, prompt
   ]
   for (const [index, event] of input.events.entries()) {
     const { flyer, ...source } = sources.get(event.id) ?? {}
-    parts.push(text(JSON.stringify({ catalog: event, linkedSource: source })), text(`Rendered card for ${event.id}:`), image(jpeg(stills[index + 1]!)))
+    parts.push(text(JSON.stringify({ catalog: event, linkedEvidence: source })), text(`Rendered card for ${event.id}:`), image(jpeg(stills[index + 1]!)))
     if (flyer) parts.push(text(`Intake source image for ${event.id}:`), image(flyer))
   }
   parts.push(text('Rendered closing frame:'), image(jpeg(stills.at(-1)!)))
+  const { output: data, model } = await requestReviewJson(config, key, prompt, parts, 'publisher_review', schema, fetchImpl)
+  const parsed = output.safeParse(data)
+  if (!parsed.success) throw new Error('OpenAI review did not return the required verdict format.')
+  return validateReview(input, { ...parsed.data, model })
+}
+
+export async function requestReviewJson(config: ReviewConfig, key: string, prompt: string,
+  parts: Array<ReturnType<typeof text> | ReturnType<typeof image>>, name: string, schema: Record<string, unknown>, fetchImpl: typeof fetch,
+  timeout = 90_000) {
   let response: Response
   try {
     response = await fetchImpl('https://api.openai.com/v1/responses', {
-      method: 'POST', redirect: 'error', signal: AbortSignal.timeout(90_000),
+      method: 'POST', redirect: 'error', signal: AbortSignal.timeout(timeout),
       headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ model: config.model, instructions: prompt, input: [{ role: 'user', content: parts }], store: false,
         reasoning: { effort: 'low' }, max_output_tokens: 3200,
-        text: { format: { type: 'json_schema', name: 'publisher_review', strict: true, schema } } }),
+        text: { format: { type: 'json_schema', name, strict: true, schema } } }),
     })
   } catch { throw new Error('OpenAI review request failed or timed out.') }
   if (!response.ok) {
@@ -124,7 +129,5 @@ export async function reviewWithOpenAI(config: ReviewConfig, key: string, prompt
   const json = messages.length === 1 && messages[0]?.type === 'output_text' ? messages[0].text : undefined
   let data: unknown
   try { data = json === undefined ? null : JSON.parse(json) } catch { throw new Error('OpenAI review did not return JSON.') }
-  const parsed = output.safeParse(data)
-  if (!parsed.success) throw new Error('OpenAI review did not return the required verdict format.')
-  return validateReview(input, { ...parsed.data, model: envelope.data.model })
+  return { model: envelope.data.model, output: data }
 }

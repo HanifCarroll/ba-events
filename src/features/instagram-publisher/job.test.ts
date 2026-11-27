@@ -14,6 +14,7 @@ import type { Finding, InvestigationRequest } from './investigation.ts'
 import { Job, dryRun, type Draft, type Services } from './job.ts'
 import { DEFAULT_REVIEW, SlackRejected, type Config } from './runtime.ts'
 import { OK, type Reviewer, type Verdict } from './review.ts'
+import { resolveReviewQuestionsWithOpenAI } from './review-resolution.ts'
 import type { CatalogEvent } from './select.ts'
 import { StoryComposerError, type ComposeStory, type StickerFrame } from './story-stickers.ts'
 import { threadsApi } from './threads-api.ts'
@@ -28,6 +29,9 @@ function musicDir(tracks = [{ id: 'a', bpm: 90, startSec: 1 }, { id: 'b', bpm: 1
 }
 
 const uuid = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`
+const resolverResponse = (resolved: unknown[]) => Response.json({ status: 'completed', model: 'fake-vision', output: [
+  { type: 'message', content: [{ type: 'output_text', text: JSON.stringify({ resolved }) }] },
+] })
 
 /** Six qualifying weekend events (Friday 20 to Sunday 22, November 2026) at six venues. */
 const weekend = (): CatalogEvent[] => Array.from({ length: 6 }, (_, i) => ({
@@ -146,6 +150,8 @@ class World {
         return `${this.nextTs++}.0`
       },
       review: (...args) => this.reviewer(...args),
+      reviewResources: async ids => new Map(ids.map(id => [id, { address: null, observations: [], officialPages: [] }])),
+      fetchUsig: async () => { throw new Error('Unexpected USIG fetch') },
       investigator: this.investigator,
       slackPost: async (text: string, threadTs: string | null, channel: string, broadcast?: boolean) => {
         this.slackCalls.push({ method: 'chat.postMessage', channel, text, ...(threadTs ? { ts: threadTs } : {}), ...(broadcast ? { reply_broadcast: true } : {}) })
@@ -271,6 +277,90 @@ describe('tick: draft review', () => {
         expect(w.slackCalls).toEqual([])
       } else expect(w.threads.posts).toHaveLength(1)
     }
+  })
+
+  it.each(['question', 'wrong'] as const)('puts public evidence in the real quick-review %s reply', async verdict => {
+    const w = world()
+    w.config.auto.finde = false
+    w.verdict = id => id === badId ? (verdict === 'question' ? question : wrong) : OK
+    const postUrl = 'https://www.instagram.com/p/synthetic-review/'
+    const url = 'https://sala.example.org/programa?funcion=1&dia=viernes'
+    const excerpt = 'Función de *teatro físico* <@U123> & muestra.'
+    const job = w.job()
+    job.s.reviewResources = async () => new Map([[badId, { address: null,
+      observations: [{ postUrl, caption: '', publishedAt: null, excerpts: [{ fields: ['description', 'time'], excerpt }] }],
+      officialPages: [{ url, fields: ['description', 'time'], excerpt: 'Show 21:00 · teatro físico' },
+        { url: 'https://sala.example.org/private?access_token=synthetic-secret', fields: ['time'], excerpt: 'Do not expose credentials.' }],
+    }]])
+    if (verdict === 'wrong') {
+      // Use an existing manual preview and a spent rebuild budget so the error is reported on this revision.
+      const review = w.reviewer
+      w.reviewer = async () => { throw new Error('Review unavailable') }
+      await w.job().tick()
+      w.reviewer = review
+      const draft = w.draft()
+      draft.reviewRebuilds = { day: '2026-11-18', count: 2 }
+      writeFileSync(job.draftFile(draft.id), JSON.stringify(draft))
+    }
+    await job.tick()
+    const reply = w.reviewPosts.find(post => post.text.includes(verdict === 'question' ? 'hace falta tu decisión' : 'se detectó un error'))
+    expect(reply?.text).toContain(verdict === 'question' ? question.question : wrong.reason!)
+    expect(reply?.text).toContain(`<https://baeventos.com/events/${badId}|`)
+    expect(reply?.text).toContain(`<${postUrl}>`)
+    expect(reply?.text).toContain(`<${url.replace('&', '&amp;')}>`)
+    expect(reply?.text).toContain('“`Función de *teatro físico* &lt;@U123&gt; &amp; muestra.`”')
+    expect(reply?.text).not.toContain('synthetic-secret')
+    expect(reply?.text).toContain('Show 21:00 · teatro físico')
+    expect(reply?.text).not.toContain('<@U123>')
+    expect(w.broadcasts()).toHaveLength(verdict === 'question' ? 1 : 0)
+  })
+
+  it.each([false, true])('continues oversized evidence in the same thread (legacy preview: %s)', async legacy => {
+    const w = world()
+    if (legacy) w.config.slack.channel = 'C0CHBCSEV3R'
+    w.verdict = id => id === badId ? question : OK
+    const links = Array.from({ length: 40 }, (_, i) => `https://www.instagram.com/p/${String(i).padStart(2, '0')}${'a'.repeat(65)}/`)
+    const job = w.job()
+    job.s.reviewResources = async () => new Map([[badId, { address: null,
+      observations: links.map(postUrl => ({ postUrl, caption: '', publishedAt: null, excerpts: [] })), officialPages: [],
+    }]])
+    const post = job.s.slackPost
+    let parent: string | undefined
+    let refuse = true
+    job.s.slackPost = async (...args) => {
+      if (args[0].includes('Revisión: continuación') && refuse) { refuse = false; throw new SlackRejected('rate limited') }
+      const response = await post(...args) as { ts: string }
+      if (!args[1]) parent = response.ts
+      return response
+    }
+    await job.tick()
+    const ts = legacy ? parent : w.draft().slack.ts
+    expect(w.draft().pendingReviewReplies).toHaveLength(1)
+    await w.job().tick()
+    const posts = w.slackCalls.filter(call => call.method === 'chat.postMessage' && call.text?.includes('Revisión:'))
+    expect(posts).toHaveLength(2)
+    expect(posts.every(call => call.text!.length <= 4000 && call.channel === 'C0CG3EGKKP1')).toBe(true)
+    expect(posts[1]).toMatchObject({ ts })
+    expect(posts[1]?.reply_broadcast).toBeUndefined()
+    for (const link of links) expect(posts.filter(call => call.text!.includes(`<${link}>`))).toHaveLength(1)
+    expect(w.draft().pendingReviewReplies).toEqual([])
+  })
+
+  it('treats a directly contradicted quick question as a confirmed error and rebuilds without asking', async () => {
+    const w = world()
+    w.verdict = id => id === badId ? { ...question, question: 'Can you confirm that admission is free?', field: 'price' } : OK
+    const job = w.job()
+    const url = 'https://sala.example.org/entradas'
+    const quote = 'Las entradas cuestan $5000.'
+    job.s.reviewResources = async () => new Map([[badId, { address: null, observations: [], officialPages: [{ url, fields: ['price'], excerpt: quote }] }]])
+    job.s.resolveQuestions = (input, questions) => resolveReviewQuestionsWithOpenAI(DEFAULT_REVIEW, 'synthetic-key', 'test', input, questions,
+      async () => resolverResponse([{ id: badId, verdict: 'wrong', field: 'price', reason: 'The ticket page states paid admission.', citations: [{ url, quote }] }]))
+    await job.tick()
+    expect(w.draft()).toMatchObject({ revision: 2, exclude: [badId], reviewHistory: [{ questionResolution: { quick: {
+      resolved: [{ id: badId, verdict: 'wrong', citations: [{ url, quote }] }],
+    } } }] })
+    expect(w.alerts.some(alert => alert.key === `review-fix/${badId}`)).toBe(true)
+    expect(w.broadcasts()).toEqual([])
   })
 
   it('asks Hanif about a post question, even with a separate confirmed event error', async () => {
@@ -939,7 +1029,7 @@ describe('tick: publisher investigation', () => {
     await w.job().tick()
     expect(w.broadcasts()).toEqual([{
       method: 'chat.postMessage', channel: w.config.slack.channel, ts: w.draft().slack.ts, reply_broadcast: true,
-      text: `Revisión: investigación\n18 mundos — Montaje anual: ${ask.question} Checked: ${ask.checked}\nRespondé con ✅ o ❌ en la vista previa.`,
+      text: `Revisión: investigación\n18 mundos — Montaje anual: ${ask.question}\n<https://baeventos.com/events/${flaggedId}|Evento en BA Eventos>\nChecked (r1): ${ask.checked}\nRespondé con ✅ o ❌ en la vista previa.`,
     }])
     expect(w.reviewPosts).toHaveLength(1)
     expect(w.alerts.some(alert => alert.key === `review-fix/${flaggedId}` && alert.text.includes(hermes))).toBe(needsFix)
@@ -1056,11 +1146,125 @@ describe('tick: publisher investigation', () => {
     expect(runs).toHaveLength(2)
     expect(w.draft()).toMatchObject({ revision: 3, exclude: [flaggedId, uuid(2)], reviewRebuilds: { count: 2 } })
     if (verdict === 'question') {
-      expect(w.broadcasts()).toEqual([expect.objectContaining({ text: expect.stringContaining('Two revisions have already been investigated.') })])
+      expect(w.broadcasts()).toEqual([expect.objectContaining({ text: expect.stringContaining('Not investigated: Two revisions have already been investigated.') })])
     } else {
       expect(w.slackCalls).toEqual([])
       expect(w.alerts).toContainEqual(expect.objectContaining({ key: `review-fix/${uuid(3)}` }))
     }
+  })
+
+  it.each([
+    { mode: 'resources', usigFails: false, silent: false },
+    { mode: 'quick', usigFails: false, silent: false },
+    { mode: 'fallback', usigFails: false, silent: false },
+    { mode: 'fallback', usigFails: true, silent: true },
+  ])('handles reel-2026-11-27 r3 evidence ($mode, USIG failure: $usigFails, silent price: $silent)', async ({ mode, usigFails, silent }) => {
+    const w = new World()
+    const id = 'reel-2026-11-27'
+    const [nomades, cepa] = [uuid(1), uuid(2)]
+    const nomadesPost = 'https://www.instagram.com/p/DgFAIHrpkXN/'
+    const genericPost = 'https://www.instagram.com/p/DgFlHsKkS0p/'
+    const pricePost = 'https://www.instagram.com/p/DgDPZYOvzgM/'
+    const usig = 'https://ws.usig.buenosaires.gob.ar/datos_utiles?calle=SAN%20MARTIN%20AV.&altura=5885'
+    const priceCaption = '•Entrada libre y gratuita.'
+    const priceFlyer = 'Sábado 28 · Exposición de diseño · 11 a 20 h · Entrada gratuita sujeta a capacidad de sala.'
+    const addressFlyer = 'Av. San Martín 5885 · Orange Devoto'
+    w.config.auto.reel = true
+    w.at('2026-11-26', 18, 5)
+    w.catalog.forEach(event => { event.startsAt = new Date(Date.parse(event.startsAt) + 7 * 86_400_000).toISOString() })
+    Object.assign(w.catalog[0]!, { name: 'Nómades Artificiales', venue: 'Orange Devoto', barrio: 'Agronomía' })
+    Object.assign(w.catalog[1]!, { name: 'CEPA: El Abrazo del Diseño', isFree: true, price: 0 })
+    w.investigator = { start: async () => { throw new Error('The cap should stop a third investigation') }, running: async () => false }
+    const job = w.job()
+    await job.tick()
+    await job.regenerate(id, [])
+    const review = w.reviewer
+    w.reviewer = async input => {
+      const result = await review(input)
+      if (input.format !== 'reel') return result
+      return { ...result, events: result.events.map(event => ({ ...event, ...(event.id === nomades ? {
+        verdict: 'question', question: 'The flyer lists Av. San Martín 5885 in Devoto, but the card says Agronomía. Which barrio is correct?',
+      } : event.id === cepa ? { verdict: 'question', question: 'Can you confirm CEPA is free? The venue post does not state a price.' } : {}) })) }
+    }
+    const { mkdirSync } = await import('node:fs')
+    const priorDir = join(w.dir, 'drafts', id, 'investigation-2')
+    const at = w.clock.getTime()
+    mkdirSync(priorDir, { recursive: true })
+    writeFileSync(join(priorDir, 'request.json'), JSON.stringify({ id, revision: 2, startsAt: at - 20_000, endsAt: at - 1, events: [{ id: nomades }] }))
+    writeFileSync(join(priorDir, `${nomades}.result.json`), JSON.stringify({ at: at - 10_000, finding: {
+      verdict: 'ok', reason: 'USIG places this street number in Agronomía.', url: usig,
+    } }))
+    writeFileSync(join(priorDir, 'completed.json'), JSON.stringify({ at: at - 9_000 }))
+    job.s.reviewResources = async () => new Map([
+      [nomades, { address: 'Av. San Martín 5885, CABA', observations: [{ postUrl: nomadesPost, caption: '', publishedAt: null,
+        excerpts: [{ fields: ['venue'], excerpt: addressFlyer }] }], officialPages: [] }],
+      [cepa, { address: null, observations: [{ postUrl: genericPost, caption: 'La muestra abre el sábado.', publishedAt: null, excerpts: [] },
+        { postUrl: pricePost, caption: silent ? 'Vení a descubrir el diseño local.' : priceCaption, publishedAt: null, excerpts: [
+          ...(silent ? [] : [{ fields: ['price'], excerpt: priceCaption }, { fields: ['price'], excerpt: priceFlyer }]),
+          { fields: ['name'], excerpt: 'El abrazo del diseño' },
+        ] }], officialPages: [] }],
+    ])
+    const lookedUp: string[] = []
+    job.s.fetchUsig = async (url, options) => {
+      lookedUp.push(String(url))
+      expect(options).toMatchObject({ redirect: 'error', signal: expect.any(AbortSignal) })
+      if (usigFails) throw new DOMException('Timeout', 'TimeoutError')
+      return Response.json({ barrio: 'Agronomia' })
+    }
+    const resolver: Services['resolveQuestions'] = (input, questions) => resolveReviewQuestionsWithOpenAI(DEFAULT_REVIEW, 'synthetic-key', 'test', input, questions,
+      async (_url, request) => {
+        const body = JSON.parse(String(request?.body))
+        expect(body.text.format.name).toBe('publisher_question_resolution')
+        const payload = JSON.parse(body.input[0].content[0].text)
+        expect(payload.events.find((event: { id: string }) => event.id === cepa).observations.map((source: { postUrl: string }) => source.postUrl)).toEqual([genericPost, pricePost])
+        expect(payload.events.find((event: { id: string }) => event.id === nomades).usig?.barrio ?? null).toBe(usigFails ? null : 'Agronomia')
+        // If a source lacks the cited fact, even a confident model output cannot clear that question.
+        return resolverResponse([
+          { id: nomades, verdict: 'ok', field: 'barrio', reason: 'USIG confirms Agronomía.', citations: [{ url: usig, quote: 'Agronomia' }] },
+          { id: cepa, verdict: 'ok', field: 'price', reason: 'The linked caption explicitly says entry is free.', citations: [{ url: pricePost, quote: priceCaption }] },
+        ])
+      })
+    if (mode === 'quick') job.s.resolveQuestions = resolver
+    const draft = await job.regenerate(id, [])
+    draft.investigationCount = 2
+    if (mode === 'fallback') {
+      // The first check left these questions open. Run the independent check at the investigation cap.
+      draft.review!.result!.questionResolution = { quick: { model: 'fake-vision', resolved: [] } }
+      job.s.resolveQuestions = resolver
+    }
+    writeFileSync(job.draftFile(id), JSON.stringify(draft))
+    await job.tick()
+    expect(w.reel(id)).toMatchObject({ revision: 3, state: 'previewed', investigationCount: 2 })
+    expect(lookedUp).toEqual([usig])
+    if (mode !== 'resources' && !silent && !usigFails) {
+      expect(w.reel(id)?.slack.ts).toBeNull()
+      expect(w.broadcasts()).toEqual([])
+      const audit = w.reel(id)?.review?.result?.questionResolution?.[mode === 'quick' ? 'quick' : 'fallback']
+      expect(audit?.resolved).toEqual([
+        expect.objectContaining({ id: nomades, verdict: 'ok', citations: [{ url: usig, quote: 'Agronomia' }] }),
+        expect.objectContaining({ id: cepa, verdict: 'ok', citations: [{ url: pricePost, quote: priceCaption }] }),
+      ])
+      w.at('2026-11-27', 12, 1)
+      await job.tick()
+      expect(w.reel(id)?.state).toBe('published')
+      return
+    }
+    const notices = w.broadcasts().filter(post => post.ts === w.reel(id)?.slack.ts)
+    expect(notices).toHaveLength(1)
+    const text = notices[0]!.text!
+    for (const link of [`https://baeventos.com/events/${nomades}`, `https://baeventos.com/events/${cepa}`, nomadesPost, genericPost, pricePost, usig.replace('&', '&amp;')]) {
+      expect(text).toContain(link)
+    }
+    expect(text).toContain(`“${addressFlyer}”`)
+    for (const excerpt of [priceCaption, priceFlyer]) {
+      if (silent) expect(text).not.toContain(excerpt)
+      else expect(text).toContain(`“${excerpt}”`)
+    }
+    expect(text).not.toContain('“El abrazo del diseño”')
+    expect(text).toContain('Checked (r2): USIG places this street number in Agronomía.')
+    expect(text).toContain(usigFails ? 'falló la consulta oficial.' : 'barrio oficial: Agronomia.')
+    expect(text.match(/Not investigated: Two revisions have already been investigated\./g)).toHaveLength(1)
+    expect(text).not.toContain('Checked: Two revisions')
   })
 
   it.each([false, true])('honors a reaction while the investigation is running (rejected: %s)', async rejected => {

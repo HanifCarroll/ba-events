@@ -86,8 +86,12 @@ export function reviewFix(draft: Draft, id: string | null, finding: Verdict) {
 }
 
 /** Quote short model and catalog excerpts without allowing Slack mentions or markup. */
-export const slackLiteral = (value: string) => value.replace(/[\r\n]+/g, ' ').replaceAll('`', "'")
-  .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replace(/[*_~]/g, '')
+export function slackLiteral(value: string, format: 'plain' | 'quote' = 'plain') {
+  const escaped = value.replace(/[\r\n]+/g, ' ').replaceAll('`', "'")
+    .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
+  // Slack doesn't interpret emphasis inside code spans. Preserve punctuation in cited text.
+  return format === 'quote' && /[*_~]/u.test(escaped) ? `\`${escaped}\`` : escaped.replace(/[*_~]/g, '')
+}
 
 export function investigatorFailed(draft: Draft, reason: string, dir: string) {
   return [`⚠️ *The ${label(draft)} investigation did not finish*. ${TRIAGE}`,

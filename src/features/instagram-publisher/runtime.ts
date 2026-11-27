@@ -13,7 +13,8 @@ import type { FormatKey, RunWindow } from './formats.ts'
 import { writeExcerpt, type ReadyTrack } from './reel/music.ts'
 import { REEL_FAILURE, reelProject, type ReelTiming } from './reel/project.ts'
 import { readReviewKey, reviewWithOpenAI, type ReviewConfig, type Reviewer } from './review.ts'
-import { loadReviewSources } from './review-evidence.ts'
+import { loadReviewResources, loadReviewSources } from './review-evidence.ts'
+import { resolveReviewQuestionsWithOpenAI, type QuestionResolver } from './review-resolution.ts'
 import type { CatalogEvent, PostEvent } from './select.ts'
 import type { ThreadsFormat } from './threads-copy.ts'
 
@@ -405,6 +406,7 @@ async function readIntakeFlyer(key: string) {
   return readArtworkBody(response).catch(() => { throw new Error(`Could not read retained intake evidence from R2 (HTTP ${response.status}).`) })
 }
 
+export const reviewResources = (ids: string[]) => loadReviewResources(ids, d1Read)
 export const reviewSources = (ids: string[]) => loadReviewSources(ids, d1Read, readIntakeFlyer)
 
 export async function reviewStills(input: Parameters<Reviewer>[0], dir: string) {
@@ -432,6 +434,12 @@ export const reviewDraft: Reviewer = async input => {
   const dir = mkdtempSync(join(tmpdir(), 'ba-reel-review-'))
   try { return await reviewWithOpenAI(config, key, prompt, input, await reviewStills(input, dir), sources) }
   finally { rmSync(dir, { recursive: true, force: true }) }
+}
+
+export const resolveQuestions: QuestionResolver = (input, questions) => {
+  const config = readConfig().review
+  const prompt = readFileSync(join(REPO, 'src/features/instagram-publisher/review-resolution-prompt.md'), 'utf8')
+  return resolveReviewQuestionsWithOpenAI(config, readReviewKey(config.keyFile), prompt, input, questions)
 }
 
 // Slack, through Hermes' slack_api.py (it reads the bot token itself).

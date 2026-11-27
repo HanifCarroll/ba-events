@@ -16,10 +16,13 @@ import { baLocal } from './format.ts'
 import { FORMATS, activeRuns, draftId, parseDraftId, runWindow, type FormatKey, type RunWindow } from './formats.ts'
 import { FRAME, LAYOUT_VERSION, framesHtml } from './html.ts'
 import { PROFILE_URL, StillProcessing, emptyPublishState, eventFrameTag, instagramApi, publish, type InstagramApi, type PublishJob, type PublishState, type Slide } from './instagram.ts'
-import { askAll, endTime, flagged, hasCompleted, location, MAX_INVESTIGATIONS, readFindings, requestMatches, type Investigation, type InvestigationRequest } from './investigation.ts'
+import { askAll, endTime, flagged, hasCompleted, location, MAX_INVESTIGATIONS, readFindings, readRecordedChecks, requestMatches, type Investigation, type InvestigationRequest } from './investigation.ts'
 import { fixLog, investigatorRunning, startInvestigator, stopInvestigator } from './investigator-run.ts'
 import { nextTrack, readTracks, readyTrack, type DraftTrack, type ReadyTrack } from './reel/music.ts'
 import { reelTiming, type ReelTiming } from './reel/project.ts'
+import type { ReviewResources } from './review-evidence.ts'
+import { eventReplyLines, isAddressFlag, lookupReviewBarrio, splitReviewReply, type ReviewBarrioLookup, type ReviewEventReply, type ReviewReplyDelivery } from './review-reply.ts'
+import type { QuestionResolver, QuestionResolution } from './review-resolution.ts'
 import { allOk, copyHash, validateReview, type ReviewInput, type ReviewResult, type ReviewState, type Reviewer, type Verdict } from './review.ts'
 import * as runtime from './runtime.ts'
 import type { Config, EventNow, TokenCheck } from './runtime.ts'
@@ -60,6 +63,7 @@ export interface Draft {
   reviewHistory?: ReviewResult[]
   reviewRebuilds?: { day: string; count: number }
   pendingReviewFixes?: ReturnType<typeof alerts.reviewFix>[]
+  pendingReviewReplies?: ReviewReplyDelivery[]
   investigationCount?: number
   catalogFixes?: FixReceipt[]
   /** The active preview can outlive its revision. A pending share does not replace it until confirmed. */
@@ -98,6 +102,9 @@ export interface Services {
   /** Returns [reel.mp4, cover.jpg]. */
   renderReel(window: RunWindow, events: PostEvent[], timing: ReelTiming, track: ReadyTrack, outDir: string, artwork: Artwork): Promise<string[]>
   review: Reviewer
+  reviewResources(ids: string[]): Promise<Map<string, ReviewResources>>
+  resolveQuestions?: QuestionResolver
+  fetchUsig?: typeof fetch
   investigator?: { start: typeof startInvestigator; running: typeof investigatorRunning; stop?: typeof stopInvestigator }
   slackUploadFiles(frames: string[], draftId: string): Promise<Array<{ id: string; title: string }>>
   slackShareFiles(files: Array<{ id: string; title: string }>, text: string, channel: string): Promise<unknown>
@@ -128,6 +135,8 @@ export const liveServices = (): Services => ({
   render: (html, outDir, height) => runtime.renderFrames(html, outDir, height),
   renderReel: (window, events, timing, track, outDir, artwork) => runtime.renderReel(window, events, timing, track, outDir, artwork),
   review: runtime.reviewDraft,
+  reviewResources: runtime.reviewResources,
+  resolveQuestions: runtime.resolveQuestions,
   investigator: { start: startInvestigator, running: investigatorRunning, stop: stopInvestigator },
   slackUploadFiles: runtime.slackUploadFiles,
   slackShareFiles: runtime.slackShareFiles,
@@ -166,6 +175,7 @@ const previewChannel = (draft: Draft) => draft.slack.channel ?? runtime.LEGACY_S
 
 export class Job {
   private readonly reviewedThisTick = new Set<string>()
+  private readonly barriosThisTick = new Map<string, Promise<ReviewBarrioLookup | null>>()
   private readonly snapshots = new WeakMap<Draft, string | null>()
 
   constructor(readonly s: Services) {}
@@ -260,6 +270,7 @@ export class Job {
       review: { reelHoldMids: built.timing?.cards.slice(1).map(card => card.holdMid), unavailableAlert: current?.review?.unavailableAlert },
       decisionBroadcastAttempted: current?.decisionBroadcastAttempted,
       reviewHistory: current?.reviewHistory, reviewRebuilds: current?.reviewRebuilds, pendingReviewFixes: current?.pendingReviewFixes,
+      pendingReviewReplies: current?.pendingReviewReplies,
       investigationCount: current?.investigationCount, catalogFixes: current?.catalogFixes, threadsHoldOpen: current?.threadsHoldOpen,
       approvedSeenAt: null, r2Uploaded: null, publish: null, publishFailures: 0, notify: null, skipReason: null, note: null, updatedAt: '', threads: current?.threads,
     }
@@ -488,7 +499,7 @@ export class Job {
     if (!result) return false
     if (allOk(result)) return true
     const investigation = draft.review.investigation
-    return result.post.verdict === 'ok' && Boolean(investigation?.findings && !investigation.failure
+    return result.post.verdict === 'ok' && Boolean(investigation?.findings && (!investigation.failure || result.questionResolution?.fallback?.resolved.length)
       && requestMatches(investigation.request, draft, this.reviewInput(draft))
       && flagged(result).every(event => investigation.findings?.[event.id]?.verdict === 'ok'))
   }
@@ -526,6 +537,8 @@ export class Job {
     try {
       if (review.result) throw new Error('The saved review no longer matches this preview. Regenerate the draft.')
       result = await this.runReview(draft)
+      await this.resolveQuickQuestions(draft, result)
+      this.verifyFrames(draft)
     } catch (error) {
       const failure = alerts.describeFailure(error).message
       this.s.log(`${draft.id}: review failed: ${failure}`)
@@ -557,6 +570,14 @@ export class Job {
       if (!(error instanceof DecisionUnknown)) throw error
       return undecided // Read-only review can run; replacement and publication still require a known decision.
     })).rejected ? slot : null)
+    const saved = draft.review?.investigation
+    if (slot && result && !saved && !draft.review?.replied && await this.resolveQuickQuestions(draft, result)) {
+      const fixes = draft.review?.investigatorEnabled ? [] : result.events.filter(event =>
+        result.questionResolution?.quick?.resolved.some(item => item.id === event.id && item.verdict === 'wrong'))
+      for (const event of fixes) this.queueReviewFix(draft, event.id, event)
+      this.save(draft)
+    }
+    if (slot && result && saved && requestMatches(saved.request, draft, this.reviewInput(draft))) await this.resolveFallbackQuestions(draft, saved, result)
     if (slot) await this.trySendPreview(draft, window, failures)
     const review = draft.review
     if (!review) return
@@ -583,14 +604,15 @@ export class Job {
       }
     }
     if (!ts) return
-    const eventName = (id: string) => draft.events.find(event => event.id === id)!.title
-    const questions = result.events.flatMap(event => event.question ? [`${eventName(event.id)}: ${event.question}`] : [])
-    if (result.post.question) questions.push(result.post.question)
-    const questionText = questions.length ? `\nRespondé con ✅ o ❌ en la vista previa.\n${questions.map(alerts.slackLiteral).join('\n')}` : ''
-    const message = allOk(result) ? 'Revisado: sin problemas.' : hasError
-      ? `Revisión: se detectó un error. Esta versión no se publicará automáticamente.${questionText}`
-      : `Revisión: hace falta tu decisión.${questionText}`
-    await this.postReviewReply(draft, ts, message, state, window, questions.length > 0)
+    const hasQuestion = Boolean(result.post.question || result.events.some(event => event.question))
+    await this.postReviewReply(draft, ts, async () => {
+      if (allOk(result)) return ['Revisado: sin problemas.']
+      const header = hasError ? 'Revisión: se detectó un error. Esta versión no se publicará automáticamente.' : 'Revisión: hace falta tu decisión.'
+      const action = hasQuestion ? ['Respondé con ✅ o ❌ en la vista previa.'] : []
+      const events = flagged(result).map(event => ({ id: event.id, title: draft.events.find(item => item.id === event.id)!.title,
+        detail: event.question ?? event.reason!, flag: event, notInvestigated: 'Only the quick review ran.' }))
+      return [header, ...action, ...await this.reviewEventBlocks(draft, events), ...this.postIssueLines(result.post)]
+    }, state, window, hasQuestion)
   }
 
   private canRebuildAfterReview(draft: Draft, window: RunWindow) {
@@ -829,6 +851,7 @@ export class Job {
       }
     }
     await alertFailure(investigation)
+    if (!overridden && open) await this.resolveFallbackQuestions(draft, investigation, result)
     const findings = investigation.findings!
     const exclusions = request.events.filter(({ id }) => findings[id]?.verdict === 'exclude').map(({ id }) => id)
     const repair = exclusions.length > 0 || Object.values(findings).some(item => item.verdict === 'fixed')
@@ -844,23 +867,25 @@ export class Job {
     const fieldLabel = { description_display_es: 'Spanish description', description_display_en: 'English description',
       description_summary_es: 'Spanish summary', description_summary_en: 'English summary', name: 'title', starts_at: 'start time',
       price: 'price', is_free: 'free admission', status: 'status' } as const
-    const lines = request.events.map(event => {
-      const { id, title } = event
-      const item = findings[id]!
-      const detail = item.verdict === 'ok' ? `${item.reason} (${item.url})` : item.verdict === 'exclude' ? `Exclude: ${item.reason}`
-        : item.verdict === 'ask' ? this.investigationAsks(investigation, event) ? `${item.question} Checked: ${item.checked}` : `${event.reason} ${item.checked}`
-          : `Corrected ${draft.catalogFixes?.filter(fix => item.fixes.includes(fix.operation)).map(fix => {
-            const n = fix.changes.length
-            return `${fieldLabel[fix.field]} on ${n} occurrence${n === 1 ? '' : 's'}`
-          }).join(', ')}.`
-      return alerts.slackLiteral(`${title}: ${detail}`)
-    })
-    if (result.post.question) lines.push(alerts.slackLiteral(result.post.question))
-    if (result.post.verdict === 'wrong') lines.push('The post also has a confirmed issue and cannot publish automatically.')
     const hasQuestion = Boolean(result.post.question)
-    if (!overridden && (hasAsk || hasQuestion)) lines.push('Respondé con ✅ o ❌ en la vista previa.')
-    if (ts) await this.postReviewReply(draft, ts, `Revisión: investigación\n${lines.join('\n')}`, investigation, window,
-      !willRebuild && !overridden && ((hasAsk && !investigation.failure) || hasQuestion))
+    if (ts) await this.postReviewReply(draft, ts, async () => {
+      const events = request.events.map(event => {
+        const { id, title } = event
+        const item = findings[id]!
+        const detail = item.verdict === 'ok' ? item.reason : item.verdict === 'exclude' ? `Exclude: ${item.reason}`
+          : item.verdict === 'ask' ? this.investigationAsks(investigation, event) ? item.question : event.reason!
+            : `Corrected ${draft.catalogFixes?.filter(fix => item.fixes.includes(fix.operation)).map(fix => {
+              const n = fix.changes.length
+              return `${fieldLabel[fix.field]} on ${n} occurrence${n === 1 ? '' : 's'}`
+            }).join(', ')}.`
+        return { id, title, detail, flag: event,
+          checks: investigation.fallback && item.verdict === 'ask' ? [] : [{ revision: draft.revision, finding: item }],
+          notInvestigated: investigation.fallback && item.verdict === 'ask' ? item.checked : 'No sources were recorded.' }
+      })
+      const blocks = await this.reviewEventBlocks(draft, events, investigation.fallback)
+      const action = !overridden && (hasAsk || hasQuestion) ? ['Respondé con ✅ o ❌ en la vista previa.'] : []
+      return ['Revisión: investigación', ...blocks, ...this.postIssueLines(result.post), ...action]
+    }, investigation, window, !willRebuild && !overridden && ((hasAsk && !investigation.failure) || hasQuestion))
     if (willRebuild) {
       const latest = await reactions()
       if (this.canAutoRebuild(draft, window, latest)) {
@@ -870,21 +895,102 @@ export class Job {
     }
   }
 
-  private async postReviewReply(draft: Draft, ts: string, text: string, reply: ReviewState | Investigation, window: RunWindow, needsDecision: boolean) {
+  private reviewEvidence(draft: Draft, ids: string[]) {
+    return this.s.reviewResources(ids).catch(() => {
+      this.s.log(`${draft.id}: could not load catalog evidence for review.`)
+      return new Map<string, ReviewResources>()
+    })
+  }
+
+  private reviewBarrio(id: string, evidence: ReviewResources | undefined, flag: Pick<Verdict, 'field' | 'question' | 'reason'>, detail: string) {
+    if (!isAddressFlag(flag, detail) || !evidence) return null
+    if (!this.barriosThisTick.has(id)) this.barriosThisTick.set(id, lookupReviewBarrio(evidence, this.s.fetchUsig))
+    return this.barriosThisTick.get(id)!
+  }
+
+  private async adjudicateQuestions(draft: Draft, questions: Array<{ id: string; question: string; field: string | null }>): Promise<QuestionResolution> {
+    const evidence = await this.reviewEvidence(draft, questions.map(item => item.id))
+    const items = await Promise.all(questions.map(async item => ({ ...item, evidence: evidence.get(item.id),
+      usig: await this.reviewBarrio(item.id, evidence.get(item.id), { ...item, reason: null }, item.question) })))
+    try { return await this.s.resolveQuestions!(this.reviewInput(draft), items) } catch {
+      this.s.log(`${draft.id}: question resolver unavailable; preserving the original questions.`)
+      return { model: null, resolved: [] }
+    }
+  }
+
+  private async resolveQuickQuestions(draft: Draft, result: ReviewResult) {
+    if (!this.s.resolveQuestions || result.questionResolution?.quick) return false
+    const questions = result.events.flatMap(item => item.verdict === 'question' && item.question
+      ? [{ id: item.id, question: item.question, field: item.field }] : [])
+    if (!questions.length) return false
+    const audit = await this.adjudicateQuestions(draft, questions)
+    for (const item of audit.resolved) {
+      const target = result.events.find(event => event.id === item.id && event.verdict === 'question')
+      if (!target) continue
+      Object.assign(target, item.verdict === 'ok' ? { verdict: 'ok', field: null, reason: null, question: null }
+        : { verdict: 'wrong', field: item.field, reason: item.reason, question: null })
+    }
+    result.questionResolution = { ...result.questionResolution, quick: audit }
+    return true
+  }
+
+  private async resolveFallbackQuestions(draft: Draft, investigation: Investigation, result: ReviewResult) {
+    if (!this.s.resolveQuestions || !investigation.fallback || investigation.replied || result.questionResolution?.fallback) return
+    const { findings } = investigation
+    if (!findings) return
+    const questions = investigation.request.events.flatMap(event => {
+      const item = findings[event.id]
+      return event.verdict === 'question' && item?.verdict === 'ask' ? [{ id: event.id, question: item.question, field: event.field }] : []
+    })
+    if (!questions.length) return
+    const audit = await this.adjudicateQuestions(draft, questions)
+    for (const item of audit.resolved) {
+      const url = item.citations[0]?.url
+      if (!url || !questions.some(question => question.id === item.id)) continue
+      const checked = item.citations.map(({ url, quote }) => `${url} — “${quote}”`).join('; ')
+      findings[item.id] = item.verdict === 'ok' ? { verdict: 'ok', reason: item.reason, url, checked }
+        : { verdict: 'exclude', reason: item.reason, checked }
+    }
+    result.questionResolution = { ...result.questionResolution, fallback: audit }
+    this.save(draft)
+  }
+
+  private postIssueLines(post: Verdict) {
+    const problem = post.question ?? post.reason
+    return problem ? [alerts.slackLiteral(problem)] : []
+  }
+
+  private async reviewEventBlocks(draft: Draft, events: ReviewEventReply[], includeCurrent = false) {
+    if (!events.length) return []
+    const ids = events.map(event => event.id)
+    const checks = readRecordedChecks(this.s.stateDir, draft, ids, this.s.now().getTime(), includeCurrent)
+    const evidence = await this.reviewEvidence(draft, ids)
+    const blocks = await Promise.all(events.map(async event => {
+      const resources = evidence.get(event.id)
+      const lookup = await this.reviewBarrio(event.id, resources, event.flag, event.flag.question ?? event.flag.reason ?? event.detail)
+      return eventReplyLines({ ...event, checks: [...(checks.get(event.id) ?? []), ...(event.checks ?? [])] }, resources, draft.catalogFixes ?? [], lookup)
+    }))
+    return blocks.flatMap((lines, index) => index ? ['', ...lines] : lines)
+  }
+
+  private async postReviewReply(draft: Draft, ts: string, build: () => Promise<string[]>, reply: ReviewState | Investigation, window: RunWindow, needsDecision: boolean) {
     const review = draft.review!
     const channel = previewChannel(draft)
     const preview = this.previewThreads(draft).find(preview => preview.ts === ts && preview.channel === channel && preview.revision === draft.revision)
     const approvalOpen = (decision = undecided) => (preview?.instagram && !decision.approved && !SETTLED.includes(draft.state) && this.s.now() < window.cutoff)
       || (preview?.threads && !decision.threadsApproved && this.threadsApprovalOpen(draft))
     const broadcast = channel === runtime.SLACK_ALERTS_CHANNEL
-    let notice = text
+    const mayNotify = needsDecision && !draft.decisionBroadcastAttempted && !review.homeAttempted && approvalOpen()
+    if (!mayNotify && reply.replied) return
+    const lines = await build()
     let sendNotice = false
-    if (needsDecision && !draft.decisionBroadcastAttempted && !review.homeAttempted && approvalOpen()) {
+    let prefix = ''
+    if (mayNotify) {
       if (!broadcast) {
         const permalink = await this.s.slackPermalink(ts, channel).catch(() => `https://app.slack.com/archives/${channel}/p${ts.replace('.', '')}`)
-        notice = `<${permalink}|Abrí la vista previa en Slack>\n\n${text.split('\n').map(line => `> ${line}`).join('\n')}`
+        prefix = `<${permalink}|Abrí la vista previa en Slack>\n`
       }
-      // Read reactions after the permalink lookup so it can't leave the decision check stale.
+      // Read reactions after the evidence and permalink lookups so the decision check stays current.
       const decision = await this.readDecision(draft)
       sendNotice = !decision.rejected && Boolean(approvalOpen(decision))
     }
@@ -893,10 +999,16 @@ export class Job {
       review.replied = true
       this.save(draft)
     }
+    const [first, ...rest] = splitReviewReply(lines, sendNotice ? prefix : '', sendNotice && !broadcast)
+    const saveOverflow = (channel: string, threadTs: string) => {
+      if (rest.length) (draft.pendingReviewReplies ??= []).push({ channel, threadTs, parts: rest })
+    }
     if (!sendNotice) {
       if (!reply.replied) await this.reviewAction(draft, 'Slack reply', async () => {
-        await this.s.slackPost(text, ts, channel)
+        await this.s.slackPost(first!, ts, channel)
+        saveOverflow(channel, ts)
         markReplied()
+        await this.sendReviewOverflow(draft)
       })
       return
     }
@@ -906,8 +1018,9 @@ export class Job {
     draft.decisionBroadcastAttempted = true
     markReplied()
     await this.reviewAction(draft, 'Slack decision notice', async () => {
+      let sent: unknown
       try {
-        await this.s.slackPost(notice, broadcast ? ts : null, runtime.SLACK_ALERTS_CHANNEL, broadcast)
+        sent = await this.s.slackPost(first!, broadcast ? ts : null, runtime.SLACK_ALERTS_CHANNEL, broadcast)
       } catch (error) {
         if (error instanceof runtime.SlackRejected) {
           delete draft.decisionBroadcastAttempted
@@ -917,7 +1030,34 @@ export class Job {
         }
         throw error
       }
+      const parent = broadcast ? ts : sent && typeof sent === 'object' && 'ts' in sent && typeof sent.ts === 'string' ? sent.ts : null
+      if (parent && rest.length) {
+        saveOverflow(runtime.SLACK_ALERTS_CHANNEL, parent)
+        this.save(draft)
+        await this.sendReviewOverflow(draft)
+      }
     })
+  }
+
+  private async sendReviewOverflow(draft: Draft) {
+    const pending = draft.pendingReviewReplies
+    if (!pending?.length) return
+    while (pending.length) {
+      const delivery = pending[0]!
+      const part = delivery.parts.shift()!
+      if (!delivery.parts.length) pending.shift()
+      this.save(draft)
+      try { await this.s.slackPost(part, delivery.threadTs, delivery.channel) } catch (error) {
+        this.s.log(`${draft.id}: could not deliver review continuation.`)
+        // Retry a refusal, but don't duplicate a continuation Slack may already have posted.
+        if (error instanceof runtime.SlackRejected) {
+          if (!delivery.parts.length) pending.unshift(delivery)
+          delivery.parts.unshift(part)
+          this.save(draft)
+        }
+        return
+      }
+    }
   }
 
   private async reviewAction(draft: Draft, action: string, run: () => Promise<void>) {
@@ -1237,6 +1377,7 @@ export class Job {
 
   async tick() {
     this.reviewedThisTick.clear()
+    this.barriosThisTick.clear()
     const now = this.s.now()
     const token = await this.s.loadToken(now).catch(error => ({ state: 'ok' as const, warning: (error as Error).message }))
     if (token.state === 'ok' && token.warning) await this.s.alert('token', 'Instagram token needs attention', alerts.tokenAlert(token.warning, now), token.warning)
@@ -1261,6 +1402,7 @@ export class Job {
       try {
         // Creation already tried any skip notice, but a pending preview gets another chance.
         this.collectCatalogFixes(draft)
+        await this.sendReviewOverflow(draft)
         if (!attempted.has(draft.id)) await this.deliver(draft.id)
         await this.advance(draft.id, failures)
         await this.deliver(draft.id, true)

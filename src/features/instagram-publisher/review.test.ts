@@ -30,6 +30,8 @@ it('reads linked D1 evidence and sends the 18 mundos contradiction with the actu
   const dir = mkdtempSync(join(tmpdir(), 'ig-review-fixture-'))
   const key = `${'a'.repeat(64)}.jpg`
   const flyer = await sharp(photo(flyerText)).jpeg().toBuffer()
+  const officialUrl = 'https://sala.example.org/funcion'
+  const olderExcerpt = 'Apertura a las 20:30, función a las 21:00.'
   try {
     await db.batch([
       db.prepare("INSERT INTO events (id, name, starts_at, source) VALUES (?, '18 mundos', ?, 'instagram')").bind(id, startsAt),
@@ -40,8 +42,10 @@ it('reads linked D1 evidence and sends the 18 mundos contradiction with the actu
         ('curator-post', 'test', 'post2', 'synthetic_curator', 'https://www.instagram.com/p/synthetic-repost/', 'Synthetic repost', '2026-11-23T12:00:00.000Z', ?)`)
         .bind(sourceUrl, caption, 'a'.repeat(64), 'b'.repeat(64)),
       db.prepare("INSERT INTO intake_candidates (id, revision, payload) VALUES ('candidate', 2, '{}')"),
-      db.prepare(`INSERT INTO intake_candidate_revisions (candidate_id, revision, payload) VALUES ('candidate', 1, ?)`)
-        .bind(JSON.stringify({ evidence: [{ media_id: 'flyer' }, { kind: 'official_page', excerpt: 'Miércoles 25, función 21:00', fields: ['time'] }] })),
+      db.prepare(`INSERT INTO intake_candidate_revisions (candidate_id, revision, payload) VALUES ('candidate', 1, ?), ('candidate', 2, ?)`)
+        .bind(JSON.stringify({ evidence: [{ observation_id: 'venue-post', media_id: 'flyer', fields: ['description'], excerpt: flyerText }] }),
+          JSON.stringify({ evidence: [{ observation_id: 'curator-post', media_id: null, fields: ['time'], excerpt: olderExcerpt },
+            { kind: 'official_page', url: officialUrl, excerpt: 'Miércoles 25, función 21:00', fields: ['time'] }] })),
       db.prepare("INSERT INTO event_source_evidence (event_id, candidate_id, observation_id, revision) VALUES (?, 'candidate', 'venue-post', 1), (?, 'candidate', 'curator-post', 2)").bind(id, id),
       db.prepare(`INSERT INTO intake_media (id, observation_id, position, object_key, content_type, sha256)
         VALUES ('flyer', 'venue-post', 1, ?, 'image/jpeg', ?), ('unrelated', 'venue-post', 0, ?, 'image/jpeg', ?)`)
@@ -50,7 +54,10 @@ it('reads linked D1 evidence and sends the 18 mundos contradiction with the actu
     const retained = vi.fn(async () => flyer)
     const sources = await loadReviewSources([id], async sql => (await db.prepare(sql).all()).results, retained)
     expect(retained.mock.calls).toEqual([[key]])
-    expect(sources.get(id)).toMatchObject({ caption, postUrl: sourceUrl, officialExcerpts: expect.stringContaining('función 21:00'), flyer: expect.stringMatching(/^data:image\/jpeg;base64,/) })
+    expect(sources.get(id)).toMatchObject({ observations: [
+      { caption, postUrl: sourceUrl, excerpts: [{ excerpt: flyerText }] },
+      { caption: 'Synthetic repost', postUrl: 'https://www.instagram.com/p/synthetic-repost/', excerpts: [{ excerpt: olderExcerpt }] },
+    ], officialPages: [{ url: officialUrl, excerpt: 'Miércoles 25, función 21:00' }], flyer: expect.stringMatching(/^data:image\/jpeg;base64,/) })
     const frames = await Promise.all(['Hoy en Buenos Aires', 'Entrenamiento canino', 'Más planes'].map(async (text, index) => {
       const file = join(dir, `frame-${index}.jpg`)
       await sharp(photo(text)).jpeg().toFile(file)
@@ -66,7 +73,10 @@ it('reads linked D1 evidence and sends the 18 mundos contradiction with the actu
       expect(JSON.stringify(parts)).toContain('Entrenamiento canino')
       expect(JSON.stringify(parts)).toContain(caption)
       expect(JSON.stringify(parts)).toContain(input.threads)
-      expect(JSON.stringify(parts)).not.toContain('Synthetic repost')
+      expect(JSON.stringify(parts)).toContain('Synthetic repost')
+      expect(JSON.stringify(parts)).toContain(olderExcerpt)
+      expect(JSON.stringify(parts)).toContain(flyerText)
+      expect(JSON.stringify(parts)).toContain(officialUrl)
       expect(parts.filter((part: { type: string }) => part.type === 'input_image')).toEqual([
         expect.objectContaining({ image_url: `data:image/jpeg;base64,${readFileSync(frames[0]!).toString('base64')}` }),
         expect.objectContaining({ image_url: `data:image/jpeg;base64,${readFileSync(frames[1]!).toString('base64')}` }),
