@@ -79,7 +79,8 @@ function barrioLine({ lookup, conflictingAddresses }: ReviewSelection) {
 function checkText({ finding }: RecordedCheck, fixes: FixReceipt[]) {
   if (finding.verdict === 'ask') return [finding.checked]
   if (finding.verdict === 'ok') return [`${finding.reason} (${finding.url})`, finding.checked]
-  if (finding.verdict === 'exclude') return [finding.reason, finding.checked]
+  // The investigator may cite the correction in the instruction to Hermes, with or without a checked note.
+  if (finding.verdict === 'exclude') return [finding.reason, finding.checked, finding.hermes]
   return [finding.checked, ...fixes.filter(fix => finding.fixes.includes(fix.operation)).map(fix => fix.evidence)]
 }
 

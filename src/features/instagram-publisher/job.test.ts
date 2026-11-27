@@ -1068,7 +1068,7 @@ describe('tick: publisher investigation', () => {
     await job.tick()
     during(w)
     const priorUrl = 'https://venue.example/previous-announcement'
-    finish({ ...ask, checked: `The first announcement gives a different venue: ${priorUrl}` })
+    finish({ verdict: 'exclude', reason: 'The first announcement gives a different venue.', hermes: `Check the organizer’s first correction: ${priorUrl}` })
     // Regenerate before consuming r1; leave its on-time finding in the recorded research.
     await job.regenerate(w.draft().id, [])
     await job.tick()
@@ -1082,7 +1082,8 @@ describe('tick: publisher investigation', () => {
     const fix = w.alerts.find(alert => alert.key === `review-fix/${flaggedId}`)
     expect(fix?.text).toContain('Correct the catalog venue.')
     expect(fix?.text).toContain(`Checked (r2): The venue moved the performance: <${currentUrl}>`)
-    expect(fix?.text).toContain(`Checked (r1): The first announcement gives a different venue: <${priorUrl}>`)
+    expect(fix?.text).toContain('Checked (r1): The first announcement gives a different venue.')
+    expect(fix?.text).toContain(`Checked (r1): Check the organizer’s first correction: <${priorUrl}>`)
   })
 
   it.each(['fixed', 'exclude'] as const)('routes a %s finding to Hermes when the rebuild budget is exhausted', async verdict => {
@@ -1124,6 +1125,27 @@ describe('tick: publisher investigation', () => {
     w.approve()
     await w.job().tick()
     expect(w.draft()).toMatchObject({ revision: 1, state: 'published', threads: { state: 'published' } })
+  })
+
+  it.each([undefined, 'The initial announcement did not list the new venue.'])('includes the excluded event’s correction in a mixed decision reply (checked: %s)', async checked => {
+    const { w, runs, finish } = world(wrong)
+    const questionId = uuid(2)
+    w.verdict = id => id === flaggedId ? wrong : id === questionId ? question : OK
+    await w.job().tick()
+    expect(runs[0]?.request.events.map(event => event.id)).toEqual(expect.arrayContaining([flaggedId, questionId]))
+    during(w)
+    const url = 'https://venue.example/current-correction'
+    const reason = 'The venue moved the performance.'
+    finish({ verdict: 'exclude', reason, hermes: `Correct the catalog venue per ${url}`, checked })
+    finish(ask, questionId)
+    await w.job().tick()
+
+    expect(w.broadcasts()).toHaveLength(1)
+    const decision = w.broadcasts()[0]?.text
+    expect(decision).toContain(ask.question)
+    expect(decision).toContain(`Exclude: ${reason}`)
+    expect(decision).toContain(`<${url}>`)
+    if (checked) expect(decision).toContain(checked)
   })
 
   it.each(['not sent', 'ack lost'] as const)('recovers the first ordinary investigation reply part when %s', async failure => {

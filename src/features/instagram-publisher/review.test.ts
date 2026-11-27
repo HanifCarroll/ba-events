@@ -141,17 +141,23 @@ it('checks a description-tagged flyer quote for price and rejects invented displ
   expect(result.selections?.[0]?.quotes).toEqual([citation])
 })
 
-it.each(['caption', 'official page', 'labeled address', 'ticket office', 'catalog only', 'conflicting sources', 'wrong number', 'invented quote'] as const)(
+it.each(['caption', 'official page', 'labeled address', 'ordinal marker', 'number first', 'ticket office', 'catalog only', 'conflicting sources',
+  'partial number', 'missing number', 'missing street', 'invented quote'] as const)(
   'uses USIG only for the verified performance venue (%s)', async mode => {
     const venueQuote = 'Thames 1500'
-    const labeledAddress = 'Sede de la función: Café Artigas. Calle: Thames. Altura: 1573.'
+    const pageQuotes = {
+      'official page': venueQuote,
+      'labeled address': 'Sede de la función: Café Artigas. Calle: Thames. Altura: 1573.',
+      'ordinal marker': 'Sede de la función: Thames Nº1573.',
+      'number first': 'Altura 1573 · calle Thames · Café Artigas.',
+    } as const
     const ticketOffice = `Retirá las entradas en ${venueQuote}. La función es en Café Artigas.`
     const officialUrl = 'https://sala.example.org/funcion'
-    const fromPage = mode === 'official page' || mode === 'labeled address'
-    const quote = mode === 'ticket office' ? ticketOffice : mode === 'labeled address' ? labeledAddress : venueQuote
-    const number = mode === 'wrong number' ? '150' : mode === 'labeled address' ? '1573' : '1500'
-    const address = { url: fromPage ? officialUrl : sourceUrl, quote, role: 'performance_venue', street: 'Thames', number }
-    const officialPages = fromPage ? [{ url: officialUrl, excerpt: mode === 'labeled address' ? labeledAddress : `La función es en Café Artigas, ${venueQuote}.`, fields: ['description'] }]
+    const fromPage = mode === 'official page' || mode === 'labeled address' || mode === 'ordinal marker' || mode === 'number first'
+    const quote = fromPage ? pageQuotes[mode] : mode === 'ticket office' ? ticketOffice : venueQuote
+    const number = mode === 'partial number' ? '150' : mode === 'missing number' ? '1501' : fromPage && mode !== 'official page' ? '1573' : '1500'
+    const address = { url: fromPage ? officialUrl : sourceUrl, quote, role: 'performance_venue', street: mode === 'missing street' ? 'Bogado' : 'Thames', number }
+    const officialPages = fromPage ? [{ url: officialUrl, excerpt: `La función es en Café Artigas. ${quote}`, fields: ['description'] }]
       : mode === 'conflicting sources' ? [{ url: officialUrl, excerpt: 'La función es en Café Artigas, Bogado 4500.', fields: ['venue'] }] : []
     const evidence = { address: venueQuote, officialPages, observations: [{ postUrl: sourceUrl, publishedAt: null,
       caption: fromPage || mode === 'catalog only' || mode === 'invented quote' ? 'La función es en Café Artigas.'
@@ -163,7 +169,7 @@ it.each(['caption', 'official page', 'labeled address', 'ticket office', 'catalo
       const body = JSON.parse(String(options?.body))
       if (body.text.format.name === 'publisher_citation_check') {
         expect(JSON.parse(body.input[0].content[0].text).claims[0].venue).toEqual(address)
-        return modelOutput({ direct: [id], venue: mode === 'ticket office' ? [] : [id] })
+        return modelOutput({ direct: [id], venue: mode === 'ticket office' || mode === 'partial number' ? [] : [id] })
       }
       const addresses = mode === 'catalog only' ? [] : mode === 'conflicting sources' ? [address, { ...address, url: officialUrl, quote: 'Bogado 4500', street: 'Bogado', number: '4500' }] : [address]
       return modelOutput({ selections: [{ id, topic: 'barrio', quotes: [], addresses, conflictingAddresses: false }],
@@ -171,7 +177,9 @@ it.each(['caption', 'official page', 'labeled address', 'ticket office', 'catalo
     })
     const state = await adjudicateReviewQuestions(input, [subject], (content, questions) =>
       resolveReviewQuestionsWithOpenAI(config, 'test', prompt, content, questions, resolver), item => lookupReviewBarrio(item, api))
-    if (mode === 'caption' || fromPage) {
+    const trustedVenue = mode === 'caption' || fromPage
+    expect(resolver).toHaveBeenCalledTimes(trustedVenue || mode === 'ticket office' || mode === 'partial number' ? 2 : 1)
+    if (trustedVenue) {
       const url = `https://ws.usig.buenosaires.gob.ar/datos_utiles?calle=THAMES&altura=${number}`
       expect(api).toHaveBeenCalledExactlyOnceWith(url, expect.objectContaining({ redirect: 'error' }))
       expect(state.resolved).toMatchObject([{ id, verdict: 'wrong', field: 'barrio', citations: [{ url: address.url, quote }, { url, quote: 'Palermo' }] }])
