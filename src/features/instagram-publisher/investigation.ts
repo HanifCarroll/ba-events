@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { z } from 'zod'
-import { line } from './catalog-fix.ts'
+import { line, type FixReceipt } from './catalog-fix.ts'
 import type { Draft } from './job.ts'
 import { copyHash, type ReviewInput, type ReviewResult, type Verdict } from './review.ts'
 
@@ -43,6 +43,7 @@ export interface Investigation {
   /** This revision may no longer match the catalog after a submitted correction. */
   catalogWriteHold?: boolean
   failureAlerted?: boolean
+  questionChecksApplied?: boolean
   replied?: boolean
 }
 
@@ -81,10 +82,16 @@ export const hasCompleted = (dir: string) => existsSync(join(dir, 'completed.jso
 
 const recordedRequest = z.object({ id: z.string(), revision: z.number(), startsAt: z.number(), endsAt: z.number(), events: z.array(z.object({ id: z.string() })) })
 const recordedResult = z.object({ at: z.number(), finding })
-export type RecordedCheck = { revision: number; finding: Finding }
+export type RecordedCheck = { revision: number; finding: Finding; fixEvidence?: string[] }
 
-/** Individual on-time findings are useful evidence even if the round didn't finish. Never use them to clear a review gate. */
-export function readRecordedChecks(stateDir: string, draft: Pick<Draft, 'id' | 'revision'>, ids: string[], now: number, includeCurrent: boolean) {
+export function recordedEvidenceNotes({ finding, fixEvidence }: RecordedCheck, legacyFixes: readonly FixReceipt[] = []) {
+  if (finding.verdict === 'exclude') return [finding.reason, finding.checked, finding.hermes]
+  if (finding.verdict === 'fixed') return [finding.checked, ...(fixEvidence ?? legacyFixes.filter(fix => finding.fixes.includes(fix.operation)).map(fix => fix.evidence))]
+  return [finding.checked]
+}
+
+/** On-time results can supply source excerpts even if the round didn't finish. Their verdicts never clear the gate by themselves. */
+export function readRecordedChecks(stateDir: string, draft: Pick<Draft, 'id' | 'revision' | 'catalogFixes'>, ids: string[], now: number, includeCurrent: boolean) {
   const root = join(stateDir, 'drafts', draft.id)
   const checks = new Map<string, RecordedCheck[]>()
   if (!existsSync(root)) return checks
@@ -102,7 +109,10 @@ export function readRecordedChecks(stateDir: string, draft: Pick<Draft, 'id' | '
       const saved = recordedResult.safeParse(readJson(join(dir, `${id}.result.json`)))
       if (!saved.success || saved.data.at < startsAt || saved.data.at > Math.min(now, endsAt)) continue
       const items = checks.get(id) ?? []
-      items.push({ revision, finding: saved.data.finding })
+      const { finding } = saved.data
+      const fixEvidence = finding.verdict === 'fixed' ? (draft.catalogFixes ?? [])
+        .filter(fix => fix.id === id && finding.fixes.includes(fix.operation)).map(fix => fix.evidence) : undefined
+      items.push({ revision, finding, fixEvidence })
       checks.set(id, items)
     }
   }

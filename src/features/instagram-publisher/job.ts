@@ -24,7 +24,7 @@ import { nextTrack, readTracks, readyTrack, type DraftTrack, type ReadyTrack } f
 import { reelTiming, type ReelTiming } from './reel/project.ts'
 import type { ReviewResources } from './review-evidence.ts'
 import { eventReplyLines, eventResourceLines, lookupReviewBarrio, recordedCheckLines, splitReviewReply, streetForUsig, withReviewLinks, type ReviewBarrioLookup, type ReviewEventReply, type ReviewPartReceipt, type ReviewReplyDelivery } from './review-reply.ts'
-import { adjudicateReviewQuestions, type QuestionResolver, type ReviewCitation, type ReviewSubject } from './review-resolution.ts'
+import { adjudicateReviewQuestions, evidenceUnavailable, questionRecord, sameQuestion, type QuestionEvidenceStage, type QuestionResolution, type QuestionResolver, type ReviewCitation, type ReviewSubject } from './review-resolution.ts'
 import { allOk, copyHash, validateReview, type ReviewInput, type ReviewResult, type ReviewState, type Reviewer, type Verdict } from './review.ts'
 import * as runtime from './runtime.ts'
 import type { Config, EventNow, TokenCheck } from './runtime.ts'
@@ -594,13 +594,14 @@ export class Job {
       return undecided // Read-only review can run; replacement and publication still require a known decision.
     })).rejected ? slot : null)
     const saved = draft.review?.investigation
-    if (slot && result && !saved && !draft.review?.replied && await this.resolveQuickQuestions(draft, result)) {
-      const fixes = draft.review?.investigatorEnabled ? [] : result.events.filter(event =>
+    if (slot && result && !saved && !draft.review?.replied && !this.reviewedThisTick.has(`${draft.id}:${draft.revision}`)
+      && await this.resolveQuickQuestions(draft, result)) {
+      const fixes = draft.review?.investigatorEnabled || evidenceUnavailable(result.questionResolution?.quick) ? [] : result.events.filter(event =>
         result.questionResolution?.quick?.resolved.some(item => item.id === event.id && item.verdict === 'wrong'))
       for (const event of fixes) this.queueReviewFix(draft, event.id, event)
       this.save(draft)
     }
-    if (slot && result && saved && requestMatches(saved.request, draft, this.reviewInput(draft))) await this.resolveFallbackQuestions(draft, saved, result)
+    if (slot && result && saved && requestMatches(saved.request, draft, this.reviewInput(draft))) await this.resolveInvestigationQuestions(draft, saved, result)
     if (slot) await this.trySendPreview(draft, window, failures)
     const review = draft.review
     if (!review) return
@@ -626,14 +627,15 @@ export class Job {
         return this.regenerate(draft.id, wrong.map(event => event.id), null, { day, count: draft.reviewRebuilds?.day === day ? draft.reviewRebuilds.count + 1 : 1 })
       }
     }
-    if (!ts) return
+    if (!ts || evidenceUnavailable(result.questionResolution?.quick)) return
     const hasQuestion = Boolean(result.post.question || result.events.some(event => event.question))
     await this.postReviewReply(draft, ts, async () => {
       if (allOk(result)) return ['Revisado: sin problemas.']
       const header = hasError ? 'Revisión: se detectó un error. Esta versión no se publicará automáticamente.' : 'Revisión: hace falta tu decisión.'
       const action = hasQuestion ? ['Respondé con ✅ o ❌ en la vista previa.'] : []
       const events = flagged(result).map(event => ({ id: event.id, title: draft.events.find(item => item.id === event.id)!.title,
-        detail: event.question ?? event.reason!, flag: event, notInvestigated: 'Only the quick review ran.' }))
+        detail: event.question ?? event.reason!, flag: event, notInvestigated: 'Only the quick review ran.',
+        record: questionRecord(result.questionResolution?.quick, event.id) }))
       return [header, ...action, ...await this.reviewEventBlocks(draft, events), ...this.postIssueLines(result.post)]
     }, state, window, hasQuestion)
   }
@@ -665,16 +667,22 @@ export class Job {
   }
 
   private reviewPreviewRouting(draft: Draft, result: ReviewResult | null, reviewed: boolean): 'normal' | 'investigating' | 'fix-only' {
-    if (!result || result.post.verdict === 'question') return 'normal'
+    if (!result) return 'normal'
+    const { quick, fallback, rechecked } = result.questionResolution ?? {}
+    const investigation = draft.review?.investigation
+    const activeAudit = investigation?.findings ? fallback : quick
+    const eventQuestion = investigation?.findings ? investigation.request.events.some(event => this.investigationAsks(investigation, event))
+      : result.events.some(event => event.verdict === 'question')
+    if (eventQuestion && (!activeAudit?.records || evidenceUnavailable(activeAudit) || evidenceUnavailable(rechecked))) return 'investigating'
+    if (result.post.verdict === 'question') return 'normal'
     const events = flagged(result)
     const wrong = result.post.verdict === 'wrong' || events.some(event => event.verdict === 'wrong')
     const question = events.some(event => event.verdict === 'question')
     if (!draft.review?.investigatorEnabled || !events.length) return wrong && !question ? 'fix-only' : 'normal'
-    const investigation = draft.review.investigation
     if (!investigation?.findings || !requestMatches(investigation.request, draft, this.reviewInput(draft))) {
       return wrong ? 'fix-only' : 'investigating'
     }
-    if (investigation.request.events.some(event => this.investigationAsks(investigation, event))) return 'normal'
+    if (investigation.request.events.some(event => this.investigationQuestion(investigation, event, result))) return 'normal'
     return reviewed ? 'normal' : 'fix-only'
   }
 
@@ -684,14 +692,38 @@ export class Job {
     return investigation.findings?.[event.id]?.verdict === 'ask' && (event.verdict === 'question' || !fallback)
   }
 
+  private answersOriginalQuestion(event: Verdict, answerField: string, askedField?: string) {
+    // Older reviews and findings sometimes did not name a field. Keep the same legacy question scope.
+    return event.verdict === 'question' && (event.field === answerField || (event.field === null && !askedField))
+  }
+
+  private investigationQuestion(investigation: Investigation, event: InvestigationRequest['events'][number], result: ReviewResult) {
+    const finding = investigation.findings?.[event.id]
+    if (finding?.verdict !== 'ask' || !this.investigationAsks(investigation, event)) return null
+    const checked = questionRecord(result.questionResolution?.fallback, event.id)
+    if (!checked?.conclusion) return finding.question
+    const original = questionRecord(result.questionResolution?.rechecked, event.id)
+    // A quick check predates the investigation. Only a fresh, still-open check can return the original question.
+    return !this.answersOriginalQuestion(event, checked.conclusion.field, finding.field) && original?.state === 'complete' && !original.conclusion
+      ? event.question : null
+  }
+
   private citationText(citations: ReviewCitation[]) {
     return citations.map(({ url, quote }) => `${url} — “${quote}”`).join('; ')
   }
 
-  private queueReviewFix(draft: Draft, id: string, finding: Verdict, { checked, recorded }: alerts.ReviewFixEvidence = {}) {
-    const quick = draft.review?.result?.questionResolution?.quick?.resolved.find(item => item.id === id && item.verdict === 'wrong')
+  private queueReviewFix(draft: Draft, id: string, finding: Verdict, { checked, recorded, record }: alerts.ReviewFixEvidence = {}, additional = false) {
+    const audit = draft.review?.result?.questionResolution
+    const quick = questionRecord(audit?.quick, id)
+    if (!record && quick?.conclusion?.verdict === 'wrong' && quick.conclusion.field === finding.field && quick.conclusion.reason === finding.reason) {
+      record = { revision: draft.revision, stage: 'quick' }
+    }
+    const answer = record && questionRecord(audit?.[record.stage], id)?.conclusion
     const pending = draft.pendingReviewFixes ??= []
-    pending.push(alerts.reviewFix(draft, id, finding, { checked: checked ?? (quick ? this.citationText(quick.citations) : undefined), recorded }))
+    const fix = alerts.reviewFix(draft, id, finding, { checked: checked ?? (answer ? this.citationText(answer.citations) : undefined), recorded, record })
+    // A second confirmed field needs an independent alert, even if the first alert fails to send.
+    if (additional && record) fix.key += `/${record.stage}`
+    pending.push(fix)
   }
 
   private queueInvestigationRepairAlert(draft: Draft, investigation: Investigation) {
@@ -884,15 +916,16 @@ export class Job {
       }
     }
     await alertFailure(investigation)
-    if (!overridden && open) await this.resolveFallbackQuestions(draft, investigation, result)
+    if (!overridden && open && (!hadFindings || !result.questionResolution?.fallback?.records)) await this.resolveInvestigationQuestions(draft, investigation, result)
     const findings = investigation.findings!
     const exclusions = request.events.filter(({ id }) => findings[id]?.verdict === 'exclude').map(({ id }) => id)
     const repair = exclusions.length > 0 || Object.values(findings).some(item => item.verdict === 'fixed')
     const day = baLocal(this.s.now()).date
     const count = draft.reviewRebuilds?.day === day ? draft.reviewRebuilds.count : 0
     const canRebuild = !overridden && !holdsCatalogWrite(investigation) && this.canAutoRebuild(draft, window, decision)
-    const hasAsk = request.events.some(event => this.investigationAsks(investigation, event))
-    const willRebuild = repair && canRebuild && !hasAsk
+    const hasAsk = request.events.some(event => this.investigationQuestion(investigation, event, result))
+    const checking = evidenceUnavailable(result.questionResolution?.fallback) || evidenceUnavailable(result.questionResolution?.rechecked)
+    const willRebuild = repair && canRebuild && !hasAsk && !checking
     // A split approval does not resolve the other destination's error, even if it can be rebuilt later.
     if (!overridden && repair && (anyApproval(decision) || !willRebuild)) this.queueInvestigationRepairAlert(draft, investigation)
     if (!hadFindings && !willRebuild && !overridden && open) await this.trySendPreview(draft, window, failures)
@@ -901,21 +934,31 @@ export class Job {
       description_summary_es: 'Spanish summary', description_summary_en: 'English summary', name: 'title', starts_at: 'start time',
       price: 'price', is_free: 'free admission', status: 'status' } as const
     const hasQuestion = Boolean(result.post.question)
-    if (ts) await this.postReviewReply(draft, ts, async () => {
-      const events = request.events.map(event => {
+    if (ts && !checking) await this.postReviewReply(draft, ts, async () => {
+      const events = request.events.flatMap(event => {
         const { id, title } = event
         const item = findings[id]!
-        const detail = item.verdict === 'ok' ? item.reason : item.verdict === 'exclude' ? `Exclude: ${item.reason}`
-          : item.verdict === 'ask' ? this.investigationAsks(investigation, event) ? item.question : event.reason!
-            : `Corrected ${draft.catalogFixes?.filter(fix => item.fixes.includes(fix.operation)).map(fix => {
+        const answer = questionRecord(result.questionResolution?.fallback, id)
+        const original = questionRecord(result.questionResolution?.quick, id)
+        const rechecked = questionRecord(result.questionResolution?.rechecked, id)
+        const openQuestion = this.investigationQuestion(investigation, event, result)
+        const detail = answer?.conclusion && (item.verdict === 'ask' || rechecked) ? `Dato verificado: ${answer.conclusion.reason}`
+          : item.verdict === 'ok' ? item.reason : item.verdict === 'exclude' ? `Exclude: ${item.reason}`
+            : item.verdict === 'ask' ? openQuestion ?? event.reason ?? item.question
+              : `Corrected ${draft.catalogFixes?.filter(fix => item.fixes.includes(fix.operation)).map(fix => {
               const n = fix.changes.length
               return `${fieldLabel[fix.field]} on ${n} occurrence${n === 1 ? '' : 's'}`
             }).join(', ')}.`
-        // A real investigator can ask about a new fact; use its question, not the superseded quick flag.
-        const flag = item.verdict === 'ask' && !investigation.fallback ? { field: item.field ?? null, question: item.question, reason: null } : event
-        return { id, title, detail, flag,
-          checks: investigation.fallback && item.verdict === 'ask' ? [] : [{ revision: draft.revision, finding: item }],
-          notInvestigated: investigation.fallback && item.verdict === 'ask' ? item.checked : 'No sources were recorded.' }
+        const flag = item.verdict === 'ask' ? { field: item.field ?? event.field, question: item.question, reason: null } : event
+        const blocks: ReviewEventReply[] = [{ id, title, detail, flag, record: answer ?? original,
+          checks: answer || (investigation.fallback && item.verdict === 'ask') ? [] : [{ revision: draft.revision, finding: item }],
+          notInvestigated: investigation.fallback && item.verdict === 'ask' ? item.checked : 'No sources were recorded.' }]
+        if (rechecked) blocks.push({ id, title, flag: event, record: rechecked,
+          detail: rechecked.conclusion ? `Dato verificado: ${rechecked.conclusion.reason}` : rechecked.question,
+          notInvestigated: 'No sources were recorded.' })
+        if (answer?.conclusion && event.verdict === 'wrong') blocks.push({ id, title, flag: event, record: original,
+          detail: `Problema pendiente: ${event.reason!}`, notInvestigated: 'Only the quick review ran.' })
+        return blocks
       })
       const blocks = await this.reviewEventBlocks(draft, events, investigation.fallback)
       const action = !overridden && (hasAsk || hasQuestion) ? ['Respondé con ✅ o ❌ en la vista previa.'] : []
@@ -937,10 +980,15 @@ export class Job {
     })
   }
 
-  private async adjudicateQuestions(draft: Draft, questions: ReviewSubject[], evidence?: Map<string, ReviewResources>, input = this.reviewInput(draft)) {
-    evidence ??= await this.reviewEvidence(draft, questions.map(item => item.id))
-    const subjects = questions.map(item => ({ ...item, evidence: evidence.get(item.id) }))
-    return adjudicateReviewQuestions(input, subjects, async (content, pending) => {
+  private async adjudicateQuestions(draft: Draft, questions: ReviewSubject[], { evidence, input = this.reviewInput(draft), previous, includeCurrent = false }:
+    { evidence?: Map<string, ReviewResources>; input?: ReviewInput; previous?: QuestionResolution; includeCurrent?: boolean } = {}) {
+    const completed = previous?.records?.filter(item => item.state === 'complete') ?? []
+    const pending = questions.filter(item => !completed.some(record => sameQuestion(record, item)))
+    const ids = pending.map(item => item.id)
+    evidence ??= await this.reviewEvidence(draft, ids)
+    const history = readRecordedChecks(this.s.stateDir, draft, ids, this.s.now().getTime(), includeCurrent)
+    const subjects = pending.map(item => ({ ...item, evidence: evidence.get(item.id), history: history.get(item.id) ?? [] }))
+    const audit = await adjudicateReviewQuestions(input, subjects, async (content, pending) => {
       if (!this.s.resolveQuestions) return { model: null, resolved: [] }
       try { return await this.s.resolveQuestions(content, pending) } catch {
         this.s.log(`${draft.id}: question resolver unavailable; preserving the remaining questions.`)
@@ -951,49 +999,94 @@ export class Job {
       if (!this.barriosThisTick.has(key)) this.barriosThisTick.set(key, lookupReviewBarrio(address, this.s.fetchUsig))
       return this.barriosThisTick.get(key)!
     })
+    const records = [...completed, ...(audit.records ?? [])]
+    return { ...audit, model: audit.model ?? previous?.model ?? null, records,
+      resolved: records.flatMap(record => record.conclusion ? [record.conclusion] : []) }
   }
 
   private async resolveQuickQuestions(draft: Draft, result: ReviewResult) {
-    if (!this.s.resolveQuestions || result.questionResolution?.quick) return false
+    const saved = result.questionResolution?.quick
+    if (saved?.records && !evidenceUnavailable(saved)) return false
     const questions = result.events.flatMap(item => item.verdict === 'question' && item.question
       ? [{ id: item.id, question: item.question, field: item.field }] : [])
     if (!questions.length) return false
-    const audit = await this.adjudicateQuestions(draft, questions)
+    const audit = await this.adjudicateQuestions(draft, questions, { previous: saved })
+    result.questionResolution = { ...result.questionResolution, quick: audit }
+    if (evidenceUnavailable(audit)) return true
     for (const item of audit.resolved) {
       const target = result.events.find(event => event.id === item.id && event.verdict === 'question')
       if (!target) continue
       Object.assign(target, item.verdict === 'ok' ? { verdict: 'ok', field: null, reason: null, question: null }
         : { verdict: 'wrong', field: item.field, reason: item.reason, question: null })
     }
-    result.questionResolution = { ...result.questionResolution, quick: audit }
     return true
   }
 
-  private async resolveFallbackQuestions(draft: Draft, investigation: Investigation, result: ReviewResult) {
-    if (!this.s.resolveQuestions || !investigation.fallback || holdsCatalogWrite(investigation) || investigation.replied || result.questionResolution?.fallback) return
-    const { findings } = investigation
+  private async resolveInvestigationQuestions(draft: Draft, investigation: Investigation, result: ReviewResult) {
+    if (investigation.replied || investigation.questionChecksApplied) return
+    const { findings, fallback } = investigation
     if (!findings) return
     const questions = investigation.request.events.flatMap(event => {
       const item = findings[event.id]
-      return event.verdict === 'question' && item?.verdict === 'ask' ? [{ id: event.id, question: item.question, field: event.field }] : []
+      if (item?.verdict !== 'ask' || !this.investigationAsks(investigation, event)) return []
+      const field = item.field ?? event.field
+      return [{ id: event.id, question: item.question, field }]
     })
     if (!questions.length) return
-    const dir = location(this.s.stateDir, investigation.request)
-    try {
-      const { applied, uncertain } = fixLog(dir)
-      investigation.catalogWriteHold = uncertain || applied.length > 0 || existsSync(join(dir, 'catalog-fix.lock')) || undefined
-    } catch { investigation.catalogWriteHold = true }
-    if (investigation.catalogWriteHold) { this.save(draft); return }
-    const audit = await this.adjudicateQuestions(draft, questions)
-    for (const item of audit.resolved) {
-      const url = item.citations[0]?.url
-      if (!url || !questions.some(question => question.id === item.id)) continue
-      const checked = this.citationText(item.citations)
-      findings[item.id] = item.verdict === 'ok' ? { verdict: 'ok', reason: item.reason, url, checked }
-        : { verdict: 'exclude', reason: item.reason, checked, hermes: item.reason }
-      if (item.verdict === 'wrong') this.queueReviewFix(draft, item.id, { verdict: 'wrong', field: item.field, reason: item.reason, question: null }, { checked })
+    if (fallback && !holdsCatalogWrite(investigation)) {
+      const dir = location(this.s.stateDir, investigation.request)
+      try {
+        const { applied, uncertain } = fixLog(dir)
+        investigation.catalogWriteHold = uncertain || applied.length > 0 || existsSync(join(dir, 'catalog-fix.lock')) || undefined
+      } catch { investigation.catalogWriteHold = true }
     }
-    result.questionResolution = { ...result.questionResolution, fallback: audit }
+    const audits = result.questionResolution ??= {}
+    if (!audits.fallback?.records || evidenceUnavailable(audits.fallback)) {
+      audits.fallback = await this.adjudicateQuestions(draft, questions, { previous: audits.fallback, includeCurrent: true })
+      this.save(draft)
+    }
+    if (evidenceUnavailable(audits.fallback)) return
+
+    // Check the original facts in a separate batch: the verifier accepts only one question per event per call.
+    const originals = investigation.request.events.flatMap(event => {
+      const finding = findings[event.id]
+      const answer = questionRecord(audits.fallback, event.id)?.conclusion
+      return event.verdict === 'question' && event.question && finding?.verdict === 'ask' && answer &&
+        !this.answersOriginalQuestion(event, answer.field, finding.field) ? [{ id: event.id, field: event.field, question: event.question }] : []
+    })
+    if (originals.length && (!audits.rechecked?.records || evidenceUnavailable(audits.rechecked))) {
+      audits.rechecked = await this.adjudicateQuestions(draft, originals, { previous: audits.rechecked, includeCurrent: true })
+      this.save(draft)
+    }
+    if (evidenceUnavailable(audits.rechecked)) return
+
+    for (const original of investigation.request.events) {
+      const { id } = original
+      const finding = findings[id]
+      const answer = questionRecord(audits.fallback, id)?.conclusion
+      if (finding?.verdict !== 'ask' || !answer) continue
+      const rechecked = questionRecord(audits.rechecked, id)?.conclusion
+      const primary = this.answersOriginalQuestion(original, answer.field, finding.field) ? answer : rechecked
+      const wrong = primary?.verdict === 'wrong' ? primary : answer.verdict === 'wrong' ? answer : undefined
+      // Both facts must agree with the card. Neither can override a pending catalog write.
+      const gate = wrong ?? primary
+      const url = gate?.citations[0]?.url
+      if (!holdsCatalogWrite(investigation) && primary && gate && url) {
+        const checked = this.citationText(gate.citations)
+        findings[id] = gate.verdict === 'ok' ? { verdict: 'ok', reason: gate.reason, url, checked }
+          : { verdict: 'exclude', reason: gate.reason, checked, hermes: gate.reason }
+      }
+      if (original.verdict === 'wrong') this.queueReviewFix(draft, id, original)
+      else if (wrong) {
+        const queue = (confirmed: typeof wrong, stage: QuestionEvidenceStage, additional = false) =>
+          this.queueReviewFix(draft, id, { verdict: 'wrong', field: confirmed.field, reason: confirmed.reason, question: null }, {
+            record: { revision: draft.revision, stage },
+          }, additional)
+        queue(wrong, wrong === rechecked ? 'rechecked' : 'fallback')
+        if (wrong === rechecked && answer.verdict === 'wrong' && answer.field !== wrong.field) queue(answer, 'fallback', true)
+      }
+    }
+    investigation.questionChecksApplied = true
     this.save(draft)
   }
 
@@ -1004,17 +1097,15 @@ export class Job {
 
   private async reviewEventBlocks(draft: Draft, events: ReviewEventReply[], includeCurrent = false) {
     if (!events.length) return []
-    const ids = events.map(event => event.id)
-    const checks = readRecordedChecks(this.s.stateDir, draft, ids, this.s.now().getTime(), includeCurrent)
-    const evidence = await this.reviewEvidence(draft, ids)
-    const audit = draft.review?.result?.questionResolution
-    const saved = [...(audit?.fallback?.selections ?? []), ...(audit?.quick?.selections ?? [])]
-    const subjects = events.map(event => ({ id: event.id, field: event.flag.field, question: event.flag.question ?? event.flag.reason ?? event.detail, displayOnly: true }))
-    const same = (a: ReviewSubject, b: ReviewSubject) => a.id === b.id && a.field === b.field && a.question === b.question
-    const missing = subjects.filter(subject => !saved.some(item => same(subject, item)))
-    const selected = missing.length ? [...saved, ...((await this.adjudicateQuestions(draft, missing, evidence)).selections ?? [])] : saved
-    const blocks = events.map((event, index) => eventReplyLines({ ...event, checks: [...(checks.get(event.id) ?? []), ...(event.checks ?? [])] },
-      evidence.get(event.id), draft.catalogFixes ?? [], selected.find(item => same(subjects[index]!, item))))
+    const missing = events.filter(event => !event.record).map(event => ({
+      id: event.id, field: event.flag.field, question: event.flag.question ?? event.flag.reason ?? event.detail,
+    }))
+    const evidence = missing.length ? await this.reviewEvidence(draft, missing.map(item => item.id)) : new Map<string, ReviewResources>()
+    const selected = missing.length ? await this.adjudicateQuestions(draft, missing, { evidence, includeCurrent }) : undefined
+    const blocks = events.map(event => {
+      const checked = questionRecord(selected, event.id)
+      return eventReplyLines({ ...event, checks: [...(checked?.history ?? []), ...(event.checks ?? [])] }, evidence.get(event.id), draft.catalogFixes ?? [], checked)
+    })
     return blocks.flatMap((lines, index) => index ? ['', ...lines] : lines)
   }
 
@@ -1057,33 +1148,33 @@ export class Job {
     }
     const destination = sendNotice ? runtime.SLACK_ALERTS_CHANNEL : channel
     const threadTs = sendNotice && !broadcast ? null : ts
-    const delivery: ReviewReplyDelivery | undefined = rest.length ? { channel: destination, threadTs, parts: rest,
-      ...(!threadTs ? { parent: this.reviewPartReceipt() } : {}) } : undefined
-    const reserve = sendNotice || Boolean(delivery)
-    // Keep continuations even if Slack posts the first part but its acknowledgement is lost.
-    // A first decision notice is never broadcast again after an unclear response.
-    if (delivery) (draft.pendingReviewReplies ??= []).push(delivery)
-    if (sendNotice) draft.decisionBroadcastAttempted = true
-    if (reserve) markReplied()
+    const firstDecision = sendNotice ? { text: first!, receipt: this.reviewPartReceipt(), broadcast } : undefined
+    const delivery: ReviewReplyDelivery | undefined = firstDecision ? { channel: destination, threadTs, parts: rest, firstDecision } : undefined
+    // Persist the exact first part and its destination before dispatch. A later tick can only reconcile it.
+    if (delivery) {
+      (draft.pendingReviewReplies ??= []).push(delivery)
+      draft.decisionBroadcastAttempted = true
+      markReplied()
+    }
     await this.reviewAction(draft, sendNotice ? 'Slack decision notice' : 'Slack reply', async () => {
       let sent: unknown
-      try { sent = await this.s.slackPost(first!, threadTs, destination, sendNotice && broadcast, delivery?.parent) } catch (error) {
-        if (reserve && error instanceof runtime.SlackRejected) {
-          if (sendNotice) delete draft.decisionBroadcastAttempted
-          if (delivery) draft.pendingReviewReplies = draft.pendingReviewReplies?.filter(item => item !== delivery)
+      try { sent = await this.s.slackPost(first!, threadTs, destination, firstDecision?.broadcast, firstDecision?.receipt) } catch (error) {
+        if (delivery && error instanceof runtime.SlackRejected) {
+          delete draft.decisionBroadcastAttempted
+          draft.pendingReviewReplies = draft.pendingReviewReplies?.filter(item => item !== delivery)
           reply.replied = replyWasSent
           review.replied = reviewWasSent
           this.save(draft)
         }
         throw error
       }
-      if (!reserve) markReplied()
-      if (!delivery) return
-      if (!delivery.threadTs && sent && typeof sent === 'object' && 'ts' in sent && typeof sent.ts === 'string') {
-        delivery.threadTs = sent.ts
-        this.save(draft)
+      if (!delivery) return markReplied()
+      const sentTs = sent && typeof sent === 'object' && 'ts' in sent && typeof sent.ts === 'string' ? sent.ts : null
+      const parent = delivery.threadTs ?? sentTs
+      if (parent) {
+        this.confirmReviewNotice(draft, delivery, parent)
+        await this.sendReviewOverflow(draft)
       }
-      if (delivery.threadTs) await this.sendReviewOverflow(draft)
     })
   }
 
@@ -1091,13 +1182,31 @@ export class Job {
     return { id: randomUUID(), since: this.s.now().getTime() }
   }
 
+  private confirmReviewNotice(draft: Draft, delivery: ReviewReplyDelivery, threadTs: string) {
+    delivery.threadTs = threadTs
+    delete delivery.firstDecision
+    const pending = draft.pendingReviewReplies!
+    if (!delivery.parts.length) pending.splice(pending.indexOf(delivery), 1)
+    this.save(draft)
+  }
+
   private async sendReviewOverflow(draft: Draft) {
     const pending = draft.pendingReviewReplies
     if (!pending?.length) return
     const blocked = new Set<string>()
     for (const delivery of [...pending]) {
-      let threadKey: string | undefined
+      let threadKey = delivery.threadTs ? `${delivery.channel}:${delivery.threadTs}` : undefined
+      if (threadKey && blocked.has(threadKey)) continue
       try {
+        if (delivery.firstDecision) {
+          const found = await this.s.slackReviewReceipt(delivery.channel, delivery.threadTs, delivery.firstDecision.receipt)
+          if (!found) {
+            if (threadKey) blocked.add(threadKey)
+            continue
+          }
+          this.confirmReviewNotice(draft, delivery, delivery.threadTs ?? found)
+          if (!delivery.parts.length) continue
+        }
         if (!delivery.threadTs && delivery.parent) {
           delivery.threadTs = await this.s.slackReviewReceipt(delivery.channel, null, delivery.parent)
           if (delivery.threadTs) this.save(draft)
@@ -1552,19 +1661,23 @@ export class Job {
         let text = fix.text
         // Older queued alerts only saved the text and key; recover at least the event and its resources.
         const oldId = /^review-fix\/([\da-f-]+)$/u.exec(fix.key)?.[1]
-        const event = fix.event ?? (oldId ? { id: oldId, flag: { field: null, reason: null }, card: undefined, checked: undefined, recorded: undefined } : undefined)
+        const event = fix.event ?? (oldId ? { id: oldId, flag: { field: null, reason: null }, card: undefined, checked: undefined, recorded: undefined, record: undefined } : undefined)
         if (event) {
-          const evidence = await this.reviewEvidence(draft, [event.id])
-          const detail = event.flag.reason ?? ''
+          const { recorded, record: ref } = event
+          const review = ref && [draft.review?.result, ...(draft.reviewHistory ?? [])].find(item => item?.revision === ref.revision)
+          const record = ref && questionRecord(review?.questionResolution?.[ref.stage], event.id)
           const input = this.reviewInput(draft)
           if (event.card) input.events = [event.card]
-          const selection = (await this.adjudicateQuestions(draft, [{ id: event.id, field: event.flag.field, question: detail, displayOnly: true }], evidence, input)).selections?.[0]
+          const evidence = record ? undefined : await this.reviewEvidence(draft, [event.id])
+          const selection = evidence && questionRecord(await this.adjudicateQuestions(draft, [{
+            id: event.id, field: event.flag.field, question: event.flag.reason ?? '',
+          }], { evidence, input, includeCurrent: !recorded }), event.id)
+          if (record?.conclusion) text += `\nDato verificado: ${withReviewLinks(record.conclusion.reason)}`
           if (event.checked) text += `\nChecked: ${withReviewLinks(event.checked)}`
-          const { recorded } = event
-          const earlier = readRecordedChecks(this.s.stateDir, { id: draft.id, revision: recorded?.revision ?? draft.revision },
+          const earlier = record?.history ?? readRecordedChecks(this.s.stateDir, { id: draft.id, revision: recorded?.revision ?? draft.revision, catalogFixes: draft.catalogFixes },
             [event.id], this.s.now().getTime(), !recorded).get(event.id) ?? []
           const checks = recorded ? [recorded, ...earlier] : earlier
-          text += `\n${[...recordedCheckLines(checks, draft.catalogFixes ?? []), ...eventResourceLines(event.id, evidence.get(event.id), selection)].join('\n')}`
+          text += `\n${[...recordedCheckLines(checks, draft.catalogFixes ?? []), ...eventResourceLines(event.id, evidence?.get(event.id), record ?? selection, record)].join('\n')}`
         }
         const sent = await this.s.alert(fix.key, fix.title, text, fix.fingerprint, 20_000).catch(() => false)
         if (!sent) pending.push(fix)
