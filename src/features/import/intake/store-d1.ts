@@ -19,7 +19,7 @@ import { pickVenue, venueNameKey } from '../core/venue-identity.ts'
 import { baDate, baTime, citesIntakeClock, citesTicketDestination, hasOfficialTicketEvidence, isWholeCaptionExcerpt, requiresWholeCaptionExcerpt,
   retainedIntakeDoors, SAME_CLOCK_REASON, SAME_CLOCK_RETAINED_REASON, searchInputsChanged, separatelyCitedDoors, ticketDestinationChanged, type Media } from './planning.ts'
 import { isOfficialPage, type Source } from './schema.ts'
-import type { IntakePlanRow, IntakePolicy, IntakeStore, Reservation, VenueRow } from './store.ts'
+import type { IntakePlanRow, IntakePolicy, IntakeStore, MonthlyCharges, Reservation, VenueRow } from './store.ts'
 
 type Row = Record<string, unknown>
 export type IntakeBindings = { db: D1Database; evidence: R2Bucket; artwork: R2Bucket; vectors: Vectorize }
@@ -156,8 +156,9 @@ export function d1Intake({ db, evidence, artwork, vectors }: IntakeBindings, sit
       const update = db.prepare(`UPDATE intake_runs SET ${columns.map(column => `${column} = ?`).join(', ')} WHERE id = ?`)
         .bind(...Object.values(values), id)
       if (patch.state === 'succeeded') {
-        const [result, month] = await db.batch<{ charged_usd: number; unmeasured_runs: number }>([update, db.prepare(`
-          SELECT COALESCE(SUM(charged_usd), 0) AS charged_usd, COUNT(*) - COUNT(charged_usd) AS unmeasured_runs
+        const [result, month] = await db.batch<MonthlyCharges>([update, db.prepare(`
+          SELECT COALESCE(SUM(charged_usd), 0) AS charged_usd, COUNT(*) - COUNT(charged_usd) AS unmeasured_runs,
+            COALESCE(SUM(COALESCE(charged_usd, reserved_usd)), 0) AS reserved_or_charged_usd
           FROM intake_runs WHERE substr(local_date, 1, 7) = (SELECT substr(local_date, 1, 7) FROM intake_runs WHERE id = ?)`)
           .bind(id)])
         if (!result.meta.changes) throw new Error('Collection run not found')

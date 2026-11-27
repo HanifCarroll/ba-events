@@ -40,7 +40,7 @@ export type VenueCreate = { name: string; address?: string | null; neighborhood?
 export type CandidateRow = { id: string; revision: number; payload: Omit<Candidate, 'expected_revision'>; updated_at: string }
 export type PlanSummary = { candidate_id: string; revision: number; action: string; reasons: string[]; receipt: unknown; created_at: string }
 
-export type MonthlyCharges = { charged_usd: number; unmeasured_runs: number }
+export type MonthlyCharges = { charged_usd: number; unmeasured_runs: number; reserved_or_charged_usd?: number }
 
 /** What `collect` needs: the collection reservation, observations and retained evidence images. */
 export interface CollectionStore {
