@@ -22,7 +22,7 @@ import { fixLog, investigatorRunning, startInvestigator, stopInvestigator } from
 import { nextTrack, readTracks, readyTrack, type DraftTrack, type ReadyTrack } from './reel/music.ts'
 import { reelTiming, type ReelTiming } from './reel/project.ts'
 import type { ReviewResources } from './review-evidence.ts'
-import { eventReplyLines, eventResourceLines, lookupReviewBarrio, splitReviewReply, streetForUsig, withReviewLinks, type ReviewBarrioLookup, type ReviewEventReply, type ReviewPartReceipt, type ReviewReplyDelivery } from './review-reply.ts'
+import { eventReplyLines, eventResourceLines, lookupReviewBarrio, recordedCheckLines, splitReviewReply, streetForUsig, withReviewLinks, type ReviewBarrioLookup, type ReviewEventReply, type ReviewPartReceipt, type ReviewReplyDelivery } from './review-reply.ts'
 import { adjudicateReviewQuestions, type QuestionResolver, type ReviewCitation, type ReviewSubject } from './review-resolution.ts'
 import { allOk, copyHash, validateReview, type ReviewInput, type ReviewResult, type ReviewState, type Reviewer, type Verdict } from './review.ts'
 import * as runtime from './runtime.ts'
@@ -672,22 +672,22 @@ export class Job {
     return citations.map(({ url, quote }) => `${url} — “${quote}”`).join('; ')
   }
 
-  private queueReviewFix(draft: Draft, id: string, finding: Verdict, checked?: string) {
+  private queueReviewFix(draft: Draft, id: string, finding: Verdict, { checked, recorded }: alerts.ReviewFixEvidence = {}) {
     const quick = draft.review?.result?.questionResolution?.quick?.resolved.find(item => item.id === id && item.verdict === 'wrong')
     const pending = draft.pendingReviewFixes ??= []
-    pending.push(alerts.reviewFix(draft, id, finding, checked ?? (quick ? this.citationText(quick.citations) : undefined)))
+    pending.push(alerts.reviewFix(draft, id, finding, { checked: checked ?? (quick ? this.citationText(quick.citations) : undefined), recorded }))
   }
 
   private queueInvestigationRepairAlert(draft: Draft, investigation: Investigation) {
     if (investigation.repairAlertQueued) return
     for (const [id, item] of Object.entries(investigation.findings ?? {})) {
       const field = investigation.request.events.find(event => event.id === id)?.field ?? null
+      const evidence = { recorded: { revision: draft.revision, finding: item } }
       if (item.verdict === 'exclude' && !item.hermes) {
-        this.queueReviewFix(draft, id, { verdict: 'wrong', field, reason: item.reason, question: null }, item.checked)
+        this.queueReviewFix(draft, id, { verdict: 'wrong', field, reason: item.reason, question: null }, evidence)
       } else if (item.verdict === 'fixed') {
-        const checked = [item.checked, ...(draft.catalogFixes ?? []).filter(fix => item.fixes.includes(fix.operation)).map(fix => fix.evidence)].filter(Boolean).join('; ')
         this.queueReviewFix(draft, id, { verdict: 'wrong', field, question: null,
-          reason: 'The catalog was corrected but this revision still shows the old information. Rebuild before publishing.' }, checked)
+          reason: 'The catalog was corrected but this revision still shows the old information. Rebuild before publishing.' }, evidence)
       }
     }
     investigation.repairAlertQueued = true
@@ -857,7 +857,7 @@ export class Job {
           investigation.findings = findings
           for (const [id, item] of Object.entries(findings)) if ('hermes' in item && item.hermes) {
             const field = item.verdict === 'ask' ? null : request.events.find(event => event.id === id)?.field ?? null
-            this.queueReviewFix(draft, id, { verdict: 'wrong', field, reason: item.hermes, question: null }, item.checked)
+            this.queueReviewFix(draft, id, { verdict: 'wrong', field, reason: item.hermes, question: null }, { recorded: { revision: request.revision, finding: item } })
           }
           this.collectCatalogFixes(draft)
           this.save(draft)
@@ -975,7 +975,7 @@ export class Job {
       const checked = this.citationText(item.citations)
       findings[item.id] = item.verdict === 'ok' ? { verdict: 'ok', reason: item.reason, url, checked }
         : { verdict: 'exclude', reason: item.reason, checked, hermes: item.reason }
-      if (item.verdict === 'wrong') this.queueReviewFix(draft, item.id, { verdict: 'wrong', field: item.field, reason: item.reason, question: null }, checked)
+      if (item.verdict === 'wrong') this.queueReviewFix(draft, item.id, { verdict: 'wrong', field: item.field, reason: item.reason, question: null }, { checked })
     }
     result.questionResolution = { ...result.questionResolution, fallback: audit }
     this.save(draft)
@@ -1078,32 +1078,38 @@ export class Job {
   private async sendReviewOverflow(draft: Draft) {
     const pending = draft.pendingReviewReplies
     if (!pending?.length) return
-    while (pending.length) {
-      const delivery = pending[0]!
+    const blocked = new Set<string>()
+    for (const delivery of [...pending]) {
+      let threadKey: string | undefined
       try {
         if (!delivery.threadTs && delivery.parent) {
           delivery.threadTs = await this.s.slackReviewReceipt(delivery.channel, null, delivery.parent)
           if (delivery.threadTs) this.save(draft)
         }
-        if (!delivery.threadTs) return
-        const posted = delivery.inFlight && await this.s.slackReviewReceipt(delivery.channel, delivery.threadTs, delivery.inFlight)
-        if (!posted) {
-          delivery.inFlight ??= this.reviewPartReceipt()
-          this.save(draft)
-          try { await this.s.slackPost(delivery.parts[0]!, delivery.threadTs, delivery.channel, false, delivery.inFlight) } catch (error) {
-            if (error instanceof runtime.SlackRejected) { delete delivery.inFlight; this.save(draft) }
-            throw error
+        // A missing parent can only belong to its own top-level notice, not another preview thread.
+        if (!delivery.threadTs) continue
+        threadKey = `${delivery.channel}:${delivery.threadTs}`
+        if (blocked.has(threadKey)) continue
+        while (delivery.parts.length) {
+          const posted = delivery.inFlight && await this.s.slackReviewReceipt(delivery.channel, delivery.threadTs, delivery.inFlight)
+          if (!posted) {
+            delivery.inFlight ??= this.reviewPartReceipt()
+            this.save(draft)
+            try { await this.s.slackPost(delivery.parts[0]!, delivery.threadTs, delivery.channel, false, delivery.inFlight) } catch (error) {
+              if (error instanceof runtime.SlackRejected) { delete delivery.inFlight; this.save(draft) }
+              throw error
+            }
           }
+          delete delivery.inFlight
+          delivery.parts.shift()
+          if (!delivery.parts.length) pending.splice(pending.indexOf(delivery), 1)
+          this.save(draft)
         }
-        delete delivery.inFlight
-        delivery.parts.shift()
-        if (!delivery.parts.length) pending.shift()
-        this.save(draft)
       } catch (error) {
         if (error instanceof DraftChanged) throw error
-        // Rejections of a read are not proof about the write. Keep the part and its receipt either way.
+        // A failed read is not proof about the write. Keep the receipt and this thread's ordering.
+        if (threadKey) blocked.add(threadKey)
         this.s.log(`${draft.id}: could not deliver or reconcile review continuation.`)
-        return
       }
     }
   }
@@ -1469,7 +1475,7 @@ export class Job {
         let text = fix.text
         // Older queued alerts only saved the text and key; recover at least the event and its resources.
         const oldId = /^review-fix\/([\da-f-]+)$/u.exec(fix.key)?.[1]
-        const event = fix.event ?? (oldId ? { id: oldId, flag: { field: null, reason: null }, card: undefined, checked: undefined } : undefined)
+        const event = fix.event ?? (oldId ? { id: oldId, flag: { field: null, reason: null }, card: undefined, checked: undefined, recorded: undefined } : undefined)
         if (event) {
           const evidence = await this.reviewEvidence(draft, [event.id])
           const detail = event.flag.reason ?? ''
@@ -1477,7 +1483,11 @@ export class Job {
           if (event.card) input.events = [event.card]
           const selection = (await this.adjudicateQuestions(draft, [{ id: event.id, field: event.flag.field, question: detail, displayOnly: true }], evidence, input)).selections?.[0]
           if (event.checked) text += `\nChecked: ${withReviewLinks(event.checked)}`
-          text += `\n${eventResourceLines(event.id, evidence.get(event.id), selection).join('\n')}`
+          const { recorded } = event
+          const earlier = readRecordedChecks(this.s.stateDir, { id: draft.id, revision: recorded?.revision ?? draft.revision },
+            [event.id], this.s.now().getTime(), !recorded).get(event.id) ?? []
+          const checks = recorded ? [recorded, ...earlier] : earlier
+          text += `\n${[...recordedCheckLines(checks, draft.catalogFixes ?? []), ...eventResourceLines(event.id, evidence.get(event.id), selection)].join('\n')}`
         }
         const sent = await this.s.alert(fix.key, fix.title, text, fix.fingerprint, 20_000).catch(() => false)
         if (!sent) pending.push(fix)
