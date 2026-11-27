@@ -9,6 +9,7 @@
  */
 import type { D1Database, R2Bucket, Vectorize } from '@cloudflare/workers-types'
 import { Effect } from 'effect'
+import { decodeArtworkRef, encodeArtworkRef } from '#shared/lib/artwork-ref.ts'
 import { batchAssert } from '#shared/lib/db/d1.server.ts'
 import { eventColumnsWith } from '#shared/lib/db/event-columns.ts'
 import { checkIntakeAuthority, commitIntakeEvent, intakeVenueChecks, replayIntakeVector, type IntakeEventPatch } from '#shared/lib/db/event-write.ts'
@@ -23,9 +24,6 @@ import type { IntakePlanRow, IntakePolicy, IntakeStore, MonthlyCharges, Reservat
 
 type Row = Record<string, unknown>
 export type IntakeBindings = { db: D1Database; evidence: R2Bucket; artwork: R2Bucket; vectors: Vectorize }
-
-/** The site's artwork route for an R2 artwork key, the URL form the copy tool writes (docs/d1.md). */
-export const SITE_ORIGIN = 'https://baeventos.com'
 
 const HOUR = 3_600_000
 const DAY = 24 * HOUR
@@ -70,7 +68,7 @@ const sameJson = (a: unknown, b: unknown) => JSON.stringify(canonical(a)) === JS
 
 const detailProtectionColumns = eventColumnsWith('protection', 'details')
 
-export function d1Intake({ db, evidence, artwork, vectors }: IntakeBindings, siteOrigin = SITE_ORIGIN): IntakeStore {
+export function d1Intake({ db, evidence, artwork, vectors }: IntakeBindings): IntakeStore {
   const planRow = (id: string) => first<IntakePlanRow>(db.prepare('SELECT * FROM intake_plans WHERE id = ?').bind(id))
   const readPlan = (id: string) => d1('intake.plan', async () => {
     const plan = await planRow(id)
@@ -289,7 +287,6 @@ export function d1Intake({ db, evidence, artwork, vectors }: IntakeBindings, sit
       .bind(id).all<{ event_id: string }>()).results.map(row => row.event_id)),
     eventsBetween: (from, to) => d1('intake.read', () => all(db.prepare('SELECT * FROM events WHERE starts_at >= ? AND starts_at < ? ORDER BY id').bind(iso(from), iso(to)))),
     eventsByIds: ids => d1('intake.targets', () => all(db.prepare('SELECT * FROM events WHERE id IN (SELECT value FROM json_each(?))').bind(JSON.stringify(ids)))),
-    artworkUrl: (eventId, media) => `${new URL(siteOrigin).origin}/api/event-artwork/${eventId}/${media.object_key}`,
     insertPlan: plan => d1('intake.plan', async () => (await first<IntakePlanRow>(db.prepare(`INSERT INTO intake_plans
         (id, candidate_id, revision, action, event_id, expected_event_updated_at, artwork_media_id, artwork_note, payload, evidence, reasons)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`).bind(crypto.randomUUID(), plan.candidate_id, plan.revision, plan.action, plan.event_id,
@@ -405,13 +402,16 @@ export function d1Intake({ db, evidence, artwork, vectors }: IntakeBindings, sit
       const performers = e.performers ?? previous?.performers
       const replacedTicket = !!previous?.ticket_url && changedTicket
       const replacing = plan.action === 'update'
+      // A plan previewed before this deploy may still carry a URL. Normalize only a selected new image.
+      const selectedImage = plan.artwork_media_id ? decodeArtworkRef(e.image_url, plan.event_id) : null
+      const imageValue = selectedImage?.kind === 'stored' ? encodeArtworkRef(selectedImage) : e.image_url
       const patch = {
         name: e.name, starts_at: startsAt, ends_at: !moved && typeof previous?.ends_at === 'string' ? iso(previous.ends_at) : null,
         time_tba: bit(e.time_tba) ?? 0, venue_id: e.venue_id ?? null, description_es: e.description_es ?? null, description_en: e.description_en ?? null,
         description_display_es: e.description_display_es ?? null, description_display_en: e.description_display_en ?? null,
         description_summary_es: e.description_summary_es ?? null, description_summary_en: e.description_summary_en ?? null,
         categories: JSON.stringify(e.categories ?? []), price: e.price ?? null, is_free: bit(e.is_free) ?? 0,
-        image_url: e.image_url ?? (replacing ? undefined : null), image_width: e.image_width ?? null, image_height: e.image_height ?? null,
+        image_url: imageValue ?? (replacing ? undefined : null), image_width: e.image_width ?? null, image_height: e.image_height ?? null,
         ticket_url: e.ticket_url ?? (replacing ? undefined : null), status: e.status ?? 'scheduled',
         search_document: e.search_document ?? null, embedding_version: e.embedding_version ?? 1,
         enrichment_status: e.enrichment_status ?? 'pending', description_unavailable: bit(e.description_unavailable) ?? 0,

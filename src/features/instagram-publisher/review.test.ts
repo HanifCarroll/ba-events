@@ -19,7 +19,7 @@ const photo = (text: string) => Buffer.from(`<svg xmlns="http://www.w3.org/2000/
   <rect width="660" height="220" fill="#fff"/><text x="20" y="120" fill="#111" font-size="21">${text}</text></svg>`)
 const input: ReviewInput = { format: 'hoy', from, to: from, caption: null, threads: '21:00 · 18 mundos · Café Artigas, Almagro · Gratis', frames: [],
   events: [{ id, title: '18 mundos — Montaje anual', date: from, time: '21:00', startsAt, venue: 'Café Artigas', barrio: 'Almagro',
-    description: 'Entrenamiento canino unipersonal para fortalecer la obediencia con tu perro.', price: 'Gratis', handle: null, via: false, imageUrl: null }] }
+    description: 'Entrenamiento canino unipersonal para fortalecer la obediencia con tu perro.', price: 'Gratis', handle: null, via: false, artworkRef: null }] }
 const config = { model: 'gpt-6.2-sol', keyFile: '/unused' }
 const prompt = readFileSync(new URL('./review-prompt.md', import.meta.url), 'utf8')
 const wrong = { id, verdict: 'wrong', field: 'summary', reason: 'The flyer advertises a physical-theatre performance, not dog training.', question: null }

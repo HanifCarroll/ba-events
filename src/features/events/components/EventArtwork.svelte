@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { artworkSrcset, isArtworkOriginAllowed } from '../lib/artwork-delivery.ts'
+	import { artworkSrcset, isResponsiveArtworkUrl } from '../lib/artwork-delivery.ts'
 	import { getArtworkAspectRatio } from '../lib/event-art.ts'
 
 	let {
@@ -31,7 +31,7 @@
 	} = $props()
 
 	let failedUrl = $state<string | null>(null)
-	const sources = $derived(eventId && failedUrl !== imageUrl && isArtworkOriginAllowed(imageUrl)
+	const sources = $derived(eventId && failedUrl !== imageUrl && isResponsiveArtworkUrl(eventId, imageUrl)
 		? artworkSrcset(eventId, imageUrl, imageWidth) : undefined)
 	const ratio = $derived(crop ? '4 / 5' : aspectRatio ?? getArtworkAspectRatio(imageWidth, imageHeight))
 </script>

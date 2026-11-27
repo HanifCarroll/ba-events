@@ -1,12 +1,14 @@
 /**
- * Each event's flyer, downloaded and prepared before a render: only from the catalog's known image origins (our R2
- * route and the listed CDNs; redirects too, at most three), 10 s for the whole download, at most 15 MB, and it must
+ * Each event's flyer, downloaded and prepared before a render: only a stored original or an approved external
+ * image (at most three CDN redirects), 10 s for the whole download, at most 15 MB, and it must
  * decode as an image. A flyer that fails leaves its event without artwork
  * (it gets the no-flyer card) and is logged. Only a broken setup throws: no `sharp`, or a directory that can't be made.
  */
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { isArtworkOriginAllowed } from '../events/lib/artwork-delivery.ts'
+import { isExternalArtworkOriginAllowed } from '#shared/lib/artwork-origins.ts'
+import { isStoredArtworkKey, type ArtworkRef } from '#shared/lib/artwork-ref.ts'
+import { isArtworkEventId, publicArtworkUrl } from '#shared/lib/artwork-url.ts'
 import type { PostEvent } from './select.ts'
 
 /** A prepared flyer: the image (at most 1280 px on its long side, more than any frame shows it at) and a small blurred, darkened copy to sit behind it. */
@@ -29,7 +31,7 @@ const isHttps = (url: string) => URL.canParse(url) && new URL(url).protocol === 
  * This job runs on the VPS before anyone has approved the draft, so it only ever connects to the catalog's known image
  * origins. https alone would let a catalog URL, or a redirect, point it at an internal service.
  */
-const refusal = (url: string) => !isHttps(url) ? 'not an https URL' : !isArtworkOriginAllowed(url) ? 'not an allowed artwork origin' : null
+const refusal = (url: string) => !isHttps(url) ? 'not an https URL' : !isExternalArtworkOriginAllowed(url) ? 'not an allowed artwork origin' : null
 
 /** Redirects are followed by hand, so every hop is checked before it is requested. One timeout covers the whole chain. */
 export async function downloadArtwork(url: string, fetchImpl: typeof fetch = fetch): Promise<Buffer> {
@@ -44,10 +46,20 @@ export async function downloadArtwork(url: string, fetchImpl: typeof fetch = fet
     if (hops === MAX_REDIRECTS) throw new Error(`more than ${MAX_REDIRECTS} redirects`)
     const next = URL.canParse(location, url) ? new URL(location, url).href : ''
     if (!isHttps(next)) throw new Error('redirected off https')
-    if (!isArtworkOriginAllowed(next)) throw new Error(`redirected to an origin that isn't allowed (${new URL(next).hostname})`)
+    if (!isExternalArtworkOriginAllowed(next)) throw new Error(`redirected to an origin that isn't allowed (${new URL(next).hostname})`)
     url = next
     response = await fetchImpl(url, { signal, redirect: 'manual' })
   }
+  return readArtworkBody(response)
+}
+
+/** The VPS has no R2 binding. Use the public original endpoint, which checks the event's current key. */
+export async function downloadCatalogArtwork(eventId: string, reference: ArtworkRef, fetchImpl: typeof fetch = fetch): Promise<Buffer> {
+  if (reference.kind === 'external') return downloadArtwork(reference.url, fetchImpl)
+  if (!isArtworkEventId(eventId) || !isStoredArtworkKey(reference.key)) throw new Error('Invalid stored artwork reference')
+  const response = await fetchImpl(publicArtworkUrl(eventId, reference), {
+    signal: AbortSignal.timeout(TIMEOUT_MS), redirect: 'manual',
+  })
   return readArtworkBody(response)
 }
 
@@ -82,7 +94,7 @@ export async function rasterJpeg(sharp: Awaited<ReturnType<typeof loadSharp>>, b
     .flatten({ background: '#1d1d23' }).jpeg({ quality: 88 }).toBuffer({ resolveWithObject: true })
 }
 
-export async function fetchArtwork(events: Array<Pick<PostEvent, 'id' | 'title' | 'imageUrl'>>, dir: string, log: (message: string) => void, fetchImpl: typeof fetch = fetch): Promise<Artwork> {
+export async function fetchArtwork(events: Array<Pick<PostEvent, 'id' | 'title' | 'artworkRef'>>, dir: string, log: (message: string) => void, fetchImpl: typeof fetch = fetch): Promise<Artwork> {
   const sharp = await loadSharp()
   rmSync(dir, { recursive: true, force: true })
   mkdirSync(dir, { recursive: true })
@@ -90,9 +102,10 @@ export async function fetchArtwork(events: Array<Pick<PostEvent, 'id' | 'title' 
   sharp.concurrency(1)
   const artwork: Artwork = {}
   for (const [index, event] of events.entries()) {
-    if (!event.imageUrl) { log(`artwork: ${event.id} (${event.title}) has no image; using the no-flyer card`); continue }
+    if (!event.artworkRef) { log(`artwork: ${event.id} (${event.title}) has no image; using the no-flyer card`); continue }
     try {
-      const { data, info } = await rasterJpeg(sharp, await downloadArtwork(event.imageUrl, fetchImpl))
+      const bytes = await downloadCatalogArtwork(event.id, event.artworkRef, fetchImpl)
+      const { data, info } = await rasterJpeg(sharp, bytes)
       if (Math.min(info.width, info.height) < MIN_SIDE) throw new Error(`only ${info.width} × ${info.height} px`)
       // Every channel is scaled to 45%, so even a white or saturated flyer leaves a dark ground.
       // It can be stretched over a whole 1080 × 1920 frame, so it is saved without chroma subsampling.

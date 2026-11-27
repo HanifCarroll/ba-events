@@ -1,4 +1,5 @@
 import { Effect } from 'effect'
+import { encodeArtworkRef } from '#shared/lib/artwork-ref.ts'
 import type { EventInsert } from '#shared/lib/types.ts'
 import { EMPTY_FACETS, type EventFacets } from '#shared/lib/search-facets.ts'
 import { CURRENT_EMBEDDING_VERSION, embedEventWithDocument } from '#shared/lib/ai/embeddings.ts'
@@ -112,7 +113,8 @@ export const previewCandidateEffect = Effect.fn('intake.preview')(function*(stor
     offers_valid_from: candidate.offers_valid_from,
     doors_at: decision.action === 'held' ? undefined : candidateDoors(candidate),
     source: 'instagram', external_id: candidate.id, status: candidate.status,
-    image_url: flyer ? store.artworkUrl(eventId, flyer) : old?.image_url as string | null ?? null,
+    image_url: flyer ? encodeArtworkRef({ kind: 'stored', key: flyer.object_key, contentType: flyer.content_type })
+      : old?.image_url as string | null ?? null,
     image_width: flyer ? null : old?.image_width as number | null ?? null,
     image_height: flyer ? null : old?.image_height as number | null ?? null,
     link: observations[0]?.post_url ?? null,

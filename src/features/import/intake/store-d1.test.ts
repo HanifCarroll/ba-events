@@ -420,7 +420,7 @@ describe.skipIf(bun)('the operator flow on D1', () => {
     presentation: async () => ({ description_display_es: null, description_display_en: null, description_summary_es: null, description_summary_en: null }),
   }
 
-  it('submits, previews, commits with retained artwork in R2, and lists the held backlog', async () => {
+  it.each(['current', 'legacy'])('commits selected artwork as a reference from a %s preview and lists the held backlog', async (format) => {
     await source()
     const runId = (await run(store.reserveCollection)).id
     const venueId = await venue()
@@ -434,13 +434,20 @@ describe.skipIf(bun)('the operator flow on D1', () => {
     const candidate = id()
     await run(submitCandidateEffect(store, candidateInput(candidate, post, venueId, { artwork_media_id: media[0].id })))
     const preview = await run(previewCandidateEffect(store, candidate))
-    expect(preview).toMatchObject({ action: 'create', reasons: [], venue_name: 'Synthetic Venue',
-      payload: { image_url: `https://baeventos.com/api/event-artwork/${preview.event_id}/${image.object_key}`, venue_id: venueId } })
+    const image_url = `r2:image/jpeg:${image.object_key}`
+    expect(preview).toMatchObject({ action: 'create', reasons: [], venue_name: 'Synthetic Venue', payload: { image_url, venue_id: venueId } })
+    if (format === 'legacy') {
+      await run(store.preparePlan(preview.id, { ...preview.payload,
+        image_url: `https://baeventos.com/api/event-artwork/${preview.event_id}/${image.object_key}` }))
+    }
+    expect(artwork.objects.has(image.object_key)).toBe(false)
     const receipt = await run(commitPlanEffect(store, preview.id, publishers))
     expect(receipt).toMatchObject({ action: 'create', event_id: preview.event_id })
     expect(artwork.objects.has(image.object_key)).toBe(true)
-    expect(await db.prepare('SELECT source, external_id, search_document, embedding_version, time_tba, is_free FROM events WHERE id = ?').bind(preview.event_id).first())
-      .toEqual({ source: 'instagram', external_id: candidate, search_document: 'Synthetic Jazz | Synthetic Venue', embedding_version: 2, time_tba: 0, is_free: 0 })
+    expect(evidence.objects.has(image.object_key)).toBe(true)
+    expect(await db.prepare('SELECT source, external_id, search_document, embedding_version, time_tba, is_free, image_url FROM events WHERE id = ?')
+      .bind(preview.event_id).first()).toEqual({ source: 'instagram', external_id: candidate, search_document: 'Synthetic Jazz | Synthetic Venue',
+      embedding_version: 2, time_tba: 0, is_free: 0, image_url })
     const indexed = vectors.vectors.get(preview.event_id)
     expect(indexed).toMatchObject({ id: preview.event_id, metadata: { status: 'scheduled', starts_at: Date.parse(preview.payload.starts_at) } })
     expect(indexed?.values[0]).toBeCloseTo(0.2)
@@ -496,7 +503,7 @@ describe.skipIf(bun)('the operator flow on D1', () => {
     const { image_url: _, ...before } = (await read())!
     await run(submitCandidateEffect(store, candidateInput(candidate, post, venueId, { intent: 'update', target_event_id: event, artwork_media_id })))
     const preview = await run(previewCandidateEffect(store, candidate))
-    const image_url = `https://baeventos.com/api/event-artwork/${event}/${image.object_key}`
+    const image_url = `r2:image/jpeg:${image.object_key}`
     expect(preview).toMatchObject({ action: 'update', reasons: [], payload: { ...before, image_url } })
     const unexpected = async () => { throw new Error('An artwork-only update must not call providers') }
     expect(await run(commitPlanEffect(store, preview.id, { embed: unexpected, presentation: unexpected }))).toMatchObject({ action: 'update', event_id: event })
