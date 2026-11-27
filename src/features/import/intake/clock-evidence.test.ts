@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { citesClock, citesDateAndClock } from './clock-evidence.ts'
+import { clockPairs } from './clock-pairs.fixture.ts'
+
+describe('paired Spanish clock citations', () => {
+  it.each(clockPairs)('$name', ({ accepted, rejected }) => {
+    expect(citesClock(accepted.quote, accepted.time, accepted.source), 'complete claim').toBe(true)
+    expect(citesClock(rejected.quote, rejected.time, rejected.source), 'near miss').toBe(false)
+  })
+})
 
 describe('intake clock tokens', () => {
   it.each([
