@@ -67,7 +67,7 @@ mock.module('#features/import/scrapers/ba-tourism/browser-scraper.ts', () => ({ 
 const client = {
   blocklistEntries: async () => [],
   insertEvent: async (data: Record<string, unknown>) => { writes.push(data) },
-  updateEvent: async (_id: string, data: Record<string, unknown>) => { writes.push(data) },
+  updateEvent: async (_id: string, data: Record<string, unknown>) => { writes.push(data); return { applied: ['name'], kept: [] } },
 }
 const coordinators = {
   luma: (await import('./luma.ts')).processLumaImportEffect,

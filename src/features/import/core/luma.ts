@@ -219,11 +219,11 @@ export function processLumaImportEffect(
       const itemProgram = Effect.gen(function* () {
         if (existing && updateKind === 'unchanged') return
         if (existing && updateKind === 'mutable-only') {
-          const error = yield* lumaTry('luma.update-mutable', () => catalog.updateEvent(existing.id, getChangedMutableFields(transformed, existing)).then(() => null, (error: Error) => error))
-          if (error) {
-            console.error(`[luma] Failed to update event: ${error.message}`)
+          const write = yield* lumaTry('luma.update-mutable', () => catalog.updateEvent(existing.id, getChangedMutableFields(transformed, existing)).catch((error: Error) => error))
+          if (write instanceof Error) {
+            console.error(`[luma] Failed to update event: ${write.message}`)
             result.eventsSkipped++
-          } else {
+          } else if (write.applied.length) {
             result.eventsUpdated++
           }
           return
@@ -261,7 +261,7 @@ export function processLumaImportEffect(
         }
 
         if (existing) {
-          const error = yield* lumaTry('luma.update-event', () => catalog.updateEvent(existing.id, {
+          const write = yield* lumaTry('luma.update-event', () => catalog.updateEvent(existing.id, {
               name: eventWithEmbedding.name,
               description_es: eventWithEmbedding.description_es,
               description_en: eventWithEmbedding.description_en,
@@ -273,12 +273,12 @@ export function processLumaImportEffect(
               search_document: eventWithEmbedding.search_document,
               embedding_version: eventWithEmbedding.embedding_version,
               ...getChangedMutableFields(eventWithEmbedding, existing),
-            }).then(() => null, (error: Error) => error)
+            }).catch((error: Error) => error)
           )
-          if (error) {
-            console.error(`[luma] Failed to update event: ${error.message}`)
+          if (write instanceof Error) {
+            console.error(`[luma] Failed to update event: ${write.message}`)
             result.eventsSkipped++
-          } else {
+          } else if (write.applied.length) {
             result.eventsUpdated++
           }
         } else {

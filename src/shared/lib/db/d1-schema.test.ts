@@ -1,8 +1,7 @@
 /** Executes the schema constraints, triggers, and projections against Miniflare D1. */
 import type { D1Database } from '@cloudflare/workers-types'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { freshD1 } from '../../../../tests/support/d1.ts'
-import { intakeCommitBatch } from './d1.server.ts'
+import { freshD1, withTestIntakeContext } from '../../../../tests/support/d1.ts'
 
 let db: D1Database
 let dispose: () => Promise<void>
@@ -95,9 +94,9 @@ describe('intake protection trigger', () => {
 
 	it('lets the intake commit batch change protected facts, and only inside it', async () => {
 		const e = await protectedEvent()
-		await db.batch(intakeCommitBatch(db, [
+		await withTestIntakeContext(db, [
 			db.prepare("UPDATE events SET name = 'Rescheduled', status = 'scheduled', search_document = 'Rescheduled' WHERE id = ?").bind(e),
-		]))
+		])
 		expect(await read(e)).toMatchObject({ name: 'Rescheduled', status: 'scheduled', search_document: 'Rescheduled' })
 		await db.prepare("UPDATE events SET name = 'Platform' WHERE id = ?").bind(e).run()
 		expect((await read(e))?.name).toBe('Rescheduled')
@@ -118,7 +117,7 @@ describe('event scope columns', () => {
 		expect(await read(eventId)).toMatchObject({ scope: 'in', scope_reason: 'It is live jazz.', status: 'scheduled',
 			name: 'Synthetic Jazz', search_document: 'Synthetic Jazz', embedding_version: 2, updated_at: '2026-01-01T00:00:00.000Z' })
 		expect(await db.prepare('SELECT count(*) FROM write_context').first('count(*)')).toBe(0)
-		await db.batch(intakeCommitBatch(db, [db.prepare("UPDATE events SET name = 'New title' WHERE id = ?").bind(eventId)]))
+		await withTestIntakeContext(db, [db.prepare("UPDATE events SET name = 'New title' WHERE id = ?").bind(eventId)])
 		expect(await read(eventId)).toMatchObject({ name: 'New title', scope: null, scope_reason: null, scope_judged_at: null, scope_version: null })
 	})
 

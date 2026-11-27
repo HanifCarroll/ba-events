@@ -1,4 +1,5 @@
 /** Catalog repository used by importers, venue settlement, enrichment, and scrape auditing. */
+import type { CatalogUpdateResult, VenueWriteResult } from '#shared/lib/db/event-write.ts'
 import type { EventInsert, EventSourceDetails, ImportBlocklistEntry, BlocklistSource, Venue } from '#shared/lib/types.ts'
 import type { ExistingEventData } from '../api/duplicate-detection.ts'
 import type { EnrichmentProvenance } from './enrichment-provenance.ts'
@@ -92,12 +93,12 @@ export interface CatalogStore {
   queueVenueReview(entry: VenueReviewWrite): Promise<void>
   settleVenueReview(id: string, settlement: VenueReviewSettlement): Promise<void>
   venueReviewEventIds(id: string): Promise<string[]>
-  setEventsVenue(eventIds: string[], venueId: string): Promise<void>
+  setEventsVenue(eventIds: string[], venueId: string): Promise<VenueWriteResult[]>
 
   /** Rows of `source` whose `external_id` is in the list, with the fields scraper updates compare. */
   existingEvents(source: string, externalIds: string[]): Promise<ExistingEventData[]>
   insertEvent(event: EventWrite & Pick<EventInsert, 'name' | 'starts_at' | 'source'>): Promise<void>
-  updateEvent(id: string, patch: EventWrite): Promise<void>
+  updateEvent(id: string, patch: EventWrite, writer?: 'importer' | 'enrichment'): Promise<CatalogUpdateResult>
   eventsNeedingEnrichment(query: EnrichmentQuery): Promise<EnrichmentRow[]>
   countEventsNeedingEnrichment(query: Omit<EnrichmentQuery, 'limit'>): Promise<number>
   /** Every event's id, name, source, and venue name, for the blocklist cleanup. */

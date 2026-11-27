@@ -142,6 +142,20 @@ Enrichment SHALL move an imported `pending` event to a terminal status in the pa
 ### Requirement: The catalog runs on D1 and Vectorize behind the backend seam
 Imports, venue settlement, the venue review queue, enrichment, the blocklist, and the daily-scrape audit SHALL read and write the catalog through one repository that requires `DB` and `VECTORIZE`. Every event write that carries a new embedding SHALL upsert the vector with the event id and `{ status, starts_at }` metadata (epoch ms), and a write that changes `status` or `starts_at` SHALL rewrite that metadata. A vector MUST NOT change when intake protection reverts the event's search document. Hourly, scheduled and pending-review events SHALL become `past` by the 4-hour and 28-hour rule, and nightly the vectors of live and recently changed events SHALL be reconciled with D1; both run only when `DB` is bound.
 
+#### Scenario: A source tries to overwrite an intake-protected field
+- **WHEN** an importer submits an event update that conflicts with intake authority
+- **THEN** the catalog reports the protected fields it kept and applies any permitted changes
+- **AND** the daily scrape counts the event as updated only if at least one stored field changed
+
+#### Scenario: A venue review settles a mix of event rows
+- **WHEN** a venue review assigns a venue to several event IDs
+- **THEN** the result identifies the assignments it applied and those it kept because of intake authority or a hidden location
+- **AND** unchanged or missing rows are counted as neither applied nor kept
+
+#### Scenario: Enrichment finds a missing page for an event whose status intake protected
+- **WHEN** enrichment receives a 404 and the catalog keeps the current status
+- **THEN** enrichment does not count the event as canceled
+
 #### Scenario: A jobs Worker without a D1 binding
 - **WHEN** the jobs Worker runs without `DB`
 - **THEN** catalog jobs cannot run and no writes are sent to another backend
@@ -149,6 +163,7 @@ Imports, venue settlement, the venue review queue, enrichment, the blocklist, an
 #### Scenario: An event is imported on D1
 - **WHEN** an importer inserts or re-embeds an event
 - **THEN** the event row and its vector are written, and the vector's metadata matches the row's status and start
+- **AND** if Vectorize rejects a write after an event update commits, the run still counts the applied update, reports the index failure separately, and leaves the work queued
 
 #### Scenario: An event passes its end
 - **WHEN** the hourly task finds a timed event whose explicit end passed, or, without an explicit end, a timed event more than 4 hours after its start or a date-only event more than 28 hours after its start
@@ -353,6 +368,11 @@ The shared preview/commit interface SHALL persist candidate revisions, proposed 
 - **AND** subsequent legacy importer/enrichment writes cannot undo accepted facts or replace their corresponding search document
 - **AND** a curator repost cannot authorize a correction
 
+#### Scenario: An intake correction proposes a venue for a hidden-location event
+- **WHEN** a plan would attach a venue to a hidden-location event
+- **THEN** intake refuses to prepare or commit that plan, including when it already contains a prepared document and embedding
+- **AND** it leaves the event's search document and vector unchanged
+
 #### Scenario: A correction only adds artwork
 - **WHEN** an existing event gains a selected retained image without changing its other facts
 - **THEN** preview and commit retain the existing description presentation and search document byte for byte, without a model or embedding call
@@ -390,7 +410,7 @@ The operator MUST explicitly select staging or production. Both manual commands 
 
 #### Scenario: A stale scheduled event
 - **WHEN** `reembed-stale` finds a scheduled event with an old version or no search document
-- **THEN** it processes it in `(starts_at, id)` order, checks the stored document and version after triggers, and updates the vector only when the new document was kept
+- **THEN** it processes it in `(starts_at, id)` order, honors intake authority, and updates the vector only when the prepared document is permitted and still current
 - **AND** a failed Vectorize write after the D1 commit stays queued for retry
 
 ## Verification
