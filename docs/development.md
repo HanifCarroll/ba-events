@@ -22,6 +22,8 @@ Unit tests do not require real provider credentials or staging bindings. Orchest
 
 Run `node scripts/check-home-paging-browser.mjs <local-url>` with Chrome installed against an isolated local build seeded with at least 25 homepage cards, exactly eight Music cards, and a small Free view that scrolls less than two viewport heights at 390×844. It checks composer placement with and without JavaScript from 390 to 1440 pixels, mobile paging, back-to-top clearance and footer visibility, and both motion modes. It also checks that returning from event details does not count as a second install-hint visit, and that a late install prompt does not move the first card.
 
+Seed an isolated local build with a free, in-scope, scheduled listing with artwork that started on the previous Buenos Aires day and ends after the current time. With Playwright Chromium installed, run `node scripts/check-agenda-start-date-browser.mjs <local-url> <ongoing-event-id> <start-iso>` to verify that the homepage and `/agenda/gratis` show its actual start date under Hoy at 390 CSS pixels with JavaScript disabled.
+
 Tests of D1 SQL run against a fresh in-memory Miniflare D1 with `migrations/` applied (`freshD1()` in `tests/support/d1.ts`). See [D1 baseline](d1.md).
 
 ## Chat diagnosis
