@@ -4,7 +4,7 @@ import { z } from 'zod'
 import type { Investigation } from './investigation.ts'
 import type { FormatKey } from './formats.ts'
 import type { SourceEvidence } from './review-evidence.ts'
-import type { QuestionResolution } from './review-resolution.ts'
+import type { QuestionEvidenceStage, QuestionResolution } from './review-resolution.ts'
 import type { PostEvent } from './select.ts'
 
 const fields = {
@@ -38,7 +38,7 @@ export interface ReviewResult extends ReviewOutput {
   copyHash: string
   startedAt: string
   completedAt: string
-  questionResolution?: { quick?: QuestionResolution; fallback?: QuestionResolution }
+  questionResolution?: Partial<Record<QuestionEvidenceStage, QuestionResolution>>
 }
 export interface ReviewState {
   reelHoldMids?: number[]
