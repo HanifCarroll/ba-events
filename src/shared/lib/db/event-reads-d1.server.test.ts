@@ -20,6 +20,7 @@ import { toPublicEvent } from '../../../mcp-worker/public.ts'
 import { eventsByIdsD1 } from './event-reads-d1.server.ts'
 import { homeWindow, selectHomeView } from '#features/events/lib/home-feed.ts'
 import { getEventDetailDataEffect } from '#features/events/api/detail.server.ts'
+import { serveArtwork } from '#features/events/api/artwork.server.ts'
 import { Effect } from 'effect'
 
 let db: D1Database
@@ -116,6 +117,40 @@ describe('public event reads on D1', () => {
     expect(cards[3]).not.toHaveProperty('venue_address')
     expect(cards[4]).toMatchObject({ location_hidden: true, venue_name: null, venue_neighborhood: null, venue_id: null })
     expect(cards[5]).toMatchObject({ location_tba: true, venue_name: null, venue_neighborhood: null, venue_id: null })
+  })
+
+  it('projects catalog artwork as public URLs but authorizes the original with raw displayable rows', async () => {
+    const window = homeWindow(new Date('2026-11-19T08:00:00.000Z'))
+    const fields = { starts_at: window.start, scope: 'in' } as const
+    const key = `${'a'.repeat(64)}.png`
+    const reference = `r2:image/png:${key}`
+    const stored = await event('Imagen retenida', { ...fields, image_url: reference })
+    const legacy = await event('Imagen anterior', fields)
+    const external = 'https://images.lumacdn.com/uploads/flyer.png?sig=fixture'
+    const scraped = await event('Imagen del CDN', { ...fields, image_url: external })
+    const canceled = await event('No visible', { ...fields, status: 'canceled', image_url: reference })
+    const url = (id: string) => `https://baeventos.com/api/event-artwork/${id}/${key}`
+    await db.prepare('UPDATE events SET image_url = ? WHERE id = ?').bind(url(legacy), legacy).run()
+    const expected = [[stored, url(stored)], [legacy, url(legacy)], [scraped, external]]
+    expect((await getHomeAgendaEvents(window)).map(card => [card.id, card.image_url])).toEqual(expected)
+    for (const [id, imageUrl] of expected) {
+      const detail = await Effect.runPromise(getEventDetailDataEffect(id))
+      expect(detail.meta.imageUrl).toBe(imageUrl)
+      const [payload] = await eventsByIdsD1(db, [id])
+      expect(payload.image_url).toBe(imageUrl)
+      expect(toPublicEvent(payload).imageUrl).toBe(imageUrl)
+    }
+    expect(await getEventArtwork(stored)).toEqual({ image_url: reference })
+    const reads: string[] = []
+    const bucket = { get: async (key: string) => {
+      reads.push(key)
+      return { body: new Response('local artwork bytes').body!, httpMetadata: { contentType: 'image/png' } }
+    } }
+    const original = (id: string) => serveArtwork({ request: new Request(url(id)), id, variant: key, lookup: getEventArtwork, bucket })
+    expect((await original(canceled)).status).toBe(404)
+    expect(reads).toEqual([])
+    for (const id of [stored, legacy]) expect(await (await original(id)).text()).toBe('local artwork bytes')
+    expect(reads).toEqual([key, key])
   })
 
   it('keeps pay-what-you-can events out of Gratis when D1 also marks them free', async () => {

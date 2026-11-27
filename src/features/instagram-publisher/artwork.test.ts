@@ -4,11 +4,12 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import sharp from 'sharp'
 import { describe, expect, it } from 'vitest'
-import { fetchArtwork, loadSharp } from './artwork.ts'
+import { decodeArtworkRef } from '#shared/lib/artwork-ref.ts'
+import { downloadCatalogArtwork, fetchArtwork, loadSharp } from './artwork.ts'
 
 const image = (width: number, height: number, format: 'jpeg' | 'png' | 'webp' = 'jpeg') =>
   sharp({ create: { width, height, channels: 3, background: '#ff1fa0' } })[format]().toBuffer()
-const event = (id: string, imageUrl: string | null) => ({ id, title: `Evento ${id}`, imageUrl })
+const event = (id: string, value: string | null) => ({ id, title: `Evento ${id}`, artworkRef: decodeArtworkRef(value, id) })
 const ok = (bytes: Buffer, init?: ResponseInit) => new Response(new Uint8Array(bytes), init)
 const dir = () => join(mkdtempSync(join(tmpdir(), 'ig-art-')), 'art')
 
@@ -71,12 +72,35 @@ describe('fetching artwork', () => {
       'https://baeventos.com/api/admin', 'https://imagenes.passline.com/other/a.jpg', 'https://imagenes.passline.com.evil.example/eventos/a.jpg', 'https://user@imagenes.passline.com/eventos/a.jpg',
     ]
     const logs: string[] = []
-    const art = await fetchArtwork([...urls.map((url, i) => event(`bad${i}`, url)), event('good', 'https://imagenes.passline.com/eventos/a.jpg'),
-      event('r2', 'https://baeventos.com/api/event-artwork/fcd772a2-9b05-4e1a-b6bc-e5503726a597/' + 'ab'.repeat(32) + '.jpg')], dir(), m => logs.push(m), fake)
-    expect(Object.keys(art)).toEqual(['good', 'r2'])
-    expect(asked).toEqual(['https://imagenes.passline.com/eventos/a.jpg', 'https://baeventos.com/api/event-artwork/fcd772a2-9b05-4e1a-b6bc-e5503726a597/' + 'ab'.repeat(32) + '.jpg'])
+    const art = await fetchArtwork([...urls.map((url, i) => event(`bad${i}`, url)), event('good', 'https://imagenes.passline.com/eventos/a.jpg')],
+      dir(), m => logs.push(m), fake)
+    expect(Object.keys(art)).toEqual(['good'])
+    expect(asked).toEqual(['https://imagenes.passline.com/eventos/a.jpg'])
     expect(logs).toHaveLength(urls.length)
     for (const line of logs) expect(line).toContain('failed (not an allowed artwork origin); using the no-flyer card')
+  })
+
+  it('reads the same public original by key from a stored or legacy catalog value', async () => {
+    const id = 'fcd772a2-9b05-4e1a-b6bc-e5503726a597'
+    const key = `${'ab'.repeat(32)}.jpg`
+    const publicUrl = `https://baeventos.com/api/event-artwork/${id}/${key}`
+    const good = await image(800, 1000)
+    let requests = 0
+    const fake: typeof fetch = async (url, init) => {
+      requests++
+      expect(url).toBe(publicUrl)
+      expect(init).toMatchObject({ redirect: 'manual', signal: expect.any(AbortSignal) })
+      return ok(good)
+    }
+    for (const value of [`r2:image/jpeg:${key}`, publicUrl]) {
+      const ref = event(id, value).artworkRef!
+      expect(await downloadCatalogArtwork(id, ref, fake)).toEqual(good)
+      await expect(downloadCatalogArtwork(id, ref, async () => new Response(null, {
+        status: 302, headers: { Location: 'https://imagenes.passline.com/eventos/other.jpg' },
+      }))).rejects.toThrow('HTTP 302')
+    }
+    await expect(downloadCatalogArtwork('..', { kind: 'stored', key, contentType: 'image/jpeg' }, fake)).rejects.toThrow('Invalid stored artwork reference')
+    expect(requests).toBe(2)
   })
 
   describe('redirects', () => {

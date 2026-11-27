@@ -122,7 +122,7 @@ class World {
         const { mkdirSync } = await import('node:fs')
         mkdirSync(dir, { recursive: true })
         this.artDirs.push(dir)
-        return Object.fromEntries(events.filter(event => event.imageUrl).map(event => {
+        return Object.fromEntries(events.filter(event => event.artworkRef).map(event => {
           const file = join(dir, `${event.id}.jpg`)
           writeFileSync(file, 'flyer')
           return [event.id, { file, backdrop: file, width: 800, height: 1000 }]

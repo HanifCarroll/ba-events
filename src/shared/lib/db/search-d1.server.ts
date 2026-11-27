@@ -2,6 +2,7 @@
 import { Schema } from 'effect'
 import type { D1Database, VectorizeIndex } from '@cloudflare/workers-types'
 import type { ChatEventPayload, EventFilters, Venue } from '../types.ts'
+import { catalogArtworkUrl } from '../artwork-url.ts'
 import { BA_TIMEZONE } from '../constants.ts'
 import { tsRankCd, websearchToFts5 } from '../search/websearch-fts5.ts'
 import { eventColumnsWith } from './event-columns.ts'
@@ -38,7 +39,10 @@ const EventRow = Schema.Struct({
 })
 const decodeEvent = Schema.decodeUnknownSync(EventRow)
 /** Decodes one EVENT_COLUMNS row to the public event projection. */
-export const toPayload = (row: unknown) => decodeEvent(row) as unknown as ChatEventPayload
+export function toPayload(row: unknown): ChatEventPayload {
+  const event = decodeEvent(row) as unknown as ChatEventPayload
+  return { ...event, image_url: catalogArtworkUrl(event.id, event.image_url) }
+}
 
 const iso = (value: string) => new Date(value).toISOString()
 const list = (values: readonly string[] | undefined) => (values && values.length > 0 ? JSON.stringify(values) : null)

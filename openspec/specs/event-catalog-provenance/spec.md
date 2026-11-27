@@ -145,9 +145,16 @@ Passline, Venti, Meetup, Eventbrite, and Luma artwork SHALL use the same catalog
 - **AND** it does not permit private evidence paths, other storage projects, arbitrary query parameters or expiring Instagram CDN links
 - **AND** Instagram remains identified as the original source rather than a ticket seller
 
+#### Scenario: An Event Image is read from the Catalog
+- **WHEN** a consumer reads `events.image_url`
+- **THEN** the Catalog decodes either an unchanged external URL or a stored original with an object key and a JPEG, PNG, or WebP content type
+- **AND** the Catalog recognizes existing `https://baeventos.com/api/event-artwork/<event id>/<sha256>.<ext>` values for the same event as stored originals, without rewriting rows
+- **AND** public reads expose the same external URL or the public original URL for the event and key, not the persisted encoding, on the home and event pages, saved events, chat cards, social metadata, and MCP
+
 #### Scenario: Artwork stored in R2 on a Worker that binds D1
-- **WHEN** a displayable event's artwork URL is `https://baeventos.com/api/event-artwork/<event id>/<sha256>.<ext>` (the form the D1 copy and the D1 intake write) and the Worker binds the `ARTWORK` bucket
-- **THEN** that path serves the stored original from R2 with an immutable one-year cache, only while it is that event's current artwork and only with a JPEG, PNG, or WebP content type
+- **WHEN** a browser requests `/api/event-artwork/<event id>/<sha256>.<ext>` and the Worker binds the `ARTWORK` bucket
+- **THEN** that path serves the stored original from R2 with an immutable one-year cache only while the key matches that displayable event's current reference
+- **AND** it serves only JPEG, PNG, or WebP, using the object's content type without parameters and treating `image/jpg` as `image/jpeg`
 - **AND** the finite-size variants read the same object from R2 instead of fetching a URL, and fall back to that original path on this host
 
 #### Scenario: A small original is selected through a larger cached candidate

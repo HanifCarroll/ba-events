@@ -30,7 +30,7 @@ A post MUST show only events from the Instagram intake that are scheduled, marke
 - **AND** it can prefer an event with artwork on a date already picked if the remaining slots and unused venues can still cover the other dates. It lists the picks in start order; dates with no qualifying event do not get a pick
 
 ### Requirement: Frames show each event's own artwork in the website's look
-Every event card MUST show that event's own artwork whole, uncropped, above a solid panel that holds every word, so no text depends on the artwork's colors. Before a render the job MUST download each picked event's `image_url` over https and only from the catalog's known image origins (the R2 artwork route and the listed CDN hosts and paths), following at most three redirects and requesting no address or redirect hop outside those origins, with one 10 second limit for the whole download and a 15 MB limit, and MUST use it only if it decodes as a raster image. No format may use a stock photo. Among qualifying events the pick MUST prefer events that have artwork.
+Every event card MUST show that event's own artwork whole, uncropped, above a solid panel that holds every word, so no text depends on the artwork's colors. Before a render the job MUST read each picked event's Catalog artwork reference through its artwork adapter. For a stored original (including legacy original URLs decoded by the Catalog), it MUST use the public original endpoint for the event and key, without redirects or private bucket credentials. For an external URL, it MUST request only the listed CDN hosts and paths over HTTPS, following at most three redirects and checking each hop. It MUST use one 10 second limit for the download and a 15 MB limit, and MUST use the result only if it decodes as a raster image. No format may use a stock photo. Among qualifying events the pick MUST prefer events that have artwork.
 
 #### Scenario: A flyer can't be used
 - **WHEN** an event has no `image_url`, or its download fails, times out, is too large, isn't https, or doesn't decode as an image
@@ -47,7 +47,7 @@ Every event card MUST show that event's own artwork whole, uncropped, above a so
 - **AND** a cover or closing frame shows only the artwork of events that have it
 
 #### Scenario: The artwork address is not https or not a known image origin
-- **WHEN** an event's `image_url` is empty, relative, not an `https:` URL, or not on one of the known image origins
+- **WHEN** an event has no valid stored original and its external URL is empty, relative, not an `https:` URL, or not on a known CDN origin
 - **THEN** it counts as having no artwork, for the pick and for the render, and it is never requested
 
 #### Scenario: A redirect leaves the known image origins
