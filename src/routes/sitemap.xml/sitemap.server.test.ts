@@ -14,7 +14,7 @@ beforeAll(async () => {
   const rows = [
     ['future&live', later, 'scheduled', 'in'],
     ['starts-now', now.toISOString(), 'scheduled', 'in'],
-    ['already-started', '2026-11-27T14:59:59.999Z', 'scheduled', 'in'],
+    ['already-ended', '2026-11-27T11:59:59.999Z', 'scheduled', 'in'],
     ['past-status', later, 'past', 'in'],
     ['canceled', later, 'canceled', 'in'],
     ['postponed', later, 'postponed', 'in'],
@@ -57,5 +57,35 @@ describe('GET /sitemap.xml', () => {
       'https://baeventos.com/events/future&amp;live',
     ])
     expect(Array.from(xml.matchAll(/<lastmod>(.*?)<\/lastmod>/g), match => match[1])).toEqual([modified, modified])
+  })
+
+  it('uses the Agenda cutoffs for date-only, doors-only, and timed events', async () => {
+    const rows = [
+      ['today-tba', '2026-11-27T03:00:00.000Z', null, null, 1, 0],
+      ['today-doors', '2026-11-27T03:00:00.000Z', null, '2026-11-28T00:00:00.000Z', 1, 0],
+      ['yesterday-tba', '2026-11-26T03:00:00.000Z', null, null, 1, 0],
+      ['yesterday-doors', '2026-11-26T03:00:00.000Z', null, '2026-11-27T00:00:00.000Z', 1, 0],
+      ['running', '2026-11-26T20:00:00.000Z', '2026-11-28T20:00:00.000Z', null, 0, 0],
+      ['finished', '2026-11-26T20:00:00.000Z', '2026-11-27T14:00:00.000Z', null, 0, 0],
+      ['starts-in-one-hour', '2026-11-27T16:00:00.000Z', null, null, 0, 0],
+      ['started-two-hours-ago', '2026-11-27T13:00:00.000Z', null, null, 0, 0],
+      ['started-three-hours-ago', '2026-11-27T12:00:00.000Z', null, null, 0, 0],
+      ['all-day-today', '2026-11-27T03:00:00.000Z', null, null, 0, 1],
+    ] as const
+    await fixture.db.batch(rows.map(row => fixture.db.prepare(`INSERT INTO events
+      (id, starts_at, ends_at, doors_at, time_tba, is_all_day, name, source, status, scope)
+      VALUES (?, ?, ?, ?, ?, ?, 'Synthetic cutoff event', 'luma', 'scheduled', 'in')`).bind(...row)))
+    try {
+      const xml = await (await fetchSitemap()).text()
+      for (const id of ['today-tba', 'today-doors', 'running', 'starts-in-one-hour', 'started-two-hours-ago', 'all-day-today']) {
+        expect(xml).toContain(`/events/${id}</loc>`)
+      }
+      for (const id of ['yesterday-tba', 'yesterday-doors', 'finished', 'started-three-hours-ago']) {
+        expect(xml).not.toContain(`/events/${id}</loc>`)
+      }
+    } finally {
+      await fixture.db.prepare('DELETE FROM events WHERE id IN (SELECT value FROM json_each(?))')
+        .bind(JSON.stringify(rows.map(([id]) => id))).run()
+    }
   })
 })

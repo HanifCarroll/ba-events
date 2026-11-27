@@ -2,7 +2,7 @@
 import type { D1Database } from '@cloudflare/workers-types'
 import type { ChatEventPayload, EventCredit, Venue } from '../types.ts'
 import { isPayWhatYouCan } from '#features/events/lib/admission.ts'
-import { HOME_DOORS_ONLY_DURATION_MS, HOME_EVENT_DEFAULT_DURATION_MS, HOME_FALLBACK_LIMIT, type HomeAgendaEvent, type HomeWindow } from '#features/events/lib/home-feed.ts'
+import { HOME_DOORS_ONLY_DURATION_MS, HOME_EVENT_DEFAULT_DURATION_MS, HOME_FALLBACK_LIMIT, homeWindow, occurrenceEnd, type HomeAgendaEvent, type HomeWindow } from '#features/events/lib/home-feed.ts'
 import { eventColumnsWith } from './event-columns.ts'
 import { EVENT_COLUMNS, FROM_EVENTS, toPayload } from './search-d1.server.ts'
 
@@ -45,14 +45,30 @@ export async function eventsByStartD1(db: D1Database, limit: number): Promise<Ch
   return results.map(toPayload)
 }
 
-/** Sitemap candidates: no artwork requirement, feed window, or card grouping. */
+// A conservative SQL prefilter for occurrences that started before the local day.
+// occurrenceEnd remains the source of truth for when an occurrence stops being current.
+const POSSIBLY_ONGOING = `(e.ends_at > ? OR (e.time_tba AND e.doors_at IS NOT NULL AND e.starts_at > ?)
+  OR (e.ends_at IS NULL AND NOT e.is_all_day AND NOT e.time_tba AND e.starts_at > ?))`
+
+function ongoingCandidateBounds(dayStart: string) {
+  const start = Date.parse(dayStart)
+  return [dayStart, new Date(start - HOME_DOORS_ONLY_DURATION_MS).toISOString(),
+    new Date(start - HOME_EVENT_DEFAULT_DURATION_MS).toISOString()] as const
+}
+
+/** Current and upcoming sitemap entries, without the Agenda's artwork, week window, or grouping. */
 export async function upcomingEventSitemapRowsD1(db: D1Database, asOf: Date) {
+  const { start } = homeWindow(asOf)
   const { results } = await db.prepare(`
-    SELECT id, updated_at FROM events
-    WHERE status = 'scheduled' AND scope = 'in' AND starts_at >= ?
-    ORDER BY starts_at, id
-  `).bind(asOf.toISOString()).all<{ id: string; updated_at: string }>()
-  return results
+    SELECT e.id, e.updated_at, e.starts_at, e.ends_at, e.doors_at, e.time_tba, e.is_all_day FROM events e
+    WHERE e.status = 'scheduled' AND e.scope = 'in' AND (e.starts_at >= ? OR ${POSSIBLY_ONGOING})
+    ORDER BY e.starts_at, e.id
+  `).bind(start, ...ongoingCandidateBounds(start)).all<{
+    id: string; updated_at: string; starts_at: string; ends_at: string | null;
+    doors_at: string | null; time_tba: number; is_all_day: number;
+  }>()
+  return results.filter(row => occurrenceEnd({ ...row, time_tba: row.time_tba === 1, is_all_day: row.is_all_day === 1 }) > asOf.getTime())
+    .map(({ id, updated_at }) => ({ id, updated_at }))
 }
 
 const INSTAGRAM_POST = /^https:\/\/www\.instagram\.com\/(?:p|reel)\/[\w-]+\/?$/i
@@ -68,8 +84,6 @@ const AGENDA_ELIGIBLE = "e.scope = 'in' AND e.status = 'scheduled' AND e.image_u
 
 /** Ongoing occurrences and the local week, plus four later dates for date-filter fallback. */
 export async function homeAgendaD1(db: D1Database, window: HomeWindow): Promise<HomeAgendaEvent[]> {
-  const earliestOvernightStart = new Date(Date.parse(window.start) - HOME_EVENT_DEFAULT_DURATION_MS).toISOString()
-  const earliestDoorsOnlyStart = new Date(Date.parse(window.start) - HOME_DOORS_ONLY_DURATION_MS).toISOString()
   // Buenos Aires calendar days currently use UTC−03:00. Keep complete days so grouped slots are not cut off.
   const { results } = await db.prepare(`
     WITH tail AS (
@@ -78,9 +92,7 @@ export async function homeAgendaD1(db: D1Database, window: HomeWindow): Promise<
     ), selected AS (
       SELECT e.id FROM events e WHERE ${AGENDA_ELIGIBLE} AND e.starts_at >= ? AND e.starts_at < ?
       UNION ALL
-      SELECT e.id FROM events e WHERE ${AGENDA_ELIGIBLE} AND e.starts_at < ?
-        AND (e.ends_at > ? OR (e.time_tba AND e.doors_at IS NOT NULL AND e.starts_at > ?)
-          OR (e.ends_at IS NULL AND NOT e.is_all_day AND NOT e.time_tba AND e.starts_at > ?))
+      SELECT e.id FROM events e WHERE ${AGENDA_ELIGIBLE} AND e.starts_at < ? AND ${POSSIBLY_ONGOING}
       UNION ALL
       SELECT id FROM tail WHERE day_rank <= ?
     )
@@ -96,7 +108,7 @@ export async function homeAgendaD1(db: D1Database, window: HomeWindow): Promise<
       ${PRICE_NOTE} AS priceNote
     FROM selected JOIN events e ON e.id = selected.id LEFT JOIN venues v ON v.id = e.venue_id
     ORDER BY e.starts_at, e.id
-  `).bind(window.end, window.start, window.end, window.start, window.start, earliestDoorsOnlyStart, earliestOvernightStart, HOME_FALLBACK_LIMIT).all<AgendaRow>()
+  `).bind(window.end, window.start, window.end, window.start, ...ongoingCandidateBounds(window.start), HOME_FALLBACK_LIMIT).all<AgendaRow>()
 
   return results.map(({ is_free, time_tba, is_all_day, location_hidden, location_tba, music, priceNote, description_es, sourceUrl, ...card }) => ({
     ...card, is_free: is_free === 1, time_tba: time_tba === 1, is_all_day: is_all_day === 1,

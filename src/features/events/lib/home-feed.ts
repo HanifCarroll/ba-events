@@ -70,7 +70,9 @@ export function pageHomeView(view: HomeView, requested: string | null): HomeView
   return { ...view, events: view.events.slice(0, count), total }
 }
 
-function occurrenceEnd(event: HomeAgendaEvent): number {
+type OccurrenceTimes = Pick<HomeAgendaEvent, 'starts_at' | 'ends_at' | 'doors_at' | 'is_all_day' | 'time_tba'>
+
+export function occurrenceEnd(event: OccurrenceTimes): number {
   const explicitEnd = event.ends_at ? Date.parse(event.ends_at) : NaN
   const start = Date.parse(event.starts_at)
   if (event.is_all_day || event.time_tba) {
