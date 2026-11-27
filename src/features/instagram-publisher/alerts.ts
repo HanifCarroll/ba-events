@@ -6,6 +6,7 @@ import { heldEventReason, type SkipReason } from './copy.ts'
 import { addDays, baLocal, englishDates, hhmm, WEEKDAYS_EN } from './format.ts'
 import { draftId, FORMATS, runWindow, TICK_MS } from './formats.ts'
 import { InstagramError, PROFILE_URL } from './instagram.ts'
+import type { RecordedCheck } from './investigation.ts'
 import type { Draft, Services } from './job.ts'
 import type { Verdict } from './review.ts'
 import { writeJson } from './runtime.ts'
@@ -73,7 +74,9 @@ export function threadsFailed(item: Item, reason: string | null, unclear: boolea
   }
 }
 
-export function reviewFix(draft: Draft, id: string | null, finding: Verdict, checked?: string) {
+export interface ReviewFixEvidence { checked?: string; recorded?: RecordedCheck }
+
+export function reviewFix(draft: Draft, id: string | null, finding: Verdict, { checked, recorded }: ReviewFixEvidence = {}) {
   const issue = [finding.field, finding.reason].filter(Boolean).join(': ')
   return {
     key: id ? `review-fix/${id}` : `${draftKey(draft)}/review-fix`,
@@ -81,8 +84,8 @@ export function reviewFix(draft: Draft, id: string | null, finding: Verdict, che
     text: [`⚠️ *Fix a problem found by the publisher review*. ${TRIAGE}`,
       'Hermes should check the linked evidence and correct the catalog or the publisher.',
       codes(`Draft ${draft.id} r${draft.revision}`, `Event ${id ?? 'not specific to one event'}`, slackLiteral(issue))].join('\n'),
-    fingerprint: checked ? JSON.stringify([issue, checked]) : issue,
-    event: id ? { id, flag: finding, card: draft.events.find(event => event.id === id), checked } : undefined,
+    fingerprint: recorded ? JSON.stringify([issue, checked, recorded.finding]) : checked ? JSON.stringify([issue, checked]) : issue,
+    event: id ? { id, flag: finding, card: draft.events.find(event => event.id === id), checked, recorded } : undefined,
   }
 }
 
