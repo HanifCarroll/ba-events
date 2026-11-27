@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { openEnvelope, sealEnvelope, verifyWorkflowRequest, workflowRequest, EXECUTION_FENCE_HEADER, EXECUTION_STAGE_HEADER } from './recovery.ts'
-import { signChatExecution, verifyChatExecution } from '#features/chat/api/delivery-auth.server.ts'
-import { deliveryHeaders } from '#features/chat/lib/delivery-protocol.ts'
+import { openEnvelope, sealEnvelope } from './recovery.ts'
+import {
+ EXECUTION_FENCE_HEADER, EXECUTION_STAGE_HEADER, deliveryHeaders, signChatExecution,
+ verifyChatExecution, verifyWorkflowRequest, workflowRequest,
+} from '#features/chat/lib/delivery-protocol.ts'
 
 describe('chat recovery authentication boundaries', () => {
  it('encrypts credentials with object-bound authenticated encryption', async () => {
