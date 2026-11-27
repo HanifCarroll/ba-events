@@ -25,6 +25,7 @@ import {
   eventsByIdsD1,
   eventsByStartD1,
   homeAgendaD1,
+  upcomingEventSitemapRowsD1,
   venueByIdD1,
 } from './event-reads-d1.server.ts'
 import type { HomeWindow } from '#features/events/lib/home-feed.ts'
@@ -77,6 +78,10 @@ export async function getEventsWithVenues(limit = 50) {
 
 export async function getHomeAgendaEvents(window: HomeWindow) {
   return homeAgendaD1(boundCatalogD1(), window)
+}
+
+export function getUpcomingEventSitemapRows(asOf: Date) {
+  return upcomingEventSitemapRowsD1(boundCatalogD1(), asOf)
 }
 
 /** Catalog-mediated image lookup: callers cannot supply upstream URLs. */
