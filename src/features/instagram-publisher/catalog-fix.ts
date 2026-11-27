@@ -1,11 +1,12 @@
 import { z } from 'zod'
 import { buildSearchDocument, CURRENT_EMBEDDING_VERSION } from '#shared/lib/ai/embeddings.ts'
+import { eventColumnsWith, type EventColumn } from '#shared/lib/db/event-columns.ts'
 import { baLocal } from './format.ts'
 
 export const eventId = z.string().regex(/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/)
 export const line = (max: number) => z.string().trim().min(1).max(max).regex(/^[^\x00-\x1f\x7f]+$/u)
 export const fixFields = ['description_display_es', 'description_display_en', 'description_summary_es', 'description_summary_en',
-  'name', 'starts_at', 'price', 'is_free', 'status'] as const
+  'name', 'starts_at', 'price', 'is_free', 'status'] as const satisfies readonly EventColumn[]
 export const fixInput = z.strictObject({ id: eventId, field: z.enum(fixFields), from: z.string().max(4000).nullable(),
   to: z.string().max(4000).nullable(), evidence: line(500), allOccurrences: z.boolean() })
 export type FixInput = z.infer<typeof fixInput>
@@ -13,8 +14,10 @@ export interface FixReceipt extends FixInput { operation: string; at: string; ch
 export type CatalogQuery = (sql: string, params: string[]) => Promise<unknown[]>
 export class StaleCatalogFix extends Error {}
 
+// Keep the SQL projection order used in the investigator's JSON evidence; event-columns.test.ts checks membership.
 const fields = [...fixFields, 'description_es', 'description_en', 'ends_at', 'venue_id', 'time_tba', 'is_all_day', 'categories', 'facets',
-  'search_document', 'embedding_version', 'updated_at'] as const
+  'search_document', 'embedding_version', 'updated_at'] as const satisfies readonly EventColumn[]
+const searchInputs = new Set<EventColumn>(eventColumnsWith('searchDocument', true))
 const columns = fields.map(field => `e.${field}`).join(', ')
 const fromEvents = 'FROM events e LEFT JOIN venues v ON v.id = e.venue_id'
 const select = `SELECT e.id, ${columns}, v.name AS venue, v.neighborhood AS barrio, v.website, e.ticket_url ${fromEvents}`
@@ -84,7 +87,7 @@ export async function applyCatalogFix(query: CatalogQuery, input: FixInput, befo
     const updated = rowSchema.parse({ ...row, [field]: replacement })
     if ((field === 'price' || field === 'is_free') && updated.is_free && (updated.price ?? 0) > 0) throw new Error('A free event cannot have a positive price.')
     // Like intake, use source descriptions, not their display/summary derivatives. Nightly repair refreshes a changed vector.
-    const document = ['name', 'price', 'is_free'].includes(field) ? buildSearchDocument({ ...updated,
+    const document = searchInputs.has(field) ? buildSearchDocument({ ...updated,
       categories: JSON.parse(row.categories), facets: JSON.parse(row.facets), venue_name: row.venue, venue_neighborhood: row.barrio,
       is_free: updated.is_free || updated.price !== null ? updated.is_free === 1 : undefined }) : row.search_document
     changes.push({ id: row.id, from: row[field], to: replacement })

@@ -11,6 +11,7 @@
  */
 import type { D1Database, Vectorize } from '@cloudflare/workers-types'
 import { Schema } from 'effect'
+import { eventColumnsWith } from '#shared/lib/db/event-columns.ts'
 import type { BlocklistSource, ImportBlocklistEntry, Venue } from '#shared/lib/types.ts'
 import { trigramSimilarity } from '#shared/lib/search/trigram.ts'
 import type { ExistingEventData } from '../api/duplicate-detection.ts'
@@ -24,11 +25,7 @@ const TIMESTAMPS = new Set(['starts_at', 'ends_at', 'enriched_at', 'created_at',
 const BOOLEANS = new Set(['is_all_day', 'is_free', 'location_hidden', 'location_tba', 'description_unavailable', 'time_tba'])
 const JSON_COLUMNS = new Set(['categories', 'facets', 'performers', 'enrichment_provenance', 'metadata', 'error_details', 'source_coordinates', 'source_event_ids'])
 
-const EVENT_COLUMNS = new Set(['name', 'starts_at', 'ends_at', 'is_all_day', 'venue_id', 'categories', 'price', 'is_free', 'image_url',
-  'link', 'ticket_url', 'source', 'status', 'external_id', 'description_es', 'description_en', 'enrichment_status', 'enrichment_error',
-  'enriched_at', 'location_hidden', 'location_tba', 'description_unavailable', 'description_display_es', 'description_display_en',
-  'description_summary_es', 'description_summary_en', 'min_age', 'time_tba', 'search_document', 'facets', 'embedding_version',
-  'image_width', 'image_height', 'enrichment_provenance', 'organizer_name', 'organizer_url', 'performers', 'offers_valid_from', 'doors_at'])
+const EVENT_COLUMNS = new Set<string>(eventColumnsWith('catalog', 'write', 'read-write'))
 const SCRAPE_RUN_COLUMNS = new Set(['status', 'completed_at', 'error_message', 'error_details', 'events_fetched', 'events_inserted',
   'events_updated', 'events_skipped', 'venues_auto_created', 'enrichments_completed', 'enrichments_failed', 'metadata'])
 
@@ -155,7 +152,7 @@ export async function syncVectorMetadata(vectors: Vectorize, rows: readonly Vect
 // ---------------------------------------------------------------------------------------------------------------------
 // The store
 
-const EXISTING_EVENT_COLUMNS = 'id, external_id, name, description_es, description_en, starts_at, ends_at, is_all_day, time_tba, venue_id, categories, price, is_free, min_age, image_url, image_width, image_height, link, ticket_url, status, location_hidden, location_tba, description_unavailable, facets, embedding_version, organizer_name, organizer_url, performers, offers_valid_from, doors_at'
+const EXISTING_EVENT_COLUMNS = eventColumnsWith('catalog', 'read', 'read-write').join(', ')
 
 function enrichmentWhere(query: { statuses?: string[]; startsAtFloor: string; retiredSources: readonly string[]; source?: string; createdAfter?: string }) {
   const clauses = [
