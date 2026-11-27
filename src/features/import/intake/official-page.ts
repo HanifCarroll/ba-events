@@ -394,8 +394,11 @@ const JOINED_DAYS = /\b\d{1,2}\b *(?:[,–—-]|y\b|o\b|al\b) *#|# *(?:[,–—-
 
 const ADJACENT_CLOCKS = new RegExp(String.raw`^${LIST_JOIN}(?:a las? )?$`)
 
+// Page timing handles bare ranges separately so calendar days keep their context.
+const pageClockTokens = (text: string) => clockTokens(text, { inferRangeStarts: false })
+
 function pageClocks(text: string) {
-  const clocks = [...clockTokens(text)]
+  const clocks = [...pageClockTokens(text)]
   if (!clocks.some(clock => clock.bareAfterColon)) return clocks
   // A contextual day can also appear as a colon-delimited number ("viernes: 20").
   const days = new Set([...text.matchAll(DAY_ONLY)].map(day => day.index + day[0].length - day[1].length))
@@ -558,7 +561,7 @@ export const verifyOfficialPagesEffect = (evidence: readonly Evidence[], facts: 
     }
     const excerpt = normalizePageText(page.excerpt)
     // A complete clock token can itself be shorter than a general page excerpt.
-    if (excerpt.length < MIN_EXCERPT && !((page.fields.includes('time') || page.fields.includes('doors_time')) && [...clockTokens(excerpt)].length)) {
+    if (excerpt.length < MIN_EXCERPT && !((page.fields.includes('time') || page.fields.includes('doors_time')) && [...pageClockTokens(excerpt)].length)) {
       reasons[index] = `Official page excerpt is too short to verify: ${page.url}`; continue
     }
     const quoted = excerptPattern(excerpt)
