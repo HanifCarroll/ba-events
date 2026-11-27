@@ -43,6 +43,10 @@ Each D1 turn operation SHALL run as one `db.batch()` transaction whose precondit
 - **WHEN** a signed-in user reads, claims, completes, fails, renames, deletes, or adds a message to another user's conversation or turn
 - **THEN** nothing is returned or changed
 
+#### Scenario: An account is deleted during an answer
+- **WHEN** an in-flight or recovering attempt tries to persist a reply after its owning account has been deleted
+- **THEN** completion is rejected and neither the conversation, messages, nor turn can be recreated
+
 ### Requirement: Guest response persistence and completion are atomic
 Guest completion SHALL validate the claim, save the server-produced canonical assistant response under the turn's fixed message identifiers, and mark the turn completed in one IndexedDB transaction. Rejected completion SHALL leave both messages and turn state unchanged. Ordinary message writes SHALL NOT replace a turn-owned assistant response.
 
@@ -296,6 +300,7 @@ The browser SDK SHALL mask declared sensitive query names, strip captured URL fr
 ## Verification
 
 ### Implementation anchors
+- `src/features/chat/api/chat-d1.server.ts`
 - `src/features/chat/api/turns.server.ts`
 - `src/features/chat/api/messages.server.ts`
 - `src/features/chat/api/agent/persist.ts`
@@ -313,6 +318,8 @@ The browser SDK SHALL mask declared sensitive query names, strip captured URL fr
 - `src/features/chat/lib/delivery.ts`
 
 ### Deterministic tests
+- `src/features/auth/api/better-auth-d1.server.test.ts` (in-flight completion and recovery after deletion)
+- `src/features/chat/api/chat-d1.server.test.ts` (erasure and foreign-key coverage)
 - `src/chat-delivery-worker/index.test.ts`
 - `src/features/chat/lib/delivery.test.ts`
 - `src/features/chat/api/turns.server.test.ts`

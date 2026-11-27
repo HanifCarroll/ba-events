@@ -2,6 +2,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import type { D1Database } from '@cloudflare/workers-types'
 import type { RequestEvent } from '@sveltejs/kit'
 import { freshD1 } from '../../../../tests/support/d1.ts'
+import * as chat from '#features/chat/api/chat-d1.server.ts'
+import { EXTERNAL_CHANNEL } from '#features/chat/api/channels.ts'
 import { betterAuthFor, createBetterAuth, type BetterAuthEnv } from './better-auth.server.ts'
 import { magicLinkEmail, MAGIC_LINK_FROM } from './magic-link-email.server.ts'
 import { getSessionUser } from './session.server.ts'
@@ -14,6 +16,7 @@ const ORIGIN = 'https://staging.example'
 const SECRET = 'test-secret-that-is-long-enough-for-better-auth'
 const ALICE = '00000000-0000-4000-8000-00000000a11c'
 const BOB = '00000000-0000-4000-8000-000000000b0b'
+const ALICE_CHAT = 'alice-chat'
 const EVENT = '00000000-0000-4000-8000-0000000000e1'
 const OTHER_EVENT = '00000000-0000-4000-8000-0000000000e2'
 const DRAFT_EVENT = '00000000-0000-4000-8000-0000000000e3'
@@ -33,6 +36,7 @@ beforeEach(async () => {
 	await db.batch([
 		db.prepare('DELETE FROM users'), db.prepare('DELETE FROM profiles'), db.prepare('DELETE FROM events'),
 		db.prepare('DELETE FROM verification_tokens'), db.prepare('DELETE FROM auth_rate_limits'),
+		db.prepare('DELETE FROM product_feedback'), db.prepare('DELETE FROM telegram_updates'),
 	])
 	// Seed existing accounts with preserved IDs and references.
 	await db.batch([
@@ -40,7 +44,7 @@ beforeEach(async () => {
 		...[[EVENT, 'scheduled'], [OTHER_EVENT, 'scheduled'], [DRAFT_EVENT, 'pending_review']].map(([id, status]) =>
 			db.prepare(`INSERT INTO events (id, name, starts_at, source, status) VALUES (?, 'Milonga', '2026-12-01T22:00:00.000Z', 'luma', ?)`).bind(id, status)),
 		db.prepare(`INSERT INTO saved_events (id, user_id, event_id) VALUES (?, ?, ?)`).bind(crypto.randomUUID(), ALICE, EVENT),
-		db.prepare(`INSERT INTO conversations (id, user_id) VALUES (?, ?)`).bind(crypto.randomUUID(), ALICE),
+		db.prepare(`INSERT INTO conversations (id, user_id) VALUES (?, ?)`).bind(ALICE_CHAT, ALICE),
 	])
 	await db.batch([
 		...[[ALICE, 'alice@example.test'], [BOB, 'bob@example.test']].flatMap(([id, email]) => [
@@ -231,6 +235,110 @@ describe('user store keeps each user to their own rows', () => {
 		expect(await db.prepare('SELECT count(*) AS n FROM users WHERE id = ?').bind(ALICE).first<number>('n')).toBe(1)
 		await Effect.runPromise(deleteAccountEffect(requestEvent(cookie), { userId: BOB }))
 		expect(await db.prepare('SELECT count(*) AS n FROM users WHERE id = ?').bind(BOB).first<number>('n')).toBe(0)
+	})
+})
+
+describe('account deletion and chat history', () => {
+	const tables = [
+		'users', 'profiles', 'accounts', 'sessions', 'saved_events', 'conversations', 'messages', 'chat_turns',
+		'product_feedback', 'telegram_updates',
+	]
+	const counts = () => db.prepare(`SELECT ${tables.map((table) => `(SELECT count(*) FROM ${table}) AS ${table}`).join(', ')}`)
+		.first<Record<string, number>>()
+
+	async function startTurn(userId: string, conversationId: string) {
+		const input = {
+			conversationId, turnId: `${conversationId}-turn`, userClientMessageId: 'question',
+			assistantClientMessageId: 'reply', content: 'Synthetic question', locale: 'en' as const,
+		}
+		await chat.bootstrapTurn(db, userId, input)
+		const claim = await chat.claimTurn(db, userId, input.turnId, 'fixture-claim', false)
+		expect(claim).toMatchObject({ status: 'running', claim_id: 'fixture-claim' })
+		const reply = {
+			turnId: input.turnId, claimId: 'fixture-claim', assistantClientMessageId: input.assistantClientMessageId,
+			content: 'Synthetic reply', attachedData: {}, executionTrace: [],
+		}
+		return { input, reply }
+	}
+
+	it('erases the session user’s chat without reviving an in-flight turn or affecting other owners', async () => {
+		const active = await startTurn(ALICE, ALICE_CHAT)
+		const archived = await startTurn(ALICE, 'alice-archived-chat')
+		await chat.completeTurn(db, ALICE, archived.reply)
+		await chat.softDeleteConversation(db, ALICE, archived.input.conversationId)
+		const other = await startTurn(BOB, 'bob-chat')
+		const otherTurn = await chat.completeTurn(db, BOB, other.reply)
+		const otherChat = await chat.getConversation(db, BOB, other.input.conversationId)
+		const channel = EXTERNAL_CHANNEL.telegram
+		const hash = 'a'.repeat(64)
+		const telegram = await chat.getOrCreateExternalConversation(db, channel, hash, 'Synthetic Telegram chat', {})
+		const telegramMessage = await chat.insertMessage(db, { channel }, {
+			conversationId: telegram.id, role: 'user', content: 'Synthetic Telegram question', responseContractVersion: 5,
+		})
+		await db.batch([
+			db.prepare("INSERT INTO product_feedback (id, user_id, message) VALUES ('fixture', ?, 'Synthetic feedback')").bind(ALICE),
+			db.prepare("INSERT INTO telegram_updates (update_id, conversation_id, identity_hash, status) VALUES (1, ?, ?, 'completed')").bind(telegram.id, hash),
+		])
+
+		const cookie = await signInByEmail('alice@example.test')
+		const before = await counts()
+		expect(before).toEqual({
+			users: 2, profiles: 2, accounts: 2, sessions: 1, saved_events: 1, conversations: 4, messages: 6,
+			chat_turns: 3, product_feedback: 1, telegram_updates: 1,
+		})
+		const result = await Effect.runPromise(deleteAccountEffect(requestEvent(cookie), { userId: ALICE }))
+		expect(result).toEqual({ success: true })
+		const after = await counts()
+		expect(after).toEqual({
+			users: 1, profiles: 1, accounts: 1, sessions: 0, saved_events: 0, conversations: 2, messages: 3,
+			chat_turns: 1, product_feedback: 1, telegram_updates: 1,
+		})
+		expect(await db.prepare('SELECT user_id, message FROM product_feedback WHERE id = ?').bind('fixture').first())
+			.toEqual({ user_id: null, message: 'Synthetic feedback' })
+		expect(await db.prepare('SELECT conversation_id, status FROM telegram_updates WHERE update_id = 1').first())
+			.toEqual({ conversation_id: telegram.id, status: 'completed' })
+		expect(await chat.loadExternalMessages(db, channel, telegram.id)).toEqual([telegramMessage])
+		expect(await chat.getConversation(db, BOB, other.input.conversationId)).toEqual(otherChat)
+		expect(await chat.listTurns(db, BOB, other.input.conversationId)).toEqual([otherTurn])
+
+		// An executor may still hold the old user ID and claim. Completion and recovery must reject at storage, too.
+		await expect(chat.completeTurn(db, ALICE, active.reply)).rejects.toThrow('Turn claim lost')
+		await expect(chat.claimTurn(db, ALICE, active.input.turnId, active.reply.claimId, true)).rejects.toThrow('Turn not found')
+		await expect(chat.bootstrapTurn(db, ALICE, active.input)).rejects.toThrow()
+		const afterRecovery = await counts()
+		expect(afterRecovery).toEqual(after)
+
+		if (process.env.BA_HISTORY_ERASURE_PROOF === '1') {
+			console.log('Request: deleteAccount({ userId: <synthetic signed-in account> })')
+			console.log('Result:', JSON.stringify(result))
+			console.table(Object.fromEntries(tables.map((table) => [table, {
+				before: before?.[table], after: after?.[table], afterRecovery: afterRecovery?.[table],
+			}])))
+		}
+	})
+
+	it.each([
+		{
+			stage: 'history erasure', error: 'history erasure blocked', sql: `BEFORE DELETE ON messages BEGIN
+				SELECT RAISE(ABORT, 'history erasure blocked'); END`,
+		},
+		{
+			stage: 'user deletion', error: 'user deletion blocked after history erasure', sql: `BEFORE DELETE ON users BEGIN
+				SELECT RAISE(ABORT, 'history still present') WHERE EXISTS (SELECT 1 FROM conversations WHERE user_id = OLD.id);
+				SELECT RAISE(ABORT, 'user deletion blocked after history erasure'); END`,
+		},
+	])('rolls back when $stage fails', async ({ error, sql }) => {
+		const { input } = await startTurn(ALICE, ALICE_CHAT)
+		const cookie = await signInByEmail('alice@example.test')
+		const before = await counts()
+		await db.prepare(`CREATE TRIGGER test_block_account_removal ${sql}`).run()
+		try {
+			await expect(Effect.runPromise(deleteAccountEffect(requestEvent(cookie), { userId: ALICE }))).rejects.toThrow(error)
+		} finally {
+			await db.prepare('DROP TRIGGER test_block_account_removal').run()
+		}
+		expect(await counts()).toEqual(before)
+		expect(await chat.listTurns(db, ALICE, input.conversationId)).toMatchObject([{ id: input.turnId, status: 'running' }])
 	})
 })
 
