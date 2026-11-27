@@ -97,6 +97,25 @@ describe('Instagram candidate publication rules', () => {
     expect(validateEvidence({ ...candidate(), time: null, doors_time: '21:00',
       evidence: [base, { ...flyerClock, fields: ['doors_time'] }] }, posts, [flyer], now)).toEqual([])
   })
+  it('accepts only the stated start from the flyer’s shared-unit range', () => {
+    const flyer: Media = { id: eventId, observation_id: observationId, object_key: 'synthetic.jpg', sha256: 'a'.repeat(64), content_type: 'image/jpeg' }
+    const evidence = [
+      { ...candidate().evidence[0], fields: ['name', 'date', 'venue'] as const },
+      { observation_id: observationId, fields: ['time'] as const, excerpt: 'Todos los días de 20 a 24 h. Ronda de cantantes.', media_id: flyer.id },
+    ]
+    const input = { ...candidate(), time: '20:00', evidence }
+    expect(validateEvidence(input, [post], [flyer], now)).toEqual([])
+    expect(validateEvidence({ ...input, time: '21:00' }, [post], [flyer], now)).toEqual(['Start time must appear in the cited excerpt'])
+  })
+  it('does not use the range end as doors without an independent citation', () => {
+    const range = 'Horario: de 9 a 13 horas'
+    const caption = `${post.caption}\n${range}\nPuertas: 13 horas`
+    const base = { ...candidate(), time: null, doors_time: '13:00' }
+    const doorQuote = { observation_id: observationId, fields: ['doors_time'] as const, excerpt: range, media_id: null }
+    const verify = (excerpt: string) => validateEvidence({ ...base, evidence: [...base.evidence, { ...doorQuote, excerpt }] }, [{ ...post, caption }], [], now)
+    expect(verify(range)).toEqual(['Door time must appear in the cited excerpt'])
+    expect(verify('Puertas: 13 horas')).toEqual([])
+  })
   it.each(['20.11', '20.11 noviembre', '20.11.2026 hs'])('does not read a dotted date as a clock: %s', excerpt => {
     const evidence = [{ ...candidate().evidence[0], fields: ['name', 'date', 'venue', 'doors_time'] as const, excerpt }]
     expect(validateEvidence({ ...candidate(), time: null, doors_time: '20:11', evidence }, [{ ...post, caption: excerpt }], [], now))
