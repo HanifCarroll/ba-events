@@ -60,7 +60,7 @@ export async function loadAgendaPage(path: string, setHeaders: (headers: Record<
   const selection = selectAgendaPage(snapshot, definition)
   const sourceCount = path === '/agenda/esta-semana' ? await getEnabledInstagramSourceCount() : 0
   setHeaders(signedIn ? { 'Cache-Control': 'private, no-store' } : HOME_FEED_HEADERS)
-  return buildAgendaPage({ path, snapshot, ...definition, ...selection, values: agendaCopyValues(snapshot, selection, sourceCount) })
+  return buildAgendaPage({ path, snapshot, ...definition, ...selection, values: agendaCopyValues(snapshot, selection, sourceCount, definition.topic) })
 }
 
 export { cardsFor }

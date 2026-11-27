@@ -1,0 +1,126 @@
+{
+  "/agenda/teatro": {
+    "title": "Teatro en Buenos Aires esta semana | BA Eventos",
+    "description": "Obras de teatro y funciones en salas de Buenos Aires para los próximos 7 días, con horario, sala, barrio y enlace a la publicación de cada sala.",
+    "heading": "Teatro en Buenos Aires esta semana",
+    "updated": "Actualizado el {{fecha_actualizacion}}",
+    "intro": "Hasta el {{ultimo_dia}}, BA Eventos tiene {{n_eventos}} en {{n_salas}} de Buenos Aires. La lista junta obras de teatro y otros eventos en salas de teatro, según lo que publica cada sala en Instagram o en su agenda. Los barrios con más funciones son {{barrios_top}}. Cada ficha muestra horario, sala y barrio, y enlaza a la publicación o a la venta de entradas.",
+    "empty": "Todavía no encontramos funciones de teatro para esta semana. La próxima que tenemos es el {{proxima_fecha}}. Mirá la [agenda de esta semana](/agenda/esta-semana) para ver otras propuestas.",
+    "faq": [
+      {
+        "question": "¿Dónde ver teatro independiente en Buenos Aires esta semana?",
+        "answer": "BA Eventos lista las funciones de los próximos 7 días en las salas que sigue, con foco en cultura independiente. Para una cartelera de teatro con venta de entradas, [Alternativa Teatral](https://www.alternativateatral.com/) publica funciones de teatro de Buenos Aires desde 2000."
+      },
+      {
+        "question": "¿BA Eventos separa el teatro independiente del comercial?",
+        "answer": "No. BA Eventos no clasifica las salas como independientes o comerciales. Cada ficha dice la sala y el barrio, así que podés ver dónde es antes de elegir."
+      },
+      {
+        "question": "¿Cómo saco entradas?",
+        "answer": "BA Eventos no vende entradas. Cada ficha enlaza a la publicación de la sala o a la página donde se venden las entradas. Ahí están el precio y la forma de reservar."
+      }
+    ]
+  },
+  "/agenda/musica-en-vivo": {
+    "title": "Música en vivo en Buenos Aires esta semana | BA Eventos",
+    "description": "Recitales y música en vivo en Buenos Aires para los próximos 7 días, con horario, lugar, barrio y precio cuando lo hay.",
+    "heading": "Música en vivo en Buenos Aires esta semana",
+    "updated": "Actualizado el {{fecha_actualizacion}}",
+    "intro": "Hasta el {{ultimo_dia}}, BA Eventos tiene {{n_eventos}} de música en vivo en {{n_lugares}} de Buenos Aires. {{frase_gratis}} Los géneros con más fechas son {{generos_top}}. La lista incluye recitales y otros eventos con música en vivo que publican las salas y los organizadores.",
+    "empty": "Todavía no encontramos música en vivo para esta semana. La próxima fecha que tenemos es el {{proxima_fecha}}. Mirá la [agenda de esta semana](/agenda/esta-semana) para ver otras propuestas.",
+    "faq": [
+      {
+        "question": "¿Dónde hay recitales en salas chicas esta semana?",
+        "answer": "BA Eventos lista los recitales y la música en vivo de la semana en los lugares que sigue. No tiene datos sobre la capacidad de cada lugar, así que no filtra por tamaño. Cada ficha dice el lugar y el barrio, y enlaza a su publicación."
+      },
+      {
+        "question": "¿Hay recitales gratis?",
+        "answer": "Sí, cuando la fuente no cobra entrada. Esos eventos llevan la etiqueta «Gratis» y también aparecen en [eventos gratis](/agenda/gratis). Las fechas «a la gorra» no cuentan como gratis."
+      },
+      {
+        "question": "¿Puedo buscar por género o por barrio?",
+        "answer": "Escribile al chat algo como «jazz el jueves en San Telmo». El chat busca en la misma agenda por fecha, barrio, presupuesto e intereses."
+      }
+    ]
+  },
+  "/agenda/ferias": {
+    "title": "Ferias en Buenos Aires esta semana | BA Eventos",
+    "description": "Ferias en Buenos Aires esta semana y las próximas, con fecha, lugar y barrio, según lo que publican salas, centros culturales y organizadores.",
+    "heading": "Ferias en Buenos Aires",
+    "updated": "Actualizado el {{fecha_actualizacion}}",
+    "intro": "Esta semana, BA Eventos tiene {{n_semana}} en {{n_lugares}} de Buenos Aires. La lista sale de lo que publican las salas, los centros culturales y los organizadores que seguimos, así que no incluye todas las ferias de la ciudad. Más abajo están las próximas fechas.",
+    "empty": "Por ahora no tenemos ferias cargadas. Mirá la [agenda del fin de semana](/agenda/fin-de-semana) o preguntale al chat.",
+    "faq": [
+      {
+        "question": "¿Qué ferias hay este fin de semana en Buenos Aires?",
+        "answer": "Las ferias del fin de semana aparecen en esta página y en la [agenda del fin de semana](/agenda/fin-de-semana). BA Eventos solo lista las ferias que publican las fuentes que sigue, así que algunas ferias de la ciudad no aparecen."
+      },
+      {
+        "question": "¿Las ferias son gratis?",
+        "answer": "Depende de cada feria. Si la fuente dice que es gratis, la ficha lleva la etiqueta «Gratis». Si no lo dice, la ficha muestra «Precio a confirmar»."
+      }
+    ],
+    "emptyLater": "Todavía no encontramos ferias para esta semana. La próxima que tenemos es el {{proxima_fecha}}. Más abajo están las próximas fechas, y en la [agenda del fin de semana](/agenda/fin-de-semana) hay otras propuestas.",
+    "laterHeading": "Más adelante"
+  },
+  "/agenda/muestras": {
+    "title": "Muestras de arte en Buenos Aires ahora | BA Eventos",
+    "description": "Muestras y exposiciones de arte en Buenos Aires esta semana, con fechas, lugar y barrio, según lo que publican salas y centros culturales.",
+    "heading": "Muestras de arte en Buenos Aires",
+    "updated": "Actualizado el {{fecha_actualizacion}}",
+    "intro": "Esta semana, BA Eventos tiene {{n_semana}} de arte en {{n_lugares}} de Buenos Aires. Algunas abren un solo día y otras siguen varias semanas; cada ficha dice las fechas y el horario cuando la fuente los publica. La lista no incluye todas las muestras de la ciudad, solo las que publican los lugares que seguimos.",
+    "empty": "Por ahora no tenemos muestras cargadas. Mirá la [agenda de esta semana](/agenda/esta-semana) o preguntale al chat.",
+    "faq": [
+      {
+        "question": "¿Qué muestras de arte hay ahora en Buenos Aires?",
+        "answer": "Esta página lista las muestras que BA Eventos tiene cargadas para esta semana y las próximas, a partir de lo que publican los lugares que sigue. No incluye todas las muestras de la ciudad."
+      },
+      {
+        "question": "¿Cuánto cuesta entrar a una muestra?",
+        "answer": "Depende de cada lugar. Si la fuente dice que es gratis, la ficha lleva la etiqueta «Gratis». Si no publicó el precio, la ficha dice «Precio a confirmar»."
+      }
+    ],
+    "emptyLater": "Todavía no encontramos muestras para esta semana. La próxima que tenemos empieza el {{proxima_fecha}}. Más abajo están las próximas fechas.",
+    "laterHeading": "Más adelante"
+  },
+  "/agenda/poesia": {
+    "title": "Poesía y lecturas en Buenos Aires | BA Eventos",
+    "description": "Ciclos de poesía, lecturas y micrófonos abiertos en Buenos Aires esta semana y las próximas, con sala, barrio, horario y enlace a la fuente.",
+    "heading": "Poesía y lecturas en Buenos Aires",
+    "updated": "Actualizado el {{fecha_actualizacion}}",
+    "intro": "Esta semana, BA Eventos tiene {{n_semana}} de poesía o lecturas en {{n_lugares}} de Buenos Aires. Son ciclos de poesía, lecturas y micrófonos abiertos que publican las salas y los centros culturales que seguimos. Más abajo están las próximas fechas.",
+    "empty": "Por ahora no tenemos ciclos de poesía cargados. Mirá la [agenda de esta semana](/agenda/esta-semana) o preguntale al chat.",
+    "faq": [
+      {
+        "question": "¿Dónde hay ciclos de poesía en Buenos Aires?",
+        "answer": "BA Eventos lista los ciclos de poesía y lecturas que publican las salas y los centros culturales que sigue. Cada ficha dice la sala, el barrio y el horario, y enlaza a la publicación del ciclo."
+      },
+      {
+        "question": "¿Qué es un micrófono abierto?",
+        "answer": "En un micrófono abierto, cualquiera puede anotarse para leer, tocar o actuar un rato. Para leer, preguntá en la sala o en la publicación cómo anotarte."
+      }
+    ],
+    "emptyLater": "Todavía no encontramos lecturas para esta semana. La próxima que tenemos es el {{proxima_fecha}}. Más abajo están las próximas fechas.",
+    "laterHeading": "Más adelante"
+  },
+  "/agenda/tango": {
+    "title": "Tango en vivo en Buenos Aires esta semana | BA Eventos",
+    "description": "Recitales y shows de tango en Buenos Aires esta semana, con sala, barrio y horario. Para milongas y clases, te contamos dónde buscar.",
+    "heading": "Tango en vivo en Buenos Aires",
+    "updated": "Actualizado el {{fecha_actualizacion}}",
+    "intro": "Esta semana, BA Eventos tiene {{n_semana}} de tango en {{n_lugares}} de Buenos Aires. La lista junta los eventos de tango que publican las salas que seguimos. BA Eventos casi no lista milongas; para bailar, mirá la guía de [Hoy Milonga](https://www.hoy-milonga.com/buenos-aires/es).",
+    "empty": "Por ahora no tenemos tango cargado. Para milongas, prácticas y shows, [Hoy Milonga](https://www.hoy-milonga.com/buenos-aires/es) publica una agenda de tango de Buenos Aires.",
+    "faq": [
+      {
+        "question": "¿Dónde hay milongas esta semana en Buenos Aires?",
+        "answer": "BA Eventos casi no lista milongas. [Hoy Milonga](https://www.hoy-milonga.com/buenos-aires/es) tiene una agenda de milongas y prácticas, además de clases y espectáculos de tango."
+      },
+      {
+        "question": "¿Dónde escuchar tango en vivo?",
+        "answer": "Esta página lista los eventos de tango que publican las salas que sigue BA Eventos. Cada ficha dice la sala, el barrio y el horario. También podés preguntarle al chat: «tango en vivo este sábado»."
+      }
+    ],
+    "emptyLater": "Todavía no encontramos tango para esta semana. La próxima fecha que tenemos es el {{proxima_fecha}}. Para milongas y prácticas, [Hoy Milonga](https://www.hoy-milonga.com/buenos-aires/es) publica una agenda de tango de Buenos Aires.",
+    "laterHeading": "Más adelante"
+  }
+}

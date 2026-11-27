@@ -89,6 +89,12 @@ describe('initial discovery HTML', () => {
     expect(html).toMatch(/<article\b[^>]*>.*?>Gratis<.*?<\/article>/s)
   })
 
+  it.each(preferenceSources)('renders a Spanish topic agenda and card with English %s', async source => {
+    const html = await requestAgenda('/agenda/muestras', source)
+    expect(html).toContain('<html lang="es"')
+    expect(html).toMatch(/<article\b[^>]*>.*?>Gratis<.*?<\/article>/s)
+  })
+
   it('puts a single ongoing free event under Today and counts it once', async () => {
     const html = await requestAgenda('/agenda/gratis', 'cookie')
     expect(html).toContain('Hoy hay 1.')
