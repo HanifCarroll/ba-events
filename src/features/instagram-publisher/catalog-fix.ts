@@ -1,6 +1,6 @@
 import { z } from 'zod'
-import { buildSearchDocument, CURRENT_EMBEDDING_VERSION } from '#shared/lib/ai/embeddings.ts'
-import { eventColumnsWith, type EventColumn } from '#shared/lib/db/event-columns.ts'
+import type { EventColumn } from '#shared/lib/db/event-columns.ts'
+import { invalidateCorrectedVector } from '#shared/lib/db/vector-sync.ts'
 import { baLocal } from './format.ts'
 
 export const eventId = z.string().regex(/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/)
@@ -17,7 +17,6 @@ export class StaleCatalogFix extends Error {}
 // Keep the SQL projection order used in the investigator's JSON evidence; event-columns.test.ts checks membership.
 const fields = [...fixFields, 'description_es', 'description_en', 'ends_at', 'venue_id', 'time_tba', 'is_all_day', 'categories', 'facets',
   'search_document', 'embedding_version', 'updated_at'] as const satisfies readonly EventColumn[]
-const searchInputs = new Set<EventColumn>(eventColumnsWith('searchDocument', true))
 const columns = fields.map(field => `e.${field}`).join(', ')
 const fromEvents = 'FROM events e LEFT JOIN venues v ON v.id = e.venue_id'
 const select = `SELECT e.id, ${columns}, v.name AS venue, v.neighborhood AS barrio, v.website, e.ticket_url ${fromEvents}`
@@ -86,12 +85,10 @@ export async function applyCatalogFix(query: CatalogQuery, input: FixInput, befo
     } else if (row[field] !== old) throw new Error('Catalog correction refused: stale --from on an occurrence.')
     const updated = rowSchema.parse({ ...row, [field]: replacement })
     if ((field === 'price' || field === 'is_free') && updated.is_free && (updated.price ?? 0) > 0) throw new Error('A free event cannot have a positive price.')
-    // Like intake, use source descriptions, not their display/summary derivatives. Nightly repair refreshes a changed vector.
-    const document = searchInputs.has(field) ? buildSearchDocument({ ...updated,
-      categories: JSON.parse(row.categories), facets: JSON.parse(row.facets), venue_name: row.venue, venue_neighborhood: row.barrio,
-      is_free: updated.is_free || updated.price !== null ? updated.is_free === 1 : undefined }) : row.search_document
     changes.push({ id: row.id, from: row[field], to: replacement })
-    return { id: row.id, to: replacement, document, version: document === row.search_document ? row.embedding_version : CURRENT_EMBEDDING_VERSION - 1 }
+    return { id: row.id, to: replacement, ...invalidateCorrectedVector(row, field, {
+      ...updated, venue_name: row.venue, venue_neighborhood: row.barrio,
+    }) }
   })
   const operation = await beforeCommit(changes)
   const compare = [...fields, 'venue', 'barrio'].map(key => `c.${key} IS json_extract(old.value, '$.${key}')`).join(' AND ')

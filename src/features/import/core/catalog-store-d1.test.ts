@@ -1,6 +1,8 @@
 import type { D1Database } from '@cloudflare/workers-types'
 import { Effect } from 'effect'
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { CURRENT_EMBEDDING_VERSION } from '#shared/lib/ai/embeddings.ts'
+import { planVectorWrite, reconcileCatalog } from '#shared/lib/db/vector-sync.ts'
 import { freshD1 } from '../../../../tests/support/d1.ts'
 import { intakeCommitBatch } from '#shared/lib/db/d1.server.ts'
 import { fakeVectorize } from '../../../../tests/support/vectorize.ts'
@@ -74,17 +76,41 @@ describe('events and their vectors', () => {
 		expect(vectors.has(id)).toBe(false)
 	})
 
-	it('leaves an event queued for the reconcile when its vector write fails', async () => {
+	it('leaves a failed importer upsert queued and repairs it on reconcile', async () => {
 		const fake = fakeVectorize()
 		const catalog = d1Catalog(db, fake.index)
-		const input = event({ embedding: [0.1], search_document: 'Jazz' })
+		const input = event({ embedding: [0.1], search_document: 'Jazz', embedding_version: CURRENT_EMBEDDING_VERSION })
 		fake.failUpserts(1)
 		await expect(catalog.insertEvent(input)).rejects.toThrow('injected')
 		const id = await eventId(input.external_id)
 		expect(await db.prepare('SELECT event_id FROM vector_sync').first('event_id')).toBe(id)
-		await catalog.updateEvent(id, { embedding: [0.2], search_document: 'Jazz' })
-		expect(fake.vectors.get(id)!.values).toEqual([0.2])
+		const embedText = vi.fn(async () => [0.2])
+		expect(await reconcileCatalog(db, fake.index, { embedText })).toMatchObject({ resynced: 1 })
+		expect(embedText).toHaveBeenCalledExactlyOnceWith('Jazz')
+		expect(fake.vectors.get(id)).toEqual({ id, values: [0.2], metadata: { status: 'scheduled', starts_at: Date.parse(input.starts_at) } })
 		expect(await db.prepare('SELECT count(*) AS n FROM vector_sync').first('n')).toBe(0)
+	})
+
+	it('does not clear a newer document queued while an older vector upsert is in flight', async () => {
+		const fake = fakeVectorize()
+		const catalog = d1Catalog(db, fake.index)
+		const input = event({ search_document: 'Before', embedding_version: CURRENT_EMBEDDING_VERSION })
+		await catalog.insertEvent(input)
+		const id = await eventId(input.external_id)
+		const upsert = fake.index.upsert.bind(fake.index)
+		vi.spyOn(fake.index, 'upsert').mockImplementationOnce(async items => {
+			const newer = planVectorWrite(db, id, { source: 'catalog', patch: { embedding: [0.2], search_document: 'Newest' } })
+			if (!newer.queue) throw new Error('Expected a queued write')
+			await db.batch([db.prepare('UPDATE events SET search_document = ? WHERE id = ?').bind('Newest', id), newer.queue])
+			return upsert(items)
+		})
+		await catalog.updateEvent(id, { embedding: [0.1], search_document: 'Older' })
+		expect(await db.prepare('SELECT event_id FROM vector_sync').first('event_id')).toBe(id)
+		const embedText = vi.fn(async () => [0.2])
+		expect(await reconcileCatalog(db, fake.index, { embedText })).toMatchObject({ resynced: 1 })
+		expect(embedText).toHaveBeenCalledExactlyOnceWith('Newest')
+		expect(fake.vectors.get(id)?.values).toEqual([0.2])
+		expect(await db.prepare('SELECT event_id FROM vector_sync').first()).toBeNull()
 	})
 
 	it('keeps the old vector when intake protection reverts the new search document', async () => {
@@ -100,6 +126,7 @@ describe('events and their vectors', () => {
 		await catalog.updateEvent(id, { name: 'Scraped name', embedding: [0.9], search_document: 'Scraped text', embedding_version: 2 })
 		expect(await db.prepare('SELECT name, search_document FROM events WHERE id = ?').bind(id).first()).toEqual({ name: 'Jazz Sintético', search_document: 'Intake text' })
 		expect(vectors.get(id)!.values).toEqual([0.1])
+		expect(await db.prepare('SELECT event_id FROM vector_sync').first()).toBeNull()
 	})
 
 	it('validates, reads, and protects stated event credits and ticket sale times', async () => {

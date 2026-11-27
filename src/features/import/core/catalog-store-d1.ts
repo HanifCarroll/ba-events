@@ -2,20 +2,17 @@
  * The catalog repository on D1, with Vectorize kept in step (catalog-store.ts has the interface).
  *
  * Rows are decoded with Effect Schema at this edge: D1 gives back 0/1 for booleans and JSON text for arrays and
- * objects. Writes encode the other way and store every timestamp in the exact `toISOString()` form the baseline's
- * CHECKs require. Vectors: id = event id, metadata `{ status, starts_at }` with `starts_at` in epoch ms (search's
- * Vectorize filters, delivery PR 03). An event write with a new embedding upserts it; a write that changes `status`
- * or `starts_at` rewrites the metadata. Vectorize writes come after the D1 write. A write with a new embedding also
- * queues the event in `vector_sync` in the same transaction and clears it once Vectorize has the vector, so a failed
- * upsert stays queued and the nightly reconcile (catalog-maintenance.ts) re-embeds it from the stored document.
+ * objects. Writes encode the other way and store timestamps in the exact `toISOString()` form the baseline requires.
+ * The shared vector-sync module plans the queue and settles the index after the D1 write.
  */
 import type { D1Database, Vectorize } from '@cloudflare/workers-types'
 import { Schema } from 'effect'
 import { eventColumnsWith } from '#shared/lib/db/event-columns.ts'
+import { planVectorWrite, removeEventVectors } from '#shared/lib/db/vector-sync.ts'
 import type { BlocklistSource, ImportBlocklistEntry, Venue } from '#shared/lib/types.ts'
 import { trigramSimilarity } from '#shared/lib/search/trigram.ts'
 import type { ExistingEventData } from '../api/duplicate-detection.ts'
-import type { CatalogStore, EnrichmentRow, EventWrite, ScrapeRunPatch } from './catalog-store.ts'
+import type { CatalogStore, EnrichmentRow, ScrapeRunPatch } from './catalog-store.ts'
 import { venueNameKey } from './venue-identity.ts'
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -112,44 +109,6 @@ const decodeBlocklist = decode(blocklistRow)
 const decodeCreatedVenue = decode(venueRow)
 
 // ---------------------------------------------------------------------------------------------------------------------
-// Vectorize
-
-/** Vectorize's getByIds and deleteByIds take a bounded number of ids per call. */
-const VECTOR_CHUNK = 20
-
-export interface VectorRow { id: string; status: string; starts_at: string }
-
-export const vectorMetadata = (row: Pick<VectorRow, 'status' | 'starts_at'>) => ({ status: row.status, starts_at: Date.parse(row.starts_at) })
-
-function chunks<T>(items: readonly T[], size: number): T[][] {
-  const out: T[][] = []
-  for (let index = 0; index < items.length; index += size) out.push(items.slice(index, index + size))
-  return out
-}
-
-/**
- * Rewrite the metadata of the vectors for `rows` where it differs, keeping their values (Vectorize has no
- * metadata-only update). Returns the ids that have no vector, for the reconcile to re-embed.
- */
-export async function syncVectorMetadata(vectors: Vectorize, rows: readonly VectorRow[]): Promise<{ updated: number; missing: string[] }> {
-  let updated = 0
-  const missing: string[] = []
-  for (const part of chunks(rows, VECTOR_CHUNK)) {
-    const found = new Map((await vectors.getByIds(part.map(row => row.id))).map(vector => [vector.id, vector]))
-    const stale = []
-    for (const row of part) {
-      const vector = found.get(row.id)
-      if (!vector) { missing.push(row.id); continue }
-      const want = vectorMetadata(row)
-      if (vector.metadata?.status === want.status && vector.metadata?.starts_at === want.starts_at) continue
-      stale.push({ id: row.id, values: [...vector.values], metadata: want })
-    }
-    if (stale.length) { await vectors.upsert(stale); updated += stale.length }
-  }
-  return { updated, missing }
-}
-
-// ---------------------------------------------------------------------------------------------------------------------
 // The store
 
 const EXISTING_EVENT_COLUMNS = eventColumnsWith('catalog', 'read', 'read-write').join(', ')
@@ -183,28 +142,6 @@ export function d1Catalog(db: D1Database, vectors: Vectorize): CatalogStore {
       cached = { signature, venues: results.map(row => decodeVenue(row) as Venue & { event_count: number }) }
     }
     return cached.venues
-  }
-
-  const queueVector = (id: string) => db.prepare('INSERT OR REPLACE INTO vector_sync (event_id) VALUES (?)').bind(id)
-  const clearVector = (id: string) => db.prepare('DELETE FROM vector_sync WHERE event_id = ?').bind(id).run()
-
-  /** After an event write: the vector follows the row as the triggers left it. */
-  async function syncEventVector(id: string, patch: EventWrite): Promise<void> {
-    const embedding = patch.embedding
-    if (!embedding?.length && patch.status === undefined && patch.starts_at === undefined) return
-    const row = await db.prepare('SELECT id, status, starts_at, search_document, embedding_version FROM events WHERE id = ?').bind(id)
-      .first<VectorRow & { search_document: string | null; embedding_version: number }>()
-    if (!row) return
-    // Intake protection restores the old search_document when it reverts a protected fact, and the old embedding with
-    // it (Postgres restored the embedding column too). Only a document that stuck gets the new vector.
-    if (embedding?.length && (patch.search_document === undefined || row.search_document === patch.search_document)
-      && (patch.embedding_version === undefined || row.embedding_version === patch.embedding_version)) {
-      await vectors.upsert([{ id, values: embedding, metadata: vectorMetadata(row) }])
-    } else {
-      await syncVectorMetadata(vectors, [row])
-    }
-    // Either Vectorize has the new vector, or the document was reverted and the old vector still matches it.
-    if (embedding?.length) await clearVector(id)
   }
 
   return {
@@ -281,21 +218,20 @@ export function d1Catalog(db: D1Database, vectors: Vectorize): CatalogStore {
       const id = crypto.randomUUID()
       const [columns, values] = encodeRow({ id, ...row }, new Set(['id', ...EVENT_COLUMNS]))
       const insert = db.prepare(`INSERT INTO events (${columns.join(', ')}) VALUES (${columns.map(() => '?').join(', ')})`).bind(...values)
-      if (!embedding?.length) { await insert.run(); return }
-      await db.batch([insert, queueVector(id)])
-      const stored = await db.prepare('SELECT id, status, starts_at FROM events WHERE id = ?').bind(id).first<VectorRow>()
-      if (stored) await vectors.upsert([{ id, values: embedding, metadata: vectorMetadata(stored) }])
-      await clearVector(id)
+      const write = planVectorWrite(db, id, { source: 'catalog', patch: { ...row, embedding } })
+      if (!write.queue) { await insert.run(); return }
+      await db.batch([insert, write.queue])
+      await write.settle(vectors)
     },
 
     async updateEvent(id, patch) {
       const { embedding: _embedding, ...row } = patch
       const [columns, values] = encodeRow(row, EVENT_COLUMNS)
-      const update = columns.length ? [db.prepare(`UPDATE events SET ${columns.map(column => `${column} = ?`).join(', ')} WHERE id = ?`).bind(...values, id)] : []
-      // The queue entry commits with the row, so a failed Vectorize call below leaves the event for the reconcile.
-      const queue = patch.embedding?.length ? [queueVector(id)] : []
-      if (update.length || queue.length) await db.batch([...update, ...queue])
-      await syncEventVector(id, patch)
+      const writes = columns.length ? [db.prepare(`UPDATE events SET ${columns.map(column => `${column} = ?`).join(', ')} WHERE id = ?`).bind(...values, id)] : []
+      const write = planVectorWrite(db, id, { source: 'catalog', patch })
+      if (write.queue) writes.push(write.queue)
+      if (writes.length) await db.batch(writes)
+      await write.settle(vectors)
     },
 
     async eventsNeedingEnrichment(query) {
@@ -318,7 +254,7 @@ export function d1Catalog(db: D1Database, vectors: Vectorize): CatalogStore {
 
     async deleteEvents(ids) {
       await db.prepare('DELETE FROM events WHERE id IN (SELECT value FROM json_each(?))').bind(JSON.stringify(ids)).run()
-      for (const part of chunks(ids, VECTOR_CHUNK)) await vectors.deleteByIds(part)
+      await removeEventVectors(vectors, ids)
     },
 
     async createScrapeRun(run) {
