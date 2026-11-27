@@ -67,7 +67,7 @@ Each failed attempt goes in the service log. Operational alerts still go through
 | `draft/<id>` | Publishing fails three ticks in a row, fails with less than an hour left, or gives up. A hold, a partial post that cannot continue, an interrupted rebuild, or a preview that misses its cutoff also alerts immediately. |
 | `draft/<id>/slack` | The outcome message fails to send three ticks in a row. |
 | `draft/<id>/review` | A revision still has no valid review in the last 30 minutes before its first eligible channel's slot or later. Hermes checks the reviewer. |
-| `review-fix/<event id>` | A review finds a wrong field. Hermes checks the intake evidence and fixes the catalog or the publisher. A post-wide problem uses `draft/<id>/review-fix`. |
+| `review-fix/<event id>` | A review finds a wrong field. Hermes checks the deciding evidence and fixes the catalog or the publisher. When the recheck and fallback confirm different errors, the fallback uses `review-fix/<event id>/fallback` so both alerts can be delivered independently. A post-wide problem uses `draft/<id>/review-fix`. |
 | `draft/<id>/threads` | Threads ends in `failed` or a fresh catalog check holds it, even if there was no preview. The job saves the affected event and reason for a hold and retries a failed alert command on the next tick. |
 | `token` | Instagram token refresh fails, the token file is invalid, or a dated token has fewer than 10 days left. |
 | `threads-token` | The Threads token refresh fails, the token file cannot be read, or the token still has at most 10 days left. |

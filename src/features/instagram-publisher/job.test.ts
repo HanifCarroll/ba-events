@@ -955,7 +955,7 @@ describe('tick: publisher investigation', () => {
     expect(w.slackCalls).toEqual([])
   })
 
-  it.each(['checked note', 'exclusion note', 'referenced fix receipt'] as const)('verifies cited research from a %s without reusing a prior verdict', async source => {
+  it.each(['checked note', 'exclusion note', 'referenced fix receipt', 'referenced fix receipt with a long excerpt'] as const)('verifies cited research from a %s without reusing a prior verdict', async source => {
     const { w, runs, finish } = world()
     const job = w.job()
     await job.tick()
@@ -964,11 +964,17 @@ describe('tick: publisher investigation', () => {
     const tickets = 'https://tickets.example.org/event'
     const doors = 'Apertura de puertas: 20:00.'
     const excerpt = 'Corrección: la función comienza a las 21:00.'
-    const olderQuote = source === 'checked note' ? doors : excerpt
+    const longReceipt = source === 'referenced fix receipt with a long excerpt'
+    const paragraph = 'El ingreso es por la puerta principal del centro cultural. La boletería abre una hora antes de cada función. Hay un espacio para dejar bicicletas y personal para orientar a quienes visitan la sala por primera vez. La exposición del vestíbulo se puede recorrer antes de la función. Al finalizar, les pedimos que dejen libres las escaleras y salgan por la misma puerta. '
+    const olderQuote = source === 'checked note' ? doors : longReceipt ? paragraph + excerpt : excerpt
     const currentQuote = source === 'checked note' ? excerpt : doors
     const citedUrl = source === 'checked note' ? tickets : older
     const bareUrl = 'https://notes.example.org/no-quote'
-    const olderEvidence = `${older} — “${olderQuote}”; ${bareUrl}`
+    const olderEvidence = `${older} — “${olderQuote}”${longReceipt ? '' : `; ${bareUrl}`}`
+    if (longReceipt) {
+      expect(olderQuote.length).toBeGreaterThan(400)
+      expect(olderEvidence.length).toBeLessThanOrEqual(500)
+    }
     during(w)
     if (source === 'checked note') finish({ ...ok, reason: 'Earlier unproven conclusion.', checked: olderEvidence })
     else if (source === 'exclusion note') finish({ verdict: 'exclude', reason: 'Earlier unproven conclusion.', hermes: olderEvidence })
@@ -1004,7 +1010,7 @@ describe('tick: publisher investigation', () => {
     const draft = w.draft()
     expect(draft.review?.result?.questionResolution?.fallback?.records).toMatchObject([
       { id: flaggedId, question: ask.question, history: [{ revision: 1 }, { revision: 2 }],
-        sources: [{ url: venue }, { url: older, quote: olderQuote }, { url: tickets, quote: currentQuote }],
+        sources: [{ url: venue }, { url: older, quote: longReceipt ? excerpt : olderQuote }, { url: tickets, quote: currentQuote }],
         conclusion: { verdict: 'ok', citations: [{ url: citedUrl, quote: excerpt }] } },
     ])
     expect(draft.slack.ts).toBeNull()
@@ -1014,16 +1020,19 @@ describe('tick: publisher investigation', () => {
     expect(w.draft()).toMatchObject({ state: 'published', threads: { state: 'published' } })
   })
 
-  it.each(['answered', 'still open', 'retry', 'contradicted'] as const)('rechecks the original admission question after a barrio answer (%s)', async outcome => {
+  it.each(['answered', 'still open', 'retry', 'contradicted', 'both contradicted'] as const)('rechecks the original admission question after a barrio answer (%s)', async outcome => {
     const priceFlag = { ...question, field: 'price', question: 'Is general admission free?' }
     const { w, finish } = world(priceFlag)
-    w.catalog[0]!.barrio = 'Agronomía'
+    const bothWrong = outcome === 'both contradicted'
+    const priceWrong = outcome === 'contradicted' || bothWrong
+    w.catalog[0]!.barrio = bothWrong ? 'Chacarita' : 'Agronomía'
     const job = w.job()
     const venue = 'https://venue.example.org/performance'
     const venueQuote = 'La función es en Av. San Martín 5885.'
     const tickets = 'https://tickets.example.org/performance'
     const ticketQuote = outcome === 'still open' ? 'Entrada libre hasta las 20:00.'
-      : outcome === 'contradicted' ? 'La entrada general cuesta $5000.' : 'La entrada general es libre y gratuita.'
+      : priceWrong ? 'La entrada general cuesta $5000.' : 'La entrada general es libre y gratuita.'
+    const paid = 'The ticket page confirms paid admission.'
     const barrioQuestion = 'Which barrio is the performance venue in?'
     job.s.reviewResources = async () => new Map([[flaggedId, { address: null, observations: [],
       officialPages: [{ url: venue, excerpt: venueQuote, fields: ['venue'] }],
@@ -1046,8 +1055,8 @@ describe('tick: publisher investigation', () => {
       rechecks++
       if (outcome === 'retry' && rechecks === 1) throw new Error('Price verifier unavailable')
       return resolverResponse(outcome === 'still open' ? [] : [
-        { id: flaggedId, field: 'price', verdict: outcome === 'contradicted' ? 'wrong' : 'ok',
-          reason: outcome === 'contradicted' ? 'The ticket page confirms paid admission.' : 'The ticket page confirms free admission.',
+        { id: flaggedId, field: 'price', verdict: priceWrong ? 'wrong' : 'ok',
+          reason: priceWrong ? paid : 'The ticket page confirms free admission.',
           citations: [{ url: tickets, quote: ticketQuote }] },
       ])
     })
@@ -1058,6 +1067,8 @@ describe('tick: publisher investigation', () => {
       draft.reviewRebuilds = { day: '2026-11-18', count: 2 }
       writeFileSync(job.draftFile(draft.id), JSON.stringify(draft))
     }
+    const alert = job.s.alert
+    if (bothWrong) job.s.alert = async (...args) => args[0].startsWith('review-fix/') ? false : alert(...args)
     during(w)
     finish({ ...ask, field: 'barrio', question: barrioQuestion, checked: `${tickets} — “${ticketQuote}”` })
     await job.tick()
@@ -1071,8 +1082,9 @@ describe('tick: publisher investigation', () => {
     }
     const draft = w.draft()
     expect(scanned).toEqual(outcome === 'retry' ? ['price', 'barrio', 'price', 'price'] : ['price', 'barrio', 'price'])
-    expect(draft.review?.result?.questionResolution?.fallback?.records).toMatchObject([{ field: 'barrio', conclusion: { verdict: 'ok' } }])
-    const checked = draft.review?.result?.questionResolution?.rechecked?.records?.[0]
+    const audit = (bothWrong ? draft.reviewHistory?.find(review => review.revision === 1) : draft.review?.result)?.questionResolution
+    expect(audit?.fallback?.records).toMatchObject([{ field: 'barrio', conclusion: { verdict: bothWrong ? 'wrong' : 'ok' } }])
+    const checked = audit?.rechecked?.records?.[0]
     expect(checked).toMatchObject({ field: 'price', question: priceFlag.question, state: 'complete', sources: expect.arrayContaining([{ url: tickets, label: 'Fuente de la investigación', quote: ticketQuote }]) })
     if (outcome === 'still open') {
       expect(checked?.conclusion).toBeUndefined()
@@ -1080,7 +1092,29 @@ describe('tick: publisher investigation', () => {
       const text = w.broadcasts()[0]?.text
       for (const line of [priceFlag.question, 'Por qué sigue abierta la pregunta:', `<${tickets}>\n“${ticketQuote}”`]) expect(text).toContain(line)
       expect(text).not.toContain(barrioQuestion)
-    } else if (outcome === 'contradicted') {
+    } else if (bothWrong) {
+      expect(checked?.conclusion).toMatchObject({ verdict: 'wrong', citations: [{ url: tickets, quote: ticketQuote }] })
+      expect(draft).toMatchObject({ revision: 2, exclude: [flaggedId] })
+      expect(w.slackCalls).toEqual([])
+      expect(draft.pendingReviewFixes).toHaveLength(2)
+      expect(draft.pendingReviewFixes).toEqual(expect.arrayContaining([
+        expect.objectContaining({ event: expect.objectContaining({ flag: expect.objectContaining({ field: 'price' }), record: { revision: 1, stage: 'rechecked' } }) }),
+        expect.objectContaining({ event: expect.objectContaining({ flag: expect.objectContaining({ field: 'barrio' }), record: { revision: 1, stage: 'fallback' } }) }),
+      ]))
+      job.s.alert = alert
+      await job.tick()
+      expect(w.draft().pendingReviewFixes).toBeUndefined()
+      const fixes = w.alerts.filter(item => item.key.startsWith(`review-fix/${flaggedId}`))
+      expect(new Set(fixes.map(item => item.key)).size).toBe(2)
+      const official = 'USIG lists SAN MARTIN AV. 5885 in Agronomia, not Chacarita.'
+      const admission = fixes.find(item => item.text.includes(`Dato verificado: ${paid}`))?.text
+      expect(admission).toContain(`Checked: <${tickets}> — “${ticketQuote}”`)
+      expect(admission).not.toContain(official)
+      const barrio = fixes.find(item => item.text.includes(`Dato verificado: ${official}`))?.text
+      expect(barrio).toContain(`Checked: <${venue}> — “${venueQuote}”`)
+      expect(barrio).toContain('barrio oficial: Agronomia')
+      expect(barrio).not.toContain(paid)
+    } else if (priceWrong) {
       expect(checked?.conclusion).toMatchObject({ verdict: 'wrong', citations: [{ url: tickets, quote: ticketQuote }] })
       expect(draft.review?.investigation?.findings?.[flaggedId]).toMatchObject({ verdict: 'exclude' })
       expect(w.broadcasts()).toEqual([])

@@ -6,6 +6,7 @@ import { publicReviewUrl, sourceReadings, streetForUsig, type ReviewBarrioLookup
 import { requestReviewJson, type ReviewConfig, type ReviewInput } from './review.ts'
 
 const citation = z.strictObject({ url: line(2048), quote: z.string().trim().min(1).max(400) })
+const researchExcerpt = citation.extend({ quote: line(500) })
 const address = citation.extend({ street: line(120), number: z.string().regex(/^[1-9]\d{0,4}$/u), role: z.literal('performance_venue') })
 const decision = z.strictObject({ id: z.string(), verdict: z.enum(['ok', 'wrong']), field: line(40), reason: line(300), citations: z.array(citation).min(1).max(3) })
 const selection = z.strictObject({ id: z.string(), topic: z.enum(['barrio', 'address', 'other']), quotes: z.array(citation),
@@ -91,7 +92,7 @@ export async function adjudicateReviewQuestions(input: ReviewInput, questions: R
 function researchExcerpts(history: RecordedCheck[] = []) {
   return history.flatMap(check => recordedEvidenceNotes(check).flatMap(note =>
     [...(note ?? '').matchAll(/(https?:\/\/[^\s<>|“”]+)\s+—\s+“([^”]+)”/gu)].flatMap(([, url, quote]) => {
-      const parsed = citation.safeParse({ url, quote })
+      const parsed = researchExcerpt.safeParse({ url, quote })
       return parsed.success && publicReviewUrl(parsed.data.url) ? [{ revision: check.revision, url: parsed.data.url, excerpt: parsed.data.quote }] : []
     })))
 }

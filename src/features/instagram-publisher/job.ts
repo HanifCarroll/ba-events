@@ -24,7 +24,7 @@ import { nextTrack, readTracks, readyTrack, type DraftTrack, type ReadyTrack } f
 import { reelTiming, type ReelTiming } from './reel/project.ts'
 import type { ReviewResources } from './review-evidence.ts'
 import { eventReplyLines, eventResourceLines, lookupReviewBarrio, recordedCheckLines, splitReviewReply, streetForUsig, withReviewLinks, type ReviewBarrioLookup, type ReviewEventReply, type ReviewPartReceipt, type ReviewReplyDelivery } from './review-reply.ts'
-import { adjudicateReviewQuestions, evidenceUnavailable, questionRecord, sameQuestion, type QuestionResolution, type QuestionResolver, type ReviewCitation, type ReviewSubject } from './review-resolution.ts'
+import { adjudicateReviewQuestions, evidenceUnavailable, questionRecord, sameQuestion, type QuestionEvidenceStage, type QuestionResolution, type QuestionResolver, type ReviewCitation, type ReviewSubject } from './review-resolution.ts'
 import { allOk, copyHash, validateReview, type ReviewInput, type ReviewResult, type ReviewState, type Reviewer, type Verdict } from './review.ts'
 import * as runtime from './runtime.ts'
 import type { Config, EventNow, TokenCheck } from './runtime.ts'
@@ -712,7 +712,7 @@ export class Job {
     return citations.map(({ url, quote }) => `${url} — “${quote}”`).join('; ')
   }
 
-  private queueReviewFix(draft: Draft, id: string, finding: Verdict, { checked, recorded, record }: alerts.ReviewFixEvidence = {}) {
+  private queueReviewFix(draft: Draft, id: string, finding: Verdict, { checked, recorded, record }: alerts.ReviewFixEvidence = {}, additional = false) {
     const audit = draft.review?.result?.questionResolution
     const quick = questionRecord(audit?.quick, id)
     if (!record && quick?.conclusion?.verdict === 'wrong' && quick.conclusion.field === finding.field && quick.conclusion.reason === finding.reason) {
@@ -720,7 +720,10 @@ export class Job {
     }
     const answer = record && questionRecord(audit?.[record.stage], id)?.conclusion
     const pending = draft.pendingReviewFixes ??= []
-    pending.push(alerts.reviewFix(draft, id, finding, { checked: checked ?? (answer ? this.citationText(answer.citations) : undefined), recorded, record }))
+    const fix = alerts.reviewFix(draft, id, finding, { checked: checked ?? (answer ? this.citationText(answer.citations) : undefined), recorded, record })
+    // A second confirmed field needs an independent alert, even if the first alert fails to send.
+    if (additional && record) fix.key += `/${record.stage}`
+    pending.push(fix)
   }
 
   private queueInvestigationRepairAlert(draft: Draft, investigation: Investigation) {
@@ -1074,9 +1077,14 @@ export class Job {
           : { verdict: 'exclude', reason: gate.reason, checked, hermes: gate.reason }
       }
       if (original.verdict === 'wrong') this.queueReviewFix(draft, id, original)
-      else if (wrong) this.queueReviewFix(draft, id, { verdict: 'wrong', field: wrong.field, reason: wrong.reason, question: null }, {
-        record: { revision: draft.revision, stage: wrong === rechecked ? 'rechecked' : 'fallback' },
-      })
+      else if (wrong) {
+        const queue = (confirmed: typeof wrong, stage: QuestionEvidenceStage, additional = false) =>
+          this.queueReviewFix(draft, id, { verdict: 'wrong', field: confirmed.field, reason: confirmed.reason, question: null }, {
+            record: { revision: draft.revision, stage },
+          }, additional)
+        queue(wrong, wrong === rechecked ? 'rechecked' : 'fallback')
+        if (wrong === rechecked && answer.verdict === 'wrong' && answer.field !== wrong.field) queue(answer, 'fallback', true)
+      }
     }
     investigation.questionChecksApplied = true
     this.save(draft)
