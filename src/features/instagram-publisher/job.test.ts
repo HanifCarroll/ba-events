@@ -2013,6 +2013,134 @@ describe('delegated draft decisions', () => {
   })
 })
 
+describe.each(['Slack', 'Hermes'] as const)('publisher decision matrix: %s', channel => {
+  const reason = 'Synthetic instruction 1'
+
+  async function checkWorld(split = false) {
+    const w = new World()
+    w.config.threads.enabled = true
+    const review = w.reviewer
+    if (split) w.reviewer = async input => {
+      w.config.threads.enabled = false // Build both texts but show only Instagram initially.
+      return review(input)
+    }
+    const job = w.job()
+    const votes = new Map<string, World['reactions']>()
+    const unreadable = new Set<string>()
+    job.s.slackReactions = async ts => {
+      if (unreadable.has(ts)) throw new Error('Slack read failed')
+      return votes.get(ts) ?? []
+    }
+    await job.tick()
+    const saved = w.draft()
+    const first = saved.slack.ts!
+    const approve = async (ts = first, instruction = reason) => {
+      if (channel === 'Slack') votes.set(ts, [{ name: 'white_check_mark', users: [HANIF] }])
+      else await job.delegateDecision('approve', saved.id, w.draft().revision, instruction, ts)
+    }
+    const veto = async () => {
+      if (channel === 'Slack') votes.set(first, [{ name: 'x', users: [HANIF] }])
+      else await job.delegateDecision('skip', saved.id, w.draft().revision, 'Synthetic veto')
+    }
+    const writes = () => ({ instagram: w.ig.calls.filter(call => call.startsWith('POST')),
+      threads: w.threads.calls.filter(call => call === 'create' || call.startsWith('publish ')) })
+    return { w, job, saved, first, approve, veto, writes, unreadable }
+  }
+
+  it.each([
+    { name: 'split previews and a retried approval stay scoped to the shown destination', run: async () => {
+      const { w, job, saved, first, approve, writes } = await checkWorld(true)
+      expect(saved.slack.previews).toEqual([expect.objectContaining({ revision: 1, ts: first, instagram: true, threads: false })])
+      await approve()
+      w.config.threads.enabled = true
+      w.at('2026-11-19', 12)
+      const load = job.s.loadToken
+      job.s.loadToken = async () => ({ state: 'missing' })
+      await job.tick()
+      const split = w.draft()
+      const second = split.slack.previews?.at(-1)
+      expect(second).toMatchObject({ revision: 1, instagram: false, threads: true })
+      expect(second?.ts).not.toBe(first)
+      await approve() // Retry the original decision after the second preview exists.
+      if (channel === 'Hermes') expect(w.draft().delegatedApprovals?.map(entry => entry.preview)).toEqual([saved.slack.previews?.[0]])
+      await job.tick()
+      expect(w.draft()).toMatchObject({ revision: 1, threads: { state: 'waiting' } })
+      expect(writes()).toEqual({ instagram: [], threads: [] })
+      await approve(second!.ts, 'Synthetic instruction 2')
+      if (channel === 'Hermes') expect(w.draft().delegatedApprovals?.map(entry => entry.preview)).toEqual([saved.slack.previews?.[0], second])
+      job.s.loadToken = load
+      w.at('2026-11-19', 12, 10)
+      await job.tick()
+      expect(w.draft()).toMatchObject({ revision: 1, state: 'published', threads: { state: 'published' } })
+      expect(w.ig.published).toHaveLength(1)
+      expect(writes().threads).toEqual(['create', 'publish c1'])
+    } },
+    { name: 'an unreadable reaction pauses both destinations despite approval', run: async () => {
+      const { w, job, first, approve, writes, unreadable } = await checkWorld()
+      await approve()
+      unreadable.add(first)
+      w.at('2026-11-19', 12)
+      await job.tick()
+      expect(w.draft()).toMatchObject({ revision: 1, slack: { ts: first }, threads: { state: 'waiting', failures: 0 } })
+      expect(writes()).toEqual({ instagram: [], threads: [] })
+      unreadable.delete(first)
+      w.at('2026-11-19', 12, 10)
+      await job.tick()
+      expect(w.draft()).toMatchObject({ revision: 1, state: 'published', threads: { state: 'published' } })
+      expect(w.ig.published).toHaveLength(1)
+      expect(writes().threads).toEqual(['create', 'publish c1'])
+    } },
+    { name: 'a veto targets both destinations from a retained preview after a silent rebuild', run: async () => {
+      const { w, job, saved, first, approve, veto, writes } = await checkWorld()
+      await approve()
+      w.config.auto.finde = w.config.threads.auto.finde = true
+      await job.regenerate(saved.id, [uuid(2)])
+      expect(w.draft()).toMatchObject({ revision: 2, slack: { ts: first, revision: 1 } })
+      expect(w.draft().delegatedApprovals).toBeUndefined()
+      await veto()
+      w.at('2026-11-19', 12)
+      await job.tick()
+      expect(w.draft()).toMatchObject({ revision: 2, state: 'skipped', threads: { state: 'skipped' } })
+      expect(writes()).toEqual({ instagram: [], threads: [] })
+    } },
+    { name: 'a veto preserves published Instagram and stops an unsent Threads container', run: async () => {
+      const { w, job, approve, veto, writes } = await checkWorld()
+      await approve()
+      w.threads.containerStatus = 'IN_PROGRESS'
+      w.at('2026-11-19', 12)
+      await job.tick()
+      const before = w.draft()
+      expect(before).toMatchObject({ revision: 1, state: 'published', threads: { state: 'publishing', containerId: 'c1' } })
+      const sent = writes()
+      await veto()
+      w.threads.containerStatus = 'FINISHED'
+      w.at('2026-11-19', 12, 10)
+      await job.tick()
+      expect(w.draft()).toMatchObject({ revision: 1, state: 'published', publish: { permalink: before.publish!.permalink }, threads: { state: 'skipped' } })
+      expect(writes()).toEqual(sent)
+      expect(w.ig.published).toHaveLength(1)
+      expect(w.threads.posts).toEqual([])
+    } },
+    { name: 'both providers can reconcile sent writes after a veto without publishing again', run: async () => {
+      const { w, job, approve, veto, writes } = await checkWorld()
+      await approve()
+      w.ig.publishFault = w.threads.publishFault = 'after'
+      w.at('2026-11-19', 12)
+      await job.tick()
+      expect(w.draft()).toMatchObject({ revision: 1, state: 'publishing', threads: { state: 'publishing', mediaId: null } })
+      expect(w.ig.published).toHaveLength(1)
+      expect(w.threads.posts).toHaveLength(1)
+      const sent = writes()
+      await veto()
+      w.at('2026-11-19', 12, 10)
+      await job.tick()
+      expect(w.draft()).toMatchObject({ revision: 1, state: 'published', publish: { permalink: expect.any(String) },
+        threads: { state: 'published', mediaId: w.threads.posts[0]?.id, permalink: w.threads.posts[0]?.permalink } })
+      expect(writes()).toEqual(sent)
+    } },
+  ])('$name', ({ run }) => run())
+})
+
 describe('tick: approval and publishing', () => {
   it('publishes an approved carousel at its slot and replies with the permalink', async () => {
     const w = await previewed()
