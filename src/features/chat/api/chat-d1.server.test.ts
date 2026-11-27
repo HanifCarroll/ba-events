@@ -46,6 +46,41 @@ function complete(userId: string, input: chat.BootstrapTurnInput, claimId: strin
 
 const count = (sql: string, ...values: unknown[]) => db.prepare(`SELECT count(*) AS n FROM ${sql}`).bind(...values).first<number>('n')
 
+it('classifies every foreign key to a profile or a chat history row', async () => {
+	const { results: tables } = await db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT GLOB 'sqlite_*' AND name NOT GLOB '_cf_*'")
+		.all<{ name: string }>()
+	const keys = await db.batch<{ table: string; on_delete: string }>(tables.map(({ name }) =>
+		db.prepare(`PRAGMA foreign_key_list('${name.replaceAll("'", "''")}')`)))
+	const parents = new Set(['profiles', 'conversations', 'messages', 'chat_turns'])
+	const references = tables.flatMap(({ name }, index) => keys[index]!.results
+		.filter((key) => parents.has(key.table.toLowerCase()))
+		.map((key) => ({ name, parent: key.table, on_delete: key.on_delete })))
+	const erased = chat.prepareUserHistoryErasure(db, ALICE).map(({ table }) => table)
+	const outsideChat = [
+		'dismissed_venue_duplicates', 'saved_events', 'user_preferences', 'venue_review_queue',
+		'product_feedback', // Retained, with its account reference cleared.
+		'telegram_updates', // Telegram has no account owner; its delivery records are retained.
+	]
+	expect([...new Set(references.map(({ name }) => name))].sort()).toEqual([...erased, ...outsideChat].sort())
+	expect(references).toEqual(expect.arrayContaining([
+		{ name: 'product_feedback', parent: 'profiles', on_delete: 'SET NULL' },
+		{ name: 'telegram_updates', parent: 'conversations', on_delete: 'SET NULL' },
+	]))
+})
+
+it('deletes each history table directly before deleting its parent', async () => {
+	const { input, claimId } = await claimed()
+	await complete(ALICE, input, claimId)
+	const operations = chat.prepareUserHistoryErasure(db, ALICE)
+	// changes() counts the preceding statement's direct writes, not foreign-key actions.
+	const results = await db.batch<{ deleted: number }>(operations.flatMap(({ statement }) => [
+		statement, db.prepare('SELECT changes() AS deleted'),
+	]))
+	expect(Object.fromEntries(operations.map(({ table }, index) => [table, results[2 * index + 1]?.results[0]?.deleted])))
+		.toEqual({ chat_turns: 1, messages: 2, conversations: 1 })
+	expect(await count('profiles WHERE id = ?', ALICE)).toBe(1)
+})
+
 describe('bootstrap_chat_turn', () => {
 	it('creates the conversation, the user message, and a pending turn together', async () => {
 		const input = turnInput()
