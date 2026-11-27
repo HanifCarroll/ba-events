@@ -958,7 +958,7 @@ export class Job {
       if (!this.barriosThisTick.has(key)) this.barriosThisTick.set(key, lookupReviewBarrio(address, this.s.fetchUsig))
       return this.barriosThisTick.get(key)!
     })
-    const history = readRecordedChecks(this.s.stateDir, draft, subjects.map(item => item.id), this.s.now().getTime())
+    const history = readRecordedChecks(this.s.stateDir, draft, subjects.map(item => item.id), this.s.now().getTime(), false)
     for (const record of audit.records ?? []) record.history = history.get(record.id) ?? []
     return audit
   }
