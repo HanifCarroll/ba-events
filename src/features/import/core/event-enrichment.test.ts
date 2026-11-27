@@ -41,7 +41,7 @@ const getEnrichmentAdapterMock = getEnrichmentAdapter as unknown as Mock
 
 function makeClient() {
   const updates: Array<{ id: string; data: EventWrite }> = []
-  const catalog = { updateEvent: async (id, data) => { updates.push({ id, data }) } } satisfies Partial<CatalogStore>
+  const catalog = { updateEvent: async (id, data) => { updates.push({ id, data }); return { applied: [], kept: [] } } } satisfies Partial<CatalogStore>
   return { catalog: catalog as unknown as CatalogStore, updates }
 }
 
@@ -150,7 +150,7 @@ describe('imported pending rows leave the enrichment queue', () => {
     const catalog = {
       eventsNeedingEnrichment: async ({ statuses = ['pending', 'failed'] }) => rows.filter(row =>
         statuses.some(status => status === row.enrichment_status)).map(row => ({ ...row })),
-      updateEvent: async (id, data) => { Object.assign(rows.find(row => row.id === id)!, data) },
+      updateEvent: async (id, data) => { Object.assign(rows.find(row => row.id === id)!, data); return { applied: [], kept: [] } },
     } satisfies Partial<CatalogStore>
     return catalog as unknown as CatalogStore
   }
@@ -396,7 +396,7 @@ describe('enrichSingleEvent hidden locations', () => {
     const venueLookups: string[] = []
     const venue = { id: 'venue-existing', name: 'Sala Sintética', neighborhood: 'Retiro', address: 'Av. Ficticia 1234' }
     const client = {
-      updateEvent: async (_id: string, data: EventWrite) => { updates.push(data); Object.assign(row, data) },
+      updateEvent: async (_id: string, data: EventWrite) => { updates.push(data); Object.assign(row, data); return { applied: [], kept: [] } },
       venuesNamed: async () => { venueLookups.push('named'); return [{ ...venue, event_count: 0 }] },
       venueNameAndNeighborhood: async () => { venueLookups.push('by-id'); return venue },
     } as unknown as CatalogStore

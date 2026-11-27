@@ -11,6 +11,7 @@ import { fakeVectorize } from '../../../../tests/support/vectorize.ts'
 import { fakeR2 } from '../../../../tests/support/r2.ts'
 import { buildSearchDocument, CURRENT_EMBEDDING_VERSION } from '#shared/lib/ai/embeddings.ts'
 import { reconcileCatalog } from '#shared/lib/db/vector-sync.ts'
+import { applyCatalogFix } from '#features/instagram-publisher/catalog-fix.ts'
 import { describeImage } from './collection.ts'
 import { readOfficialPage } from './official-page.ts'
 import { commitPlanEffect, previewCandidateEffect, submitCandidateEffect } from './service.ts'
@@ -31,7 +32,7 @@ const bun = 'Bun' in globalThis
 beforeAll(async () => { if (bun) return; ({ db, dispose } = await freshD1()) }, 60_000)
 afterAll(async () => { if (bun) return; await dispose() })
 
-const TABLES = ['vector_sync', 'event_intake_protection', 'event_source_evidence', 'intake_plans', 'intake_candidate_revisions', 'intake_candidates',
+const TABLES = ['publisher_catalog_fixes', 'vector_sync', 'event_intake_protection', 'event_source_evidence', 'intake_plans', 'intake_candidate_revisions', 'intake_candidates',
   'intake_media', 'intake_observations', 'intake_runs', 'instagram_sources', 'venue_review_queue', 'events', 'venues']
 beforeEach(async () => {
   if (bun) return
@@ -211,6 +212,36 @@ describe.skipIf(bun)('commit_intake_plan on D1', () => {
       .bind(id(), runId, 'b'.repeat(64), new Date(Date.now() + 1000).toISOString()).run()
     expect(await fails(store.commitPlan(stale))).toBe('Source changed after review')
     expect((await run(store.plan(stale))).receipt).toBeNull()
+  })
+
+  it('rejects a stale intake plan after a publisher correction; fresh direct intake evidence can supersede it', async () => {
+    await source()
+    const venueId = await venue()
+    const post = await observation((await run(store.reserveCollection)).id)
+    const candidate = id(), event = id()
+    await run(store.submitCandidate(candidate, 0, { name: 'Original' } as never))
+    const created = await plan(candidate, 1, 'create', event, body(venueId), [{ observation_id: post }])
+    const original = await run(store.commitPlan(created))
+    await run(store.submitCandidate(candidate, 1, { name: 'Confirmed by venue' } as never))
+    const payload = body(venueId, { name: 'Confirmed by venue', search_document: 'Confirmed by venue' })
+    const cited = [{ observation_id: post, fields: ['name'] }]
+    const stale = await plan(candidate, 2, 'update', event, payload, cited)
+    const authority = await db.prepare('SELECT * FROM event_intake_protection WHERE event_id = ?').bind(event).first()
+    const query = async (sql: string, params: string[]) => (await db.prepare(sql).bind(...params).all()).results
+    await applyCatalogFix(query, { id: event, field: 'name', from: 'Synthetic Jazz', to: 'Publisher correction',
+      allOccurrences: false, evidence: 'Synthetic program' }, id)
+    expect(await db.prepare('SELECT name FROM events WHERE id = ?').bind(event).first('name')).toBe('Publisher correction')
+    expect(await db.prepare('SELECT event_id FROM vector_sync WHERE event_id = ?').bind(event).first('event_id')).toBe(event)
+    expect(await db.prepare('SELECT * FROM event_intake_protection WHERE event_id = ?').bind(event).first()).toEqual(authority)
+    expect(await fails(store.commitPlan(stale))).toBe('Catalog changed after preview')
+    expect((await run(store.plan(stale))).receipt).toBeNull()
+    expect(await run(commitPlanEffect(store, created))).toEqual(original)
+    expect(await db.prepare('SELECT event_id FROM vector_sync WHERE event_id = ?').bind(event).first('event_id')).toBe(event)
+
+    const fresh = await plan(candidate, 2, 'update', event, payload, cited)
+    expect(await run(store.commitPlan(fresh))).toMatchObject({ previous_event: { name: 'Publisher correction' } })
+    expect(await db.prepare('SELECT name FROM events WHERE id = ?').bind(event).first('name')).toBe('Confirmed by venue')
+    expect(await db.prepare('SELECT plan_id FROM event_intake_protection WHERE event_id = ?').bind(event).first('plan_id')).toBe(fresh)
   })
 
   it('refuses held, expired and superseded plans, curator corrections, and a duplicate that appeared after preview', async () => {

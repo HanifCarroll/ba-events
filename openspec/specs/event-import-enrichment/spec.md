@@ -142,6 +142,11 @@ Enrichment SHALL move an imported `pending` event to a terminal status in the pa
 ### Requirement: The catalog runs on D1 and Vectorize behind the backend seam
 Imports, venue settlement, the venue review queue, enrichment, the blocklist, and the daily-scrape audit SHALL read and write the catalog through one repository that requires `DB` and `VECTORIZE`. Every event write that carries a new embedding SHALL upsert the vector with the event id and `{ status, starts_at }` metadata (epoch ms), and a write that changes `status` or `starts_at` SHALL rewrite that metadata. A vector MUST NOT change when intake protection reverts the event's search document. Hourly, scheduled and pending-review events SHALL become `past` by the 4-hour and 28-hour rule, and nightly the vectors of live and recently changed events SHALL be reconciled with D1; both run only when `DB` is bound.
 
+#### Scenario: A source tries to overwrite an intake-protected field
+- **WHEN** an importer submits an event update that conflicts with intake authority
+- **THEN** the catalog reports the protected fields it kept and applies any permitted changes
+- **AND** the daily scrape counts the event as updated only if at least one stored field changed
+
 #### Scenario: A jobs Worker without a D1 binding
 - **WHEN** the jobs Worker runs without `DB`
 - **THEN** catalog jobs cannot run and no writes are sent to another backend
@@ -390,7 +395,7 @@ The operator MUST explicitly select staging or production. Both manual commands 
 
 #### Scenario: A stale scheduled event
 - **WHEN** `reembed-stale` finds a scheduled event with an old version or no search document
-- **THEN** it processes it in `(starts_at, id)` order, checks the stored document and version after triggers, and updates the vector only when the new document was kept
+- **THEN** it processes it in `(starts_at, id)` order, honors intake authority, and updates the vector only when the prepared document is permitted and still current
 - **AND** a failed Vectorize write after the D1 commit stays queued for retry
 
 ## Verification

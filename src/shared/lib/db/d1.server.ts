@@ -15,15 +15,3 @@ export function boundD1Database(env: unknown): D1Database | null {
 export function batchAssert(db: D1Database, reason: string, condition: string, ...values: unknown[]): D1PreparedStatement {
 	return db.prepare(`INSERT INTO _assert (reason, ok) SELECT ?, CASE WHEN (${condition}) THEN 1 ELSE 0 END`).bind(reason, ...values)
 }
-
-/**
- * Wraps an intake commit's statements so the protection trigger lets them change protected event facts: the
- * `write_context` row is set first and cleared last, inside the same transaction.
- */
-export function intakeCommitBatch(db: D1Database, statements: D1PreparedStatement[]): D1PreparedStatement[] {
-	return [
-		db.prepare('INSERT INTO write_context (intake_commit) VALUES (1)'),
-		...statements,
-		db.prepare('DELETE FROM write_context'),
-	]
-}

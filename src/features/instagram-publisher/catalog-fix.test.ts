@@ -58,6 +58,7 @@ describe('catalog-fix on real D1', () => {
     }
     expect(await query('SELECT operation FROM publisher_catalog_fixes WHERE operation = ?', [operation])).toEqual([{ operation }])
     expect(await query('SELECT * FROM write_context', [])).toEqual([])
+    expect(await query('SELECT event_id FROM vector_sync WHERE event_id = ?', [input.id])).toEqual([])
     await db.prepare('UPDATE events SET description_summary_es = ? WHERE id = ?').bind(old, ids[0]).run()
     expect(await query('SELECT description_summary_es FROM events WHERE id = ?', [ids[0]!])).toEqual([{ description_summary_es: corrected }])
     await expect(applyCatalogFix(query, input, () => randomUUID())).rejects.toThrow('stale --from')
@@ -88,11 +89,13 @@ describe('catalog-fix on real D1', () => {
     }])
     expect(await query('SELECT name FROM events WHERE id = ?', [ids[1]!])).toEqual([{ name: show }])
     expect(vectors.get(id)?.values).toEqual([0.1])
+    expect(await query('SELECT event_id FROM vector_sync WHERE event_id = ?', [id])).toEqual([{ event_id: id }])
     const embed = vi.fn(async () => ({ embedding: [0.9], searchDocument: document }))
     expect(await reconcileCatalog(db, index, { embed, maxEmbeds: 1 })).toMatchObject({ reembedded: 1 })
     expect(embed).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ name: title, venue_name: name }))
     expect(vectors.get(id)).toEqual({ id, values: [0.9], metadata })
     expect(await query('SELECT embedding_version FROM events WHERE id = ?', [id])).toEqual([{ embedding_version: CURRENT_EMBEDDING_VERSION }])
+    expect(await query('SELECT event_id FROM vector_sync WHERE event_id = ?', [id])).toEqual([])
   })
 
   it('applies a shared start-clock correction to different dates, but refuses a date shift', async () => {
@@ -101,5 +104,6 @@ describe('catalog-fix on real D1', () => {
     await expect(applyCatalogFix(query, { ...correction, to: '2026-12-04T00:30:00.000Z' }, () => randomUUID())).rejects.toThrow('original local date')
     await applyCatalogFix(query, correction, () => randomUUID())
     expect(await query('SELECT starts_at FROM events WHERE id = ?', [ids[7]!])).toEqual([{ starts_at: '2026-12-10T00:30:00.000Z' }])
+    expect(await query('SELECT event_id FROM vector_sync WHERE event_id = ?', [ids[7]!])).toEqual([{ event_id: ids[7] }])
   })
 })

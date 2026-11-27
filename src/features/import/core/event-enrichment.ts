@@ -133,7 +133,8 @@ function updateEventEnrichmentEffect(
     status?: 'scheduled' | 'canceled' | 'postponed' | 'past' | 'pending_review'
   }
 ): Effect.Effect<void, EventEnrichmentError> {
-  return importTry('event-enrichment.update-event', () => catalog.updateEvent(eventId, data)).pipe(
+  return importTry('event-enrichment.update-event', () => catalog.updateEvent(eventId, data, 'enrichment')).pipe(
+    Effect.asVoid,
     Effect.mapError((error) => enrichmentError('event-enrichment.update-event', `Failed to update event: ${error.message}`, error))
   )
 }

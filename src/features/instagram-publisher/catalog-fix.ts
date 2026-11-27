@@ -70,8 +70,8 @@ export async function applyCatalogFix(query: CatalogQuery, input: FixInput, befo
   const rows = z.array(rowSchema).parse(await query(`${select} ${filter} ORDER BY e.id LIMIT 41`, ids))
   const anchor = rows.find(row => row.id === id)
   if (!anchor || rows.length > 40 || anchor[field] !== old) throw new Error('Catalog correction refused: stale --from or unsupported occurrence set.')
-  // The investigator also imports this module for validation and reads. Load vector repair only for a correction.
-  const { invalidateCorrectedVector } = await import('#shared/lib/db/vector-sync.ts')
+  // The investigator also imports this module for validation and reads. Load the write gateway only for a correction.
+  const { writePublisherCorrection } = await import('#shared/lib/db/event-write.ts')
   const changes: FixReceipt['changes'] = []
   const updates = rows.map(row => {
     let replacement = next
@@ -87,19 +87,12 @@ export async function applyCatalogFix(query: CatalogQuery, input: FixInput, befo
     const updated = rowSchema.parse({ ...row, [field]: replacement })
     if ((field === 'price' || field === 'is_free') && updated.is_free && (updated.price ?? 0) > 0) throw new Error('A free event cannot have a positive price.')
     changes.push({ id: row.id, from: row[field], to: replacement })
-    return { id: row.id, to: replacement, ...invalidateCorrectedVector(row, field, {
-      ...updated, venue_name: row.venue, venue_neighborhood: row.barrio,
-    }) }
+    return { id: row.id, to: replacement, before: row,
+      after: { ...updated, venue_name: row.venue, venue_neighborhood: row.barrio } }
   })
-  const operation = await beforeCommit(changes)
-  const compare = [...fields, 'venue', 'barrio'].map(key => `c.${key} IS json_extract(old.value, '$.${key}')`).join(' AND ')
-  const result = await query(`WITH candidates AS (${select} ${filter}), snapshot AS (SELECT value FROM json_each(?))
-    INSERT INTO publisher_catalog_fixes (operation, field, changes)
-    SELECT ?, ?, ? WHERE (SELECT count(*) FROM candidates) = CAST(? AS INTEGER) AND NOT EXISTS (
-      SELECT 1 FROM snapshot old WHERE NOT EXISTS (
-        SELECT 1 FROM candidates c WHERE c.id = json_extract(old.value, '$.id') AND ${compare}))
-    RETURNING operation`, [...ids, JSON.stringify(rows), operation, field, JSON.stringify(updates), String(rows.length)])
-  if (!result.length) throw new StaleCatalogFix('Catalog correction refused: the catalog changed before the write.')
-  if (z.array(z.object({ operation: eventId })).parse(result)[0]?.operation !== operation) throw new Error('Unexpected catalog correction acknowledgement.')
+  const { operation, applied, acknowledgement } = await writePublisherCorrection(query, { candidatesSql: `${select} ${filter}`, params: ids,
+    snapshot: rows, compare: [...fields, 'venue', 'barrio'], beforeCommit: () => beforeCommit(changes), field, patch: updates })
+  if (!applied.length) throw new StaleCatalogFix('Catalog correction refused: the catalog changed before the write.')
+  if (z.array(z.object({ operation: eventId })).parse(acknowledgement)[0]?.operation !== operation) throw new Error('Unexpected catalog correction acknowledgement.')
   return changes
 }
