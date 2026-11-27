@@ -103,8 +103,10 @@ describe.skipIf(bun)('reserve_instagram_collection on D1', () => {
   it('reports reservation spend with each unmeasured run at its own reserved amount', async () => {
     await source()
     const completed = await run(store.reserveCollection)
-    const month = completed.local_date.slice(0, 7)
-    const [unmeasured, released] = ['01', '02', '03'].map(day => `${month}-${day}`).filter(day => day !== completed.local_date)
+    const { local_date: day } = completed
+    if (typeof day !== 'string') throw new Error('Reservation did not return a local date')
+    const month = day.slice(0, 7)
+    const [unmeasured, released] = ['01', '02', '03'].map(ordinal => `${month}-${ordinal}`).filter(date => date !== day)
     await db.prepare(`INSERT INTO intake_runs (id, local_date, state, reserved_usd, charged_usd, input)
       VALUES (?, ?, 'failed', 2, NULL, '{}'), (?, ?, 'failed', 3, 0, '{}')`)
       .bind(id(), unmeasured, id(), released).run()
