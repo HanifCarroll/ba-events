@@ -9,7 +9,7 @@
  *   catalog-fix <id> --field <field> --from <value> --to <value> --evidence <source> [--all-occurrences] (active investigation only)
  *   threads-report [--days 28]                       read Threads insights for posts from this publisher
  *   stickers-dry-run <hoy draft id> --out <dir>       capture every Instagram preview and discard without sharing
- *   approve|skip <draft id> --revision <n> --reason "<instruction source>"  record Hanif's decision on his behalf
+ *   approve|skip <draft id> --revision <n> --reason "<instruction source>" [--preview-ts <ts>]  record Hanif's decision on his behalf
  *   regenerate <draft id> [--exclude <event id> ...] [--track <id>]  rebuild a draft (a Reel may switch track) and preview it again
  *   status                                           list the drafts, their state, and their times
  */
@@ -23,7 +23,7 @@ import { threadsApi } from '../src/features/instagram-publisher/threads-api.ts'
 import { threadsReport } from '../src/features/instagram-publisher/threads-report.ts'
 import { readThreadsToken } from '../src/features/instagram-publisher/threads-token.ts'
 
-const USAGE = 'usage: instagram-publisher.ts tick | status | review <draft id> [--dry-run] | investigate <draft id> [--dry-run] | catalog-fix <id> --field <field> --from <value> --to <value> --evidence <source> [--all-occurrences] | dry-run <hoy|finde|gratis|reel> --date <YYYY-MM-DD> --out <dir> [--track <id>] [--threads] | threads-report [--days 28] | approve|skip <draft id> --revision <n> --reason "<instruction source>" | regenerate <draft id> [--exclude <event id> ...] [--track <id>] | stickers-dry-run <hoy draft id> --out <dir>'
+const USAGE = 'usage: instagram-publisher.ts tick | status | review <draft id> [--dry-run] | investigate <draft id> [--dry-run] | catalog-fix <id> --field <field> --from <value> --to <value> --evidence <source> [--all-occurrences] | dry-run <hoy|finde|gratis|reel> --date <YYYY-MM-DD> --out <dir> [--track <id>] [--threads] | threads-report [--days 28] | approve|skip <draft id> --revision <n> --reason "<instruction source>" [--preview-ts <ts>] | regenerate <draft id> [--exclude <event id> ...] [--track <id>] | stickers-dry-run <hoy draft id> --out <dir>'
 
 function flags(args: string[], name: string): string[] {
   const values: string[] = []
@@ -95,15 +95,19 @@ async function main(argv: string[]) {
     case 'approve':
     case 'skip': {
       const [id, ...options] = args
-      const { values } = parseArgs({ args: options, options: { revision: { type: 'string' }, reason: { type: 'string' } } })
+      const { values } = parseArgs({ args: options, options: { revision: { type: 'string' }, reason: { type: 'string' }, 'preview-ts': { type: 'string' } } })
       const revision = Number(values.revision)
       const reason = values.reason?.trim()
-      if (!id || !values.revision || !/^\d+$/.test(values.revision) || !Number.isSafeInteger(revision) || revision < 1 || !reason) {
-        throw new Error(`usage: instagram-publisher.ts ${command} <draft id> --revision <n> --reason "<instruction source>"`)
+      const previewTs = values['preview-ts']
+      if (!id || !values.revision || !/^\d+$/.test(values.revision) || !Number.isSafeInteger(revision) || revision < 1 || !reason
+        || (previewTs !== undefined && !/^\d+\.\d+$/.test(previewTs))) {
+        throw new Error(`usage: instagram-publisher.ts ${command} <draft id> --revision <n> --reason "<instruction source>" [--preview-ts <ts>]`)
       }
-      const saved = await withLock(() => new Job(liveServices()).delegateDecision(command, id, revision, reason))
+      const record = () => new Job(liveServices()).delegateDecision(command, id, revision, reason, previewTs)
+      const saved = await (command === 'approve' ? withLock(record) : record())
       const decision = command === 'approve' ? 'approval' : 'veto'
       console.log(`${id} r${revision}: ${saved ? `recorded Hermes's ${decision} on Hanif's behalf` : `Hermes's ${decision} is already recorded`}.`)
+      if (command === 'skip') console.log('Already-dispatched writes cannot be stopped; the publisher will check their outcomes.')
       return
     }
     case 'regenerate': {

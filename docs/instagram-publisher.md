@@ -39,15 +39,17 @@ mise exec -- node --experimental-transform-types scripts/instagram-publisher.ts 
 
 ## Approval on Hanif's behalf
 
-When Hanif explicitly asks Hermes to approve or skip a draft, Hermes runs the matching command on the VPS. Use the revision of the preview Hanif referred to and put a Slack permalink or another reference to his instruction in `--reason`. Do not add a bot reaction or assume a decision from a thread reply.
+When Hanif explicitly asks Hermes to approve or skip a draft, Hermes runs the matching command on the VPS. Put a link to the exact message with his instruction, or another unique reference, in `--reason`. Do not add a bot reaction or assume a decision from a thread reply.
 
-`approve` requires a confirmed current preview that still needs approval and must run before the Instagram approval cutoff. It does not publish immediately. The next eligible tick treats it as an in-time ✅ for the destinations that preview showed. Hanif's ❌ on any preview still wins. Removing a ✅ does not undo a delegated approval, but `regenerate` clears it. Use `skip` to veto the draft and prevent a rebuild. This stops new publishing writes on both channels, but the job still checks the outcome of any write it already sent.
+`approve` requires the current revision, a confirmed preview that still needs approval, and a time before the Instagram approval cutoff. If that revision has separate Instagram and Threads previews, pass `--preview-ts <Slack timestamp>` for the preview Hanif approved. Use the dotted timestamp (for example, `1234.5678`). Retrying the same instruction cannot approve a different preview. The next eligible tick treats the recorded approval as an in-time ✅ for the destinations that preview showed, and an Instagram approval closes the investigator's catalog-correction guard. Hanif's ❌ on any preview still wins. Removing a ✅ does not undo a delegated approval, but `regenerate` clears it.
 
-Each command saves the time, actor `hermes`, revision, preview destinations, and reason. A repeated decision does not change the saved record or send another reply. The publisher tries once to acknowledge the decision in Spanish in the preview thread. If Slack fails, it logs the failure and keeps the decision.
+`skip` accepts a retained preview from an earlier revision and can stop an unsent Threads post after Instagram has published. It records a permanent veto even during a tick. The next publishing check stops new writes on both channels. The job still recovers the outcome or permalink for any write it already sent. Already-dispatched writes cannot be stopped.
+
+Each command saves the time, actor `hermes`, revision, preview destinations, and reason. Approvals live in the draft JSON. Vetoes live in `vetoes/<draft-id>.json` under the publisher state directory so a running tick cannot overwrite them. A repeated decision does not change the record or send another reply. The publisher tries once to acknowledge the decision in Spanish in the preview thread. If Slack fails, it logs the failure and keeps the decision.
 
 ## How a tick works
 
-The `ba-events-instagram.timer` user timer runs `tick` every 10 minutes. systemd never starts a second run of a oneshot service while one is still running. The lock directory also prevents `approve`, `skip`, or `regenerate` from running during a tick.
+The `ba-events-instagram.timer` user timer runs `tick` every 10 minutes. systemd never starts a second run of a oneshot service while one is still running. The lock directory also prevents `approve` or `regenerate` from running during a tick. `skip` records its veto separately, without changing the running tick's draft file.
 
 1. It checks the Instagram token (below).
 2. For each due format whose cutoff hasn't passed, it creates a draft if none exists: it reads the catalog, picks the events, renders into `rev-1/`, and reviews the exact revision. Too few events is a logged skip. It shares a preview only when Instagram or Threads needs approval. An event-only review flag can go to the investigator first if neither destination is manual.

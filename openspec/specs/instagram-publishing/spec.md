@@ -96,9 +96,10 @@ While approval is open, a rendered draft MUST request approval in a top-level Sl
 
 #### Scenario: Hanif asks Hermes to decide
 - **WHEN** Hermes runs `approve <draft-id> --revision <n> --reason "<instruction source>"` for the current preview while it still needs approval and before the Instagram approval cutoff
-- **THEN** the job records the revision, preview destinations, time, actor `hermes`, and reason. The approval is equivalent to an in-time ✅ for those destinations only and is checked before new publishing writes
+- **THEN** the job checks the current votes before recording a new approval. If the revision has multiple previews, a new approval requires `--preview-ts <Slack timestamp>` for the one Hanif approved. Retrying an instruction never approves a different preview
+- **AND** the job records the revision, preview destinations, time, actor `hermes`, and reason. The approval is equivalent to an in-time ✅ for those destinations only and is checked before new publishing writes. A recorded Instagram approval closes the investigator's catalog-correction guard; a Threads-only approval does not
 - **AND** a rebuild clears delegated approvals. Hanif's ❌ on any preview still wins, but removing a ✅ does not withdraw a delegated approval
-- **AND** `skip <draft-id> --revision <n> --reason "<instruction source>"` records a permanent veto for the draft. It stops new writes to both destinations and prevents rebuilding, without undoing or blocking reconciliation of a dispatched publish
+- **AND** `skip <draft-id> --revision <n> --reason "<instruction source>"` can record a permanent veto for a retained preview even while a tick is running. The veto prevents rebuilding and stops new writes to either destination, including an unsent Threads post after Instagram publishes. Already-dispatched writes can finish, and the publisher still reconciles the outcome and recovers permalinks
 - **AND** a repeated decision for the same preview does not rewrite the audit entry or send another reply. A newly recorded decision posts one Spanish acknowledgment attempt in the preview thread; the job logs a Slack failure without undoing the decision
 
 #### Scenario: No approval by the cutoff

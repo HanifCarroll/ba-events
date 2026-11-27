@@ -1,4 +1,4 @@
-import { PublishStop, type Reactions } from './approval.ts'
+import { checkVeto, PublishStop, type Reactions } from './approval.ts'
 import { TICK_MS } from './formats.ts'
 import { ThreadsError, type ThreadsApi } from './threads-api.ts'
 import { threadsReplies, type threadsWindow } from './threads-copy.ts'
@@ -49,10 +49,11 @@ function settle(draft: ThreadsDraft, state: 'skipped' | 'held' | 'failed' | 'pub
 
 /** Reactions or an event hold that Instagram already observed apply to Threads too, but cannot undo a dispatched publish. */
 export function stopThreads(draft: ThreadsDraft, stop: 'rejected' | 'delegated-skip' | { title: string }) {
-  if (!isOpen(draft) || draft.attemptedAt || draft.mediaId) return
+  if (!isOpen(draft) || draft.attemptedAt || draft.mediaId) return false
   if (stop === 'delegated-skip') settle(draft, 'skipped', null) // The command acknowledges the veto in the preview thread.
   else if (stop === 'rejected') settle(draft, 'skipped', threadsReplies.rejected)
   else settle(draft, 'held', threadsReplies.held(stop.title))
+  return true
 }
 
 interface Services {
@@ -93,7 +94,7 @@ export async function advanceThreads(draft: ThreadsDraft, window: ReturnType<typ
         s.log('Threads: no se pudo leer la aprobación de Slack; se reintenta en el próximo tick')
         throw new PublishStop('unapproved', 'Waiting for a successful Slack reaction read')
       })
-      if (reactions.rejected) throw new PublishStop('rejected', 'Hanif reacted ❌')
+      checkVeto(reactions)
       if (s.now() >= window.cutoff) throw new PublishStop('deadline', 'Threads cutoff reached')
       if (!reactions.approved && !(draft.auto === true && s.auto())) throw new PublishStop('unapproved', 'Waiting for Threads approval')
     }
@@ -178,7 +179,7 @@ export async function advanceThreads(draft: ThreadsDraft, window: ReturnType<typ
       if (error instanceof PublishStop) {
         if (error.kind === 'unapproved') return
         if (error.kind === 'deadline') settle(draft, 'skipped', threadsReplies.cutoff(window.cutoff))
-        if (error.kind === 'rejected') stopThreads(draft, 'rejected')
+        if (error.kind === 'rejected') stopThreads(draft, error.delegatedVeto ? 'delegated-skip' : 'rejected')
         if (error.kind === 'stale' && error.stale) {
           draft.hold = error.stale
           stopThreads(draft, error.stale)

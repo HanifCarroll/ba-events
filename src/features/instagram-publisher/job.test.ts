@@ -1,7 +1,9 @@
 /** Drives `tick` and `regenerate` through the draft lifecycle with fake Slack, D1, R2, rendering, and Instagram. */
+import { execFileSync } from 'node:child_process'
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { describeFailure, TickFailures } from './alerts.ts'
 import { HANIF } from './approval.ts'
@@ -12,7 +14,7 @@ import type { RunWindow } from './formats.ts'
 import { LAYOUT_VERSION } from './html.ts'
 import type { Finding, InvestigationRequest } from './investigation.ts'
 import { Job, dryRun, type Draft, type Services } from './job.ts'
-import { DEFAULT_REVIEW, SlackRejected, type Config } from './runtime.ts'
+import { DEFAULT_REVIEW, SlackRejected, withLock, type Config } from './runtime.ts'
 import { OK, type Reviewer, type Verdict } from './review.ts'
 import { resolveReviewQuestionsWithOpenAI } from './review-resolution.ts'
 import type { CatalogEvent } from './select.ts'
@@ -1784,6 +1786,7 @@ describe('delegated draft decisions', () => {
     const w = await previewed()
     const draft = w.draft()
     await w.job().delegateDecision('approve', draft.id, 1, reason)
+    expect(w.draft().approvedSeenAt).toBe(w.clock.toISOString())
     expect(w.draft().delegatedApprovals).toEqual([{
       actor: 'hermes', at: w.clock.toISOString(), reason,
       preview: { revision: 1, ts: draft.slack.ts, channel: w.config.slack.channel, instagram: true, threads: false },
@@ -1804,6 +1807,15 @@ describe('delegated draft decisions', () => {
     await expect(w.job().delegateDecision('approve', id, 1, reason)).rejects.toThrow('approval cutoff')
     expect(w.draft().delegatedApprovals).toBeUndefined()
     expect(w.replies()).not.toContain(approved)
+  })
+
+  it.each(['approve', 'reject'] as const)('refuses a new approval if Hanif already voted %s', async reaction => {
+    const w = await previewed()
+    const { id } = w.draft()
+    w[reaction]()
+    await expect(w.job().delegateDecision('approve', id, 1, reason)).rejects.toThrow(reaction === 'approve' ? 'needs approval' : 'already vetoed')
+    expect(w.draft().delegatedApprovals).toBeUndefined()
+    expect(w.replies()).toEqual([])
   })
 
   it('refuses to approve a silent auto draft', async () => {
@@ -1867,9 +1879,16 @@ describe('delegated draft decisions', () => {
     w.at('2026-11-19', 12)
     const job = new Job({ ...w.services(), loadToken: async () => ({ state: 'missing' }) })
     await job.tick()
-    expect(w.draft().slack.previews?.at(-1)).toMatchObject({ instagram: false, threads: true })
+    const threadsPreview = w.draft().slack.previews?.at(-1)
+    expect(threadsPreview).toMatchObject({ instagram: false, threads: true })
     expect(w.threadsConnections).toBe(0)
-    await job.delegateDecision('approve', draft.id, 1, reason)
+    await expect(job.delegateDecision('approve', draft.id, 1, reason)).resolves.toBe(false)
+    await expect(job.delegateDecision('approve', draft.id, 1, reason, threadsPreview!.ts)).rejects.toThrow('already approved a different preview')
+    await expect(job.delegateDecision('approve', draft.id, 1, 'Slack message 1234.5690')).rejects.toThrow('multiple previews')
+    await job.tick()
+    expect(w.threadsConnections).toBe(0)
+    await job.delegateDecision('approve', draft.id, 1, 'Slack message 1234.5690', threadsPreview!.ts)
+    expect(w.draft().approvedSeenAt).toBe('2026-11-18T21:05:00.000Z')
     await w.job().tick()
     expect(w.draft()).toMatchObject({ state: 'published', threads: { state: 'published' } })
   })
@@ -1882,10 +1901,12 @@ describe('delegated draft decisions', () => {
     await w.job().delegateDecision('approve', id, 1, reason)
     w.config.threads.enabled = false
     await w.job().delegateDecision('skip', id, 1, reason)
-    expect(w.draft()).toMatchObject({ state: 'skipped', threads: { state: 'skipped' }, delegatedVeto: {
-      actor: 'hermes', at: w.clock.toISOString(), reason, preview: { revision: 1, ts: slack.ts, instagram: true, threads: true },
-    } })
+    expect(JSON.parse(readFileSync(join(w.dir, 'vetoes', `${id}.json`), 'utf8'))).toEqual({
+      actor: 'hermes', at: w.clock.toISOString(), reason, preview: { revision: 1, ts: slack.ts, channel: w.config.slack.channel, instagram: true, threads: true },
+    })
     await expect(w.job().delegateDecision('skip', id, 1, reason)).resolves.toBe(false)
+    await w.job().tick()
+    expect(w.draft()).toMatchObject({ state: 'skipped', threads: { state: 'skipped' } })
     await expect(w.job().delegateDecision('approve', id, 1, reason)).rejects.toThrow('skipped')
     await expect(w.job().regenerate(id, [])).rejects.toThrow('veto')
     w.config.threads.enabled = true
@@ -1896,13 +1917,73 @@ describe('delegated draft decisions', () => {
     expect(w.threadsConnections).toBe(0)
   })
 
-  it('allows a veto during reconciliation without retrying a dispatched Instagram write', async () => {
+  it('accepts a veto on the retained preview of a silent rebuild', async () => {
+    const w = await previewed()
+    const { id, slack } = w.draft()
+    w.config.auto.finde = true
+    const rebuilt = await w.job().regenerate(id, [uuid(2)])
+    expect(rebuilt).toMatchObject({ revision: 2, slack: { ts: slack.ts, revision: 1 } })
+    await w.job().delegateDecision('skip', id, 2, reason)
+    expect(w.slackPosts).toContainEqual({ text: skipped, threadTs: slack.ts })
+    w.at('2026-11-19', 12)
+    await w.job().tick()
+    expect(w.draft().state).toBe('skipped')
+    expect(w.ig.published).toHaveLength(0)
+  })
+
+  it('preserves a published Instagram outcome and stops Threads with a saved unsent container', async () => {
+    const w = await threadsPreviewed()
+    const { id } = w.draft()
+    await w.job().delegateDecision('approve', id, 1, reason)
+    w.at('2026-11-19', 12)
+    w.threads.containerStatus = 'IN_PROGRESS'
+    await w.job().tick()
+    const before = w.draft()
+    expect(before).toMatchObject({ state: 'published', threads: { state: 'publishing', containerId: 'c1' } })
+    await w.job().delegateDecision('skip', id, 1, reason)
+    w.threads.containerStatus = 'FINISHED'
+    await w.job().tick()
+    expect(w.draft()).toMatchObject({ state: 'published', publish: { permalink: before.publish!.permalink }, threads: { state: 'skipped' } })
+    expect(w.threads.posts).toHaveLength(0)
+  })
+
+  it('records a CLI veto while a tick holds the lock and stops the next Instagram write', async () => {
     const w = await previewed()
     const { id } = w.draft()
     await w.job().delegateDecision('approve', id, 1, reason)
     w.at('2026-11-19', 12)
-    w.ig.publishFault = 'after'
+    const get = w.ig.get.bind(w.ig)
+    let output: string | undefined
+    w.ig.get = async (path, params) => {
+      if (params?.fields === 'status_code' && !output) {
+        const slack = join(w.dir, 'slack.py')
+        writeFileSync(slack, `print('{"ok":true}')\n`)
+        const cli = fileURLToPath(new URL('../../../scripts/instagram-publisher.ts', import.meta.url))
+        output = execFileSync(process.execPath, ['--experimental-transform-types', cli, 'skip', id, '--revision', '1', '--reason', reason], {
+          encoding: 'utf8', timeout: 5_000, env: { BA_INSTAGRAM_STATE_DIR: w.dir, BA_INSTAGRAM_SLACK_API: slack, PATH: process.env.PATH },
+        })
+      }
+      return get(path, params)
+    }
+    await withLock(() => w.job().tick(), w.dir)
+    expect(output).toContain('Already-dispatched writes cannot be stopped')
+    expect(w.draft().state).toBe('skipped')
+    expect(w.ig.published).toHaveLength(0)
+  })
+
+  it.each(['unclear send', 'permalink read'])('reconciles a dispatched Instagram write after a veto during %s', async failure => {
+    const w = await previewed()
+    const { id } = w.draft()
+    await w.job().delegateDecision('approve', id, 1, reason)
+    w.at('2026-11-19', 12)
+    const get = w.ig.get.bind(w.ig)
+    if (failure === 'unclear send') w.ig.publishFault = 'after'
+    else w.ig.get = async (path, params) => {
+      if (params?.fields === 'permalink') throw new Error('fetch failed')
+      return get(path, params)
+    }
     await w.job().tick()
+    w.ig.get = get
     expect(w.draft().state).toBe('publishing')
     expect(w.ig.published).toHaveLength(1)
     await expect(w.job().delegateDecision('approve', id, 1, reason)).rejects.toThrow('publishing')
