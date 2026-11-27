@@ -18,31 +18,31 @@ interface EventColumnPolicy {
   intakeWrite?: 'create' | 'both'
   /** Intake commits always request protection for these fields; details require explicit evidence. */
   protectOnCommit?: true
-  /** Publisher fixes compare these extra fields, as well as the editable fields, before committing. */
+  /** Publisher fixes compare these snapshot fields, including the editable ones, before committing. */
   publisherSnapshot?: true
 }
 
 export const EVENT_COLUMN_POLICY = {
   id: { advancesRevision: true, public: 'card', catalog: 'read', intakeWrite: 'create' },
-  name: { advancesRevision: true, protection: 'facts', scope: 'input', fullText: true, searchDocument: true, public: 'card', catalog: 'read-write', intakeWrite: 'both', protectOnCommit: true },
-  description_display_es: { advancesRevision: true, protection: 'facts', public: 'card', catalog: 'write', intakeWrite: 'both', protectOnCommit: true },
-  description_display_en: { advancesRevision: true, protection: 'facts', public: 'card', catalog: 'write', intakeWrite: 'both', protectOnCommit: true },
-  description_summary_es: { advancesRevision: true, protection: 'facts', public: 'card', catalog: 'write', intakeWrite: 'both', protectOnCommit: true },
-  description_summary_en: { advancesRevision: true, protection: 'facts', public: 'card', catalog: 'write', intakeWrite: 'both', protectOnCommit: true },
-  starts_at: { advancesRevision: true, protection: 'facts', public: 'card', catalog: 'read-write', intakeWrite: 'both', protectOnCommit: true },
+  name: { advancesRevision: true, protection: 'facts', scope: 'input', fullText: true, searchDocument: true, public: 'card', catalog: 'read-write', intakeWrite: 'both', protectOnCommit: true, publisherSnapshot: true },
+  description_display_es: { advancesRevision: true, protection: 'facts', public: 'card', catalog: 'write', intakeWrite: 'both', protectOnCommit: true, publisherSnapshot: true },
+  description_display_en: { advancesRevision: true, protection: 'facts', public: 'card', catalog: 'write', intakeWrite: 'both', protectOnCommit: true, publisherSnapshot: true },
+  description_summary_es: { advancesRevision: true, protection: 'facts', public: 'card', catalog: 'write', intakeWrite: 'both', protectOnCommit: true, publisherSnapshot: true },
+  description_summary_en: { advancesRevision: true, protection: 'facts', public: 'card', catalog: 'write', intakeWrite: 'both', protectOnCommit: true, publisherSnapshot: true },
+  starts_at: { advancesRevision: true, protection: 'facts', public: 'card', catalog: 'read-write', intakeWrite: 'both', protectOnCommit: true, publisherSnapshot: true },
   ends_at: { advancesRevision: true, protection: 'facts', public: 'card', catalog: 'read-write', intakeWrite: 'both', protectOnCommit: true, publisherSnapshot: true },
   doors_at: { advancesRevision: true, protection: 'details', public: 'card', catalog: 'read-write', intakeWrite: 'both' },
   is_all_day: { advancesRevision: true, protection: 'facts', public: 'card', catalog: 'read-write', publisherSnapshot: true },
   time_tba: { advancesRevision: true, protection: 'facts', public: 'card', catalog: 'read-write', intakeWrite: 'both', protectOnCommit: true, publisherSnapshot: true },
   venue_id: { advancesRevision: true, protection: 'facts', scope: 'input', searchDocument: true, public: 'card', catalog: 'read-write', intakeWrite: 'both', protectOnCommit: true, publisherSnapshot: true },
   categories: { advancesRevision: true, protection: 'facts', scope: 'input', searchDocument: true, public: 'card', catalog: 'read-write', intakeWrite: 'both', protectOnCommit: true, publisherSnapshot: true },
-  price: { advancesRevision: true, protection: 'facts', scope: 'input', searchDocument: true, public: 'card', catalog: 'read-write', intakeWrite: 'both', protectOnCommit: true },
-  is_free: { advancesRevision: true, protection: 'facts', scope: 'input', searchDocument: true, public: 'card', catalog: 'read-write', intakeWrite: 'both', protectOnCommit: true },
+  price: { advancesRevision: true, protection: 'facts', scope: 'input', searchDocument: true, public: 'card', catalog: 'read-write', intakeWrite: 'both', protectOnCommit: true, publisherSnapshot: true },
+  is_free: { advancesRevision: true, protection: 'facts', scope: 'input', searchDocument: true, public: 'card', catalog: 'read-write', intakeWrite: 'both', protectOnCommit: true, publisherSnapshot: true },
   min_age: { advancesRevision: true, protection: 'facts', public: 'card', catalog: 'read-write' },
   image_url: { advancesRevision: true, protection: 'facts', public: 'card', catalog: 'read-write', intakeWrite: 'both', protectOnCommit: true },
   link: { advancesRevision: true, protection: 'facts', public: 'card', catalog: 'read-write', intakeWrite: 'create' },
   ticket_url: { advancesRevision: true, protection: 'facts', public: 'card', catalog: 'read-write', intakeWrite: 'both', protectOnCommit: true },
-  status: { advancesRevision: true, protection: 'facts', public: 'card', catalog: 'read-write', intakeWrite: 'both', protectOnCommit: true },
+  status: { advancesRevision: true, protection: 'facts', public: 'card', catalog: 'read-write', intakeWrite: 'both', protectOnCommit: true, publisherSnapshot: true },
   location_hidden: { advancesRevision: true, protection: 'facts', public: 'card', catalog: 'read-write' },
   description_es: { advancesRevision: true, protection: 'facts', scope: 'input', fullText: true, searchDocument: true, public: 'search', catalog: 'read-write', intakeWrite: 'both', protectOnCommit: true, publisherSnapshot: true },
   description_en: { advancesRevision: true, protection: 'facts', scope: 'input', searchDocument: true, public: 'search', catalog: 'read-write', intakeWrite: 'both', protectOnCommit: true, publisherSnapshot: true },
@@ -73,7 +73,7 @@ export const EVENT_COLUMN_POLICY = {
 } as const satisfies Record<string, EventColumnPolicy>
 
 export type EventColumn = keyof typeof EVENT_COLUMN_POLICY
-export const EVENT_COLUMNS = Object.keys(EVENT_COLUMN_POLICY) as EventColumn[]
+export const EVENT_COLUMN_NAMES = Object.keys(EVENT_COLUMN_POLICY) as EventColumn[]
 
 type ColumnsWith<K extends keyof EventColumnPolicy, V> = {
   [C in EventColumn]: (typeof EVENT_COLUMN_POLICY)[C] extends Record<K, V> ? C : never
@@ -83,7 +83,7 @@ type ColumnsWith<K extends keyof EventColumnPolicy, V> = {
 export function eventColumnsWith<K extends keyof EventColumnPolicy, V extends NonNullable<EventColumnPolicy[K]>>(
   key: K, ...values: V[]
 ): ColumnsWith<K, V>[] {
-  return EVENT_COLUMNS.filter((column): column is ColumnsWith<K, V> => {
+  return EVENT_COLUMN_NAMES.filter((column): column is ColumnsWith<K, V> => {
     const policy: EventColumnPolicy = EVENT_COLUMN_POLICY[column]
     return values.some(value => policy[key] === value)
   })
