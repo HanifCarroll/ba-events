@@ -6,6 +6,7 @@ import type { D1Database } from '@cloudflare/workers-types'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { freshD1 } from '../../../../tests/support/d1.ts'
 import * as chat from './chat-d1.server.ts'
+import { EXTERNAL_CHANNEL } from './channels.ts'
 
 let db: D1Database
 let dispose: () => Promise<void>
@@ -235,7 +236,7 @@ describe('insert_message_with_turn', () => {
 		const conversation = await chat.createConversation(db, ALICE, {})
 		const message = { conversationId: conversation.id, role: 'user' as const, content: 'hi', responseContractVersion: 5 }
 		await expect(chat.insertMessage(db, { userId: BOB }, message)).rejects.toThrow('Conversation not found')
-		await expect(chat.insertMessage(db, { channel: 'telegram' }, message)).rejects.toThrow('Conversation not found')
+		await expect(chat.insertMessage(db, { channel: EXTERNAL_CHANNEL.telegram }, message)).rejects.toThrow('Conversation not found')
 		await chat.softDeleteConversation(db, ALICE, conversation.id)
 		await expect(chat.insertMessage(db, { userId: ALICE }, message)).rejects.toThrow('Conversation not found')
 		expect(await count('messages')).toBe(0)
@@ -290,36 +291,37 @@ describe('conversation search', () => {
 	})
 })
 
-describe('external (Telegram) conversations', () => {
+describe('external conversations', () => {
+	const channel = EXTERNAL_CHANNEL.telegram
 	const hash = 'a'.repeat(64)
 
 	it('creates one owner-less conversation per identity, even concurrently', async () => {
 		const [a, b] = await Promise.all([
-			chat.getOrCreateExternalConversation(db, 'telegram', hash, 'New conversation', {}),
-			chat.getOrCreateExternalConversation(db, 'telegram', hash, 'New conversation', {}),
+			chat.getOrCreateExternalConversation(db, channel, hash, 'New conversation', {}),
+			chat.getOrCreateExternalConversation(db, channel, hash, 'New conversation', {}),
 		])
 		expect(a.id).toBe(b.id)
-		expect(await count("conversations WHERE channel = 'telegram' AND user_id IS NULL")).toBe(1)
+		expect(await db.prepare('SELECT count(*) AS n FROM conversations WHERE channel = ? AND user_id IS NULL').bind(channel).first('n')).toBe(1)
 	})
 
 	it('keeps signed-in users and Telegram apart in both directions', async () => {
-		const telegram = await chat.getOrCreateExternalConversation(db, 'telegram', hash, 'New conversation', {})
+		const external = await chat.getOrCreateExternalConversation(db, channel, hash, 'New conversation', {})
 		const web = await chat.createConversation(db, ALICE, {})
-		expect(await chat.getExternalConversation(db, 'telegram', web.id)).toBeNull()
-		expect(await chat.getConversation(db, ALICE, telegram.id)).toBeNull()
-		await expect(chat.insertMessage(db, { userId: ALICE }, { conversationId: telegram.id, role: 'user', content: 'x', responseContractVersion: 5 }))
+		expect(await chat.getExternalConversation(db, channel, web.id)).toBeNull()
+		expect(await chat.getConversation(db, ALICE, external.id)).toBeNull()
+		await expect(chat.insertMessage(db, { userId: ALICE }, { conversationId: external.id, role: 'user', content: 'x', responseContractVersion: 5 }))
 			.rejects.toThrow('Conversation not found')
-		await chat.clearExternalMessages(db, 'telegram', web.id)
-		await chat.deleteExternalConversation(db, 'telegram', web.id)
+		await chat.clearExternalMessages(db, channel, web.id)
+		await chat.deleteExternalConversation(db, channel, web.id)
 		expect(await chat.getConversation(db, ALICE, web.id)).not.toBeNull()
 	})
 
 	it('reads the newest 120 messages and replaces metadata', async () => {
-		const telegram = await chat.getOrCreateExternalConversation(db, 'telegram', hash, 'New conversation', {})
-		await chat.insertMessage(db, { channel: 'telegram' }, { conversationId: telegram.id, role: 'user', content: 'hola', responseContractVersion: 5, clientMessageId: 'telegram:1:user' })
-		expect(await chat.loadExternalMessages(db, 'telegram', telegram.id)).toHaveLength(1)
-		expect((await chat.setExternalMetadata(db, 'telegram', telegram.id, { locale: 'es' })).metadata).toEqual({ locale: 'es' })
-		await chat.clearExternalMessages(db, 'telegram', telegram.id)
-		expect(await chat.loadExternalMessages(db, 'telegram', telegram.id)).toHaveLength(0)
+		const external = await chat.getOrCreateExternalConversation(db, channel, hash, 'New conversation', {})
+		await chat.insertMessage(db, { channel }, { conversationId: external.id, role: 'user', content: 'hola', responseContractVersion: 5, clientMessageId: 'external:1:user' })
+		expect(await chat.loadExternalMessages(db, channel, external.id)).toHaveLength(1)
+		expect((await chat.setExternalMetadata(db, channel, external.id, { locale: 'es' })).metadata).toEqual({ locale: 'es' })
+		await chat.clearExternalMessages(db, channel, external.id)
+		expect(await chat.loadExternalMessages(db, channel, external.id)).toHaveLength(0)
 	})
 })

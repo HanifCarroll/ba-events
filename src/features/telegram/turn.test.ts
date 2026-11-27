@@ -1,7 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { Effect } from 'effect'
-import type { TelegramTurnDependencies } from './turn.ts'
-import { processTelegramTurn } from './turn.ts'
+import { EXTERNAL_CHANNEL } from '#features/chat/api/channels.ts'
+import {
+  getExternalConversation, getOrCreateExternalConversation, insertExternalConversationMessage, loadExternalConversationMessages,
+} from '#features/chat/api/external-conversations.server.ts'
+import { useD1Binding } from '#shared/lib/db/d1-binding.server.ts'
+import { freshD1 } from '../../../tests/support/d1.ts'
+import { defaultTelegramTurnDependencies, processTelegramTurn, type TelegramTurnDependencies } from './turn.ts'
 import { sealTelegramEnvelope } from './envelope.server.ts'
 
 const key = Buffer.alloc(32, 8).toString('base64')
@@ -16,16 +21,16 @@ const conversation = {
   metadata: {},
 }
 
-function payload(plaintext: Record<string, unknown>, updateId = '42') {
+function payload(plaintext: Record<string, unknown>, updateId = '42', conversationId = queueKey) {
   const { userId: _userId, messageId: _messageId, ...minimal } = plaintext
   return {
     updateId,
-    queueKey,
+    queueKey: conversationId,
     sealedEnvelope: sealTelegramEnvelope(
       { identityHash, ...minimal },
       key,
       updateId,
-      queueKey
+      conversationId
     ),
   }
 }
@@ -450,6 +455,46 @@ describe('Telegram turn processor', () => {
     expect(deps.sendMessage).toHaveBeenCalledWith('123', expect.objectContaining({ text: expect.stringContaining('Too many') }), expect.any(AbortSignal))
     expect(deps.runTurn).not.toHaveBeenCalled()
   })
+
+  it('loads history, clears with /new, and deletes with /delete through chat on D1', async () => {
+    const { db, dispose } = await freshD1()
+    useD1Binding({ DB: db })
+    try {
+      const channel = EXTERNAL_CHANNEL.telegram
+      const created = await getOrCreateExternalConversation({ channel, externalIdentityHash: identityHash })
+      const target = { conversationId: created.id, channel }
+      await insertExternalConversationMessage({ ...target, role: 'user', content: 'What is on tonight?', clientMessageId: 'prior:1' })
+      const deps: TelegramTurnDependencies = {
+        ...dependencies(),
+        getConversationEffect: defaultTelegramTurnDependencies.getConversationEffect,
+        loadMessagesEffect: defaultTelegramTurnDependencies.loadMessagesEffect,
+        insertMessageEffect: defaultTelegramTurnDependencies.insertMessageEffect,
+        updateMetadataEffect: defaultTelegramTurnDependencies.updateMetadataEffect,
+        clearMessagesEffect: defaultTelegramTurnDependencies.clearMessagesEffect,
+        deleteConversationEffect: defaultTelegramTurnDependencies.deleteConversationEffect,
+      }
+      const turn = (text: string, updateId: string) => processTelegramTurn(payload({ chatId: '123', text }, updateId, created.id), deps)
+
+      await turn('Any milongas?', '42')
+      expect(deps.runTurn).toHaveBeenCalledWith(expect.objectContaining({
+        recentMessages: [{ role: 'user', content: 'What is on tonight?' }],
+      }))
+      expect(await loadExternalConversationMessages(target)).toHaveLength(3)
+
+      await turn('/new', '43')
+      expect(await loadExternalConversationMessages(target)).toEqual([])
+      expect(await getExternalConversation(target)).toMatchObject({ id: created.id, channel })
+
+      await turn('/delete', '44')
+      await expect(getExternalConversation(target)).rejects.toThrow('External conversation not found')
+      expect(deps.redactClaims).toHaveBeenCalledWith(identityHash)
+      const restarted = await getOrCreateExternalConversation({ channel, externalIdentityHash: identityHash })
+      expect(restarted.id).not.toBe(created.id)
+    } finally {
+      useD1Binding(undefined)
+      await dispose()
+    }
+  }, 60_000)
 
   it('clears history on /new and hard-deletes on /delete', async () => {
     const fresh = dependencies()

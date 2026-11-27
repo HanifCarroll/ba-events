@@ -2,6 +2,7 @@ import { command, query, getRequestEvent } from '$app/server'
 import { Effect, Schema } from 'effect'
 import * as conversations from '#features/chat/api/conversations.server.ts'
 import type { ConversationInsert, ConversationUpdate } from '#shared/lib/types.ts'
+import { CONVERSATION_CHANNELS } from './channels.ts'
 
 // Remote wrappers for the chat conversation server functions (CONTRACTS.md §5).
 // The legacy React Query `useConversations` hooks are replaced by these
@@ -10,7 +11,7 @@ import type { ConversationInsert, ConversationUpdate } from '#shared/lib/types.t
 const conversationInsertInput = Schema.toStandardSchemaV1(Schema.Struct({
 	id: Schema.optional(Schema.String),
 	user_id: Schema.optional(Schema.NullOr(Schema.String)),
-	channel: Schema.optional(Schema.Literals(['web', 'telegram'])),
+	channel: Schema.optional(Schema.Literals(CONVERSATION_CHANNELS)),
 	external_identity_hash: Schema.optional(Schema.NullOr(Schema.String)),
 	title: Schema.optional(Schema.String),
 	metadata: Schema.optional(Schema.Any),

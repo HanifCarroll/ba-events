@@ -20,6 +20,7 @@ import { getPlatformProxy, unstable_splitSqlQuery } from 'wrangler'
 import { freshD1 } from '../tests/support/d1.ts'
 import * as chat from '../src/features/chat/api/chat-d1.server.ts'
 import * as telegram from '../src/features/telegram/telegram-d1.server.ts'
+import { purgeRetention } from '../src/features/telegram/retention.ts'
 import { checkRateLimitD1 } from '../src/shared/lib/db/rate-limit-d1.server.ts'
 
 const DATABASE = 'baeventos-staging'
@@ -217,7 +218,7 @@ try {
 			await telegram.markCompleted(db, id, null, now)
 			if ((await telegram.readClaim(db, id))?.status !== 'completed') throw new Error('markCompleted')
 		}
-		const purged = await telegram.purgeRetention(db, now)
+		const purged = await purgeRetention(db, now)
 		await db.prepare('INSERT INTO product_feedback (id, user_id, message) VALUES (?, ?, ?)').bind(crypto.randomUUID(), owners[0] ?? null, 'check').run()
 		await db.prepare('INSERT INTO product_feedback (id, user_id, message) VALUES (?, NULL, ?)').bind(crypto.randomUUID(), 'check').run()
 		const limit = await checkRateLimitD1(db, 'chat', 'f'.repeat(64), 50, 3600)
