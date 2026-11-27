@@ -11,23 +11,6 @@ describe('paired Spanish clock citations', () => {
 
 describe('intake clock tokens', () => {
   it.each([
-    ['21h', '21:00'], ['21 hs', '21:00'], ['21:30', '21:30'], ['20.30', '20:30'],
-    ['20.00', '20:00'], ['a las 21', '21:00'], ['9 p. m.', '21:00'], ['12 a.m.', '00:00'],
-  ])('matches %s as %s', (excerpt, time) => {
-    expect(citesClock(excerpt, time)).toBe(true)
-  })
-
-  it.each([
-    ['de 20 a 24 h', '20:00'], ['de 20 a 24 hs', '20:00'], ['de 20 a 24 horas', '20:00'],
-    ['20 a 24 h', '20:00'], ['20 - 24 hs', '20:00'], ['20–2 h', '20:00'], ['de 21 a 23 h', '21:00'],
-    ['de 9 a 13 hs', '09:00'], ['20 a 24hs', '20:00'], ['de 20.30 a 24 h', '20:30'],
-    ['de 20 a 0 h', '20:00'], ['de 20 a 00 h', '20:00'], ['20–23:30', '20:00'],
-    ['desde 20 hasta 24 h', '20:00'], ['20-24:00', '20:00'],
-  ])('matches the start of %s as %s', (excerpt, time) => {
-    expect(citesClock(excerpt, time)).toBe(true)
-  })
-
-  it.each([
     'del 20 al 24 de noviembre', 'de 20 a 24 años', 'entre 20 y 24 personas', '20 a 24 cuotas',
     'de 20 a 23 personas. Puertas 22 h', '20 en sala A - 24 h', 'de 20 a 23, 22 hs',
     '20 a 23', '$20 a 24 h', 'ARS 20 a 24 h', 'USD 20:00 a 24 h', '20 a $23 h', '20 a 24:30 h',

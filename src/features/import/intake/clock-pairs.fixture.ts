@@ -3,6 +3,9 @@ export interface ClockClaim { quote: string; time: string; source?: string }
 interface Pair { name: string; accepted: ClockClaim; rejected: ClockClaim; previewAt?: string }
 
 const claim = (quote: string, time: string, source?: string): ClockClaim => ({ quote, time, source })
+const clipped = (name: string, source: string, quote: string, time: string): Pair => ({
+  name, accepted: claim(source, time), rejected: claim(quote, time, source),
+})
 const closesAtEleven = 'Desde las 20 hasta las 23 hs. Show: 23 hs.'
 
 export const clockPairs: Pair[] = [
@@ -14,6 +17,9 @@ export const clockPairs: Pair[] = [
     rejected: claim('a las 21', '21:00', 'a las 21:30') },
   { name: 'complete dotted minutes vs clipped minutes', accepted: claim('a las 20.30', '20:30'),
     rejected: claim('a las 20', '20:00', 'a las 20.30') },
+  clipped('bare colon minutes vs clipped digit', '21:30', '21:3', '21:30'),
+  clipped('bare dotted minutes vs clipped digit', '20.30', '20.3', '20:30'),
+  clipped('standalone afternoon meridiem vs clipped marker', '9 p. m.', '9 p.', '21:00'),
   { name: 'dotted clock vs price', accepted: claim('20.00', '20:00'),
     rejected: claim('20.00', '20:00', '20.00 USD') },
   { name: 'bare hours field vs longer clock token', accepted: claim('Puertas:21', '21:00'),
@@ -38,4 +44,16 @@ export const clockPairs: Pair[] = [
     rejected: claim('de 20 a 24 años', '20:00') },
   { name: 'colon-minutes range vs numeric date fragments', accepted: claim('20–23:30', '20:00'),
     rejected: claim('20/11–23:30', '20:00') },
+  clipped('long shared unit vs clipped horas', 'de 20 a 24 horas', 'de 20 a 24 h', '20:00'),
+  clipped('bare word range vs missing shared h', '20 a 24 h', '20 a 24', '20:00'),
+  clipped('spaced dash range vs clipped hs', '20 - 24 hs', '20 - 24 h', '20:00'),
+  clipped('after-midnight end vs missing shared h', '20–2 h', '20–2', '20:00'),
+  clipped('same-night end vs missing shared h', 'de 21 a 23 h', 'de 21 a 23', '21:00'),
+  clipped('morning start vs clipped hs', 'de 9 a 13 hs', 'de 9 a 13 h', '09:00'),
+  clipped('attached shared unit vs clipped hs', '20 a 24hs', '20 a 24h', '20:00'),
+  clipped('dotted range start vs clipped minute digit', 'de 20.30 a 24 h', 'de 20.3', '20:30'),
+  clipped('single-zero midnight end vs missing shared h', 'de 20 a 0 h', 'de 20 a 0', '20:00'),
+  clipped('double-zero midnight end vs missing shared h', 'de 20 a 00 h', 'de 20 a 00', '20:00'),
+  clipped('desde/hasta range vs missing shared h', 'desde 20 hasta 24 h', 'desde 20 hasta 24', '20:00'),
+  clipped('colon midnight end vs missing minutes', '20-24:00', '20-24', '20:00'),
 ]
