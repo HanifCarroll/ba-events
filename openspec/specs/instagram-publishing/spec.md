@@ -188,8 +188,8 @@ After rendering, the publisher MUST review the still frames (for a Reel, its cov
 
 #### Scenario: Public evidence answers a pending question
 - **WHEN** a quick-review event question or a fallback question would otherwise need Hanif's decision
-- **THEN** the publisher checks all linked observations and official excerpts, and uses USIG for a parseable address or barrio question
-- **AND** it may clear or confirm the flag only with a public URL and an exact quote about the flagged fact. When sources agree on the numbered address, it compares the official USIG barrio directly with the card. It records the original question, conclusion, and citations on that revision
+- **THEN** the publisher asks its configured reviewer model to check every linked source's full caption and stored excerpts, regardless of intake tags, and all official page excerpts
+- **AND** it may clear or confirm the flag only with a public URL and a verified verbatim quote about the flagged fact. For an address or barrio question, the model must identify a quoted street and number for this event's performance venue, not a ticket office or another location. The publisher verifies the quoted street and number and uses USIG only when the public sources agree. It compares the official USIG barrio directly with the card for a barrio question; the catalog's own address cannot substitute for public proof. It records the original question, conclusion, and citations on that revision
 - **AND** a confirmed contradiction goes to Hermes even when a replacement can be built immediately. Missing, conflicting, unverified, or unavailable evidence leaves the original question open. A fallback answer never overrides a hold for an unreconciled catalog correction
 
 #### Scenario: An unresolved review needs Hanif's decision
@@ -200,10 +200,10 @@ After rendering, the publisher MUST review the still frames (for a Reel, its cov
 
 #### Scenario: A review reply asks for a decision or reports a problem
 - **WHEN** the job sends a quick-review or investigation reply with an event question or problem
-- **THEN** for each flagged event it includes a one-line question or problem, the public catalog event link and every linked source post and official page URL, each with its own short verbatim excerpt for the current flagged fact when available, including caption-only facts. If the source lacks such an excerpt, the reply says so. Event-specific fix alerts include the same links and source excerpts
-- **AND** for an address, venue, or barrio flag, it attempts a short, anonymous USIG lookup when it can parse a street and number, and reports the link and official barrio or a lookup failure
-- **AND** it includes recorded investigator conclusions and their cited URLs for that event from this or earlier rounds of the same draft. If none were recorded, it says why the event was not investigated instead of presenting a cap or failure as evidence
-- **AND** untrusted text cannot inject Slack formatting or mentions. The job reserves overflow before sending the first part and reconciles uncertain continuation sends before retrying. Overflow continues in the same Slack thread without cutting links or broadcasting a second decision notice
+- **THEN** for each flagged event it includes a one-line question or problem, the public catalog event link, and every linked public source post and official page URL. For each URL it shows a short verbatim excerpt the model selected for the current flag. If the model provides no valid selection, the reply shows the start of the source caption or available excerpt instead. Event-specific fix alerts include the same links and excerpts
+- **AND** for an address or barrio flag with a verified performance address, it reports the result or failure of the short anonymous USIG lookup and includes the lookup link
+- **AND** it includes recorded investigator conclusions and their cited URLs for that event from this or earlier rounds of the same draft. If none were recorded, it says why the event was not investigated instead of presenting a cap or failure as evidence. Event-specific fix alerts carry the investigator's `checked` finding and links, even if a rebuild removed the event without creating a Slack preview
+- **AND** untrusted text cannot inject Slack formatting or mentions. The job saves every part of an ordinary multipart reply before sending and reconciles uncertain sends, including its first part, before retrying. Overflow continues in the same Slack thread without cutting links or broadcasting a second decision notice
 
 #### Scenario: Investigation fails
 - **WHEN** the investigator cannot start, times out, or exits without a complete, valid, on-time result

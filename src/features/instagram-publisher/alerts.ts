@@ -73,16 +73,16 @@ export function threadsFailed(item: Item, reason: string | null, unclear: boolea
   }
 }
 
-export function reviewFix(draft: Draft, id: string | null, finding: Verdict) {
-  const issue = [finding.field, finding.reason].join(': ')
+export function reviewFix(draft: Draft, id: string | null, finding: Verdict, checked?: string) {
+  const issue = [finding.field, finding.reason].filter(Boolean).join(': ')
   return {
     key: id ? `review-fix/${id}` : `${draftKey(draft)}/review-fix`,
     title: 'Publisher review found incorrect content',
     text: [`⚠️ *Fix a problem found by the publisher review*. ${TRIAGE}`,
       'Hermes should check the linked evidence and correct the catalog or the publisher.',
       codes(`Draft ${draft.id} r${draft.revision}`, `Event ${id ?? 'not specific to one event'}`, slackLiteral(issue))].join('\n'),
-    fingerprint: issue,
-    event: id ? { id, flag: finding } : undefined,
+    fingerprint: checked ? JSON.stringify([issue, checked]) : issue,
+    event: id ? { id, flag: finding, card: draft.events.find(event => event.id === id), checked } : undefined,
   }
 }
 

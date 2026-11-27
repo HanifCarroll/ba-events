@@ -32,7 +32,10 @@ const uuid = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0
 const modelResponse = (result: object) => Response.json({ status: 'completed', model: 'fake-vision', output: [
   { type: 'message', content: [{ type: 'output_text', text: JSON.stringify(result) }] },
 ] })
-const resolverResponse = (resolved: unknown[]) => modelResponse({ resolved })
+const resolverResponse = (resolved: unknown[], selections: unknown[] = []) => modelResponse({ resolved, selections })
+const selection = (id: string, quotes: Array<{ url: string; quote: string }>, address?: { url: string; quote: string; street: string; number: string }) => ({
+  id, topic: address ? 'barrio' : 'other', quotes, addresses: address ? [{ ...address, role: 'performance_venue' }] : [], conflictingAddresses: false,
+})
 
 /** Six qualifying weekend events (Friday 20 to Sunday 22, November 2026) at six venues. */
 const weekend = (): CatalogEvent[] => Array.from({ length: 6 }, (_, i) => ({
@@ -382,7 +385,7 @@ describe('tick: draft review', () => {
     const quote = 'Las entradas cuestan $5000.'
     job.s.reviewResources = async () => new Map([[badId, { address: null, observations: [], officialPages: [{ url, fields: ['price'], excerpt: quote }] }]])
     job.s.resolveQuestions = (input, questions) => resolveReviewQuestionsWithOpenAI(DEFAULT_REVIEW, 'synthetic-key', 'test', input, questions,
-      async (_url, request) => JSON.parse(String(request?.body)).text.format.name === 'publisher_citation_check' ? modelResponse({ direct: [badId] })
+      async (_url, request) => JSON.parse(String(request?.body)).text.format.name === 'publisher_citation_check' ? modelResponse({ direct: [badId], venue: [] })
         : resolverResponse([{ id: badId, verdict: 'wrong', field: 'price', reason: 'The ticket page states paid admission.', citations: [{ url, quote }] }]))
     await job.tick()
     expect(w.draft()).toMatchObject({ revision: stage === 'quick' ? 2 : 3, exclude: [badId] })
@@ -392,19 +395,27 @@ describe('tick: draft review', () => {
     expect(w.broadcasts()).toEqual([])
   })
 
-  it('shows distinct quotes for every relevant caption, post excerpt, and official page', async () => {
+  it.each(['selected', 'one omission', 'unavailable'] as const)('shows each source with its own quote when the resolver is %s', async mode => {
     const w = world()
     w.verdict = id => id === badId ? { ...question, field: 'price', question: 'Is there a charge at the door?' } : OK
     const job = w.job()
-    const pairs = [['https://www.instagram.com/p/venue/', 'Entrada libre con reserva.'], ['https://www.instagram.com/p/organizer/', 'En puerta: $9000.'],
+    const pairs = [['https://www.instagram.com/p/venue/', 'No se cobra entrada a menores.'], ['https://www.instagram.com/p/organizer/', 'FUNCIONES GRATUITAS'],
       ['https://venue.example.org/events', 'Acceso gratuito hasta agotar capacidad.'], ['https://tickets.example.org/show', 'Entrada general $9000.']] as const
+    const opening = 'Hoy a las 20:00.'
     job.s.reviewResources = async () => new Map([[badId, { address: null, observations: [
-      { postUrl: pairs[0][0], caption: `Hoy a las 20:00.\n${pairs[0][1]}`, publishedAt: null, excerpts: [] },
-      { postUrl: pairs[1][0], caption: '', publishedAt: null, excerpts: [{ fields: ['price'], excerpt: pairs[1][1] }] },
+      { postUrl: pairs[0][0], caption: `${opening}\n${pairs[0][1]}`, publishedAt: null, excerpts: [] },
+      { postUrl: pairs[1][0], caption: 'Montaje anual de teatro.', publishedAt: null, excerpts: [{ fields: ['description'], excerpt: pairs[1][1] }] },
     ], officialPages: pairs.slice(2).map(([url, excerpt]) => ({ url, fields: ['price'], excerpt })) }]])
+    job.s.resolveQuestions = (input, questions) => resolveReviewQuestionsWithOpenAI(DEFAULT_REVIEW, 'synthetic', 'test', input, questions, async () => {
+      if (mode === 'unavailable') throw new Error('The resolver timed out')
+      return resolverResponse([], [selection(badId, (mode === 'one omission' ? pairs.slice(2) : pairs).map(([url, quote]) => ({ url, quote })))])
+    })
     await job.tick()
     const text = w.broadcasts()[0]?.text
-    for (const [url, quote] of pairs) expect(text).toContain(`<${url}>\n“${quote}”`)
+    const [venue, organizer, ...pages] = pairs
+    expect(text).toContain(`<${venue[0]}>\n“${mode === 'selected' ? venue[1] : `${opening} ${venue[1]}`}”`)
+    expect(text).toContain(`<${organizer[0]}>\n“${mode === 'selected' ? organizer[1] : 'Montaje anual de teatro.'}”`)
+    for (const [url, quote] of pages) expect(text).toContain(`<${url}>\n“${quote}”`)
   })
 
   it('asks Hanif about a post question, even with a separate confirmed event error', async () => {
@@ -1030,13 +1041,21 @@ describe('tick: publisher investigation', () => {
     await w.job().tick()
     during(w)
     const reason = 'The card gives the wrong venue.'
-    const hermes = 'Correct the venue using the organizer’s page: https://venue.example/18-mundos'
-    finish({ verdict: 'exclude', reason, hermes })
-    await w.job().tick()
-    expect(w.draft()).toMatchObject({ revision: 2, exclude: [flaggedId] })
+    const hermes = 'Correct the venue on the catalog row.'
+    const correction = 'https://venue.example/18-mundos-correction'
+    const checked = `The venue posted a correction to its announcement: ${correction}`
+    finish({ verdict: 'exclude', reason, hermes, checked })
+    const job = w.job()
+    const alert = job.s.alert
+    job.s.alert = async (...args) => args[0].startsWith('review-fix/') ? false : alert(...args)
+    await job.tick()
+    expect(w.draft()).toMatchObject({ revision: 2, exclude: [flaggedId], pendingReviewFixes: [{ event: { checked } }] })
     expect(w.reviewCalls).toBe(2)
     expect(w.slackCalls).toEqual([])
-    expect(w.alerts).toContainEqual(expect.objectContaining({ key: `review-fix/${flaggedId}`, text: expect.stringContaining(hermes) }))
+    await w.job().tick()
+    const fix = w.alerts.find(alert => alert.key === `review-fix/${flaggedId}`)
+    expect(fix?.text).toContain(hermes)
+    expect(fix?.text).toContain(`Checked: The venue posted a correction to its announcement: <${correction}>`)
     slot(w)
     await w.job().tick()
     expect(w.draft()).toMatchObject({ state: 'published', threads: { state: 'published' } })
@@ -1084,6 +1103,48 @@ describe('tick: publisher investigation', () => {
     expect(w.draft()).toMatchObject({ revision: 1, state: 'published', threads: { state: 'published' } })
   })
 
+  it.each(['not sent', 'ack lost'] as const)('recovers the first ordinary investigation reply part when %s', async failure => {
+    const { w, finish } = world()
+    w.config.auto.finde = false
+    await w.job().tick()
+    const draft = w.draft()
+    const job = w.job()
+    draft.decisionBroadcastAttempted = true // An earlier revision already asked Hanif.
+    writeFileSync(job.draftFile(draft.id), JSON.stringify(draft))
+    during(w)
+    finish(ask)
+    const links = Array.from({ length: 40 }, (_, i) => `https://www.instagram.com/p/${i}${'s'.repeat(65)}/`)
+    job.s.reviewResources = async () => new Map([[flaggedId, { address: null, officialPages: [],
+      observations: links.map(postUrl => ({ postUrl, caption: 'Función de teatro físico.', publishedAt: null, excerpts: [] })),
+    }]])
+    const receipts = new Map<string, string>()
+    job.s.slackReviewReceipt = async (_channel, _thread, receipt) => receipts.get(receipt.id) ?? null
+    const post = job.s.slackPost
+    let interrupted = false
+    job.s.slackPost = async (...args) => {
+      const receipt = args[4]
+      const interrupt = !interrupted && args[0].startsWith('Revisión: investigación')
+      if (interrupt) {
+        interrupted = true
+        expect(receipt).toBeDefined()
+        expect(w.draft().pendingReviewReplies?.[0]).toMatchObject({ inFlight: receipt, parts: [args[0], expect.stringContaining('continuación')] })
+        if (failure === 'not sent') throw new Error('Stopped before the first post reached Slack')
+      }
+      const response = await post(...args) as { ts: string }
+      if (receipt) receipts.set(receipt.id, response.ts)
+      if (interrupt) throw new Error('Posted but lost the first acknowledgement')
+      return response
+    }
+    await job.tick()
+    expect(w.draft().pendingReviewReplies).toHaveLength(1)
+    await job.tick()
+    expect(w.draft().pendingReviewReplies).toEqual([])
+    const posts = w.reviewPosts.filter(post => post.text.includes('Revisión:'))
+    expect(posts.map(post => post.text.split('\n')[0])).toEqual(['Revisión: investigación', 'Revisión: continuación'])
+    for (const link of links) expect(posts.filter(post => post.text.includes(`<${link}>`))).toHaveLength(1)
+    expect(w.broadcasts()).toEqual([])
+  })
+
   it('uses the new investigator question for sources and USIG instead of the old summary flag', async () => {
     const { w, finish } = world(wrong)
     await w.job().tick()
@@ -1097,6 +1158,13 @@ describe('tick: publisher investigation', () => {
       expect(String(url)).toContain('SAN%20MARTIN%20AV.&altura=5885')
       return Response.json({ barrio: 'Agronomia' })
     }
+    const quote = 'Av. San Martín 5885'
+    job.s.resolveQuestions = (input, questions) => resolveReviewQuestionsWithOpenAI(DEFAULT_REVIEW, 'synthetic', 'test', input, questions, async (_url, options) => {
+      const body = JSON.parse(String(options?.body))
+      if (body.text.format.name === 'publisher_citation_check') return modelResponse({ direct: [], venue: [flaggedId] })
+      expect(JSON.parse(body.input[0].content[0].text).events[0]).toMatchObject({ question: 'Which barrio should we show for the venue?', displayOnly: true })
+      return resolverResponse([], [selection(flaggedId, [{ url: postUrl, quote }], { url: postUrl, quote, street: 'Av. San Martín', number: '5885' })])
+    })
     await job.tick()
     const text = w.broadcasts()[0]?.text
     for (const resource of ['Which barrio', postUrl, '“Av. San Martín 5885”', 'barrio oficial: Agronomia']) expect(text).toContain(resource)
@@ -1200,16 +1268,16 @@ describe('tick: publisher investigation', () => {
     writeFileSync(join(runs[0]!.dir, 'fixes.jsonl'), '{"state":"submitted","receipt":{"operation":"unconfirmed"}}\n')
     finish(ok)
     const job = w.job()
-    let attempts = 0
-    job.s.resolveQuestions = async () => {
-      attempts++
+    const modes: Array<boolean | undefined> = []
+    job.s.resolveQuestions = async (_input, questions) => {
+      modes.push(...questions.map(item => item.displayOnly))
       return { model: 'fake-vision', resolved: [{ id: flaggedId, field: 'time', question: 'Is this the show time?', verdict: 'ok', reason: 'The venue lists showtime.',
         citations: [{ url: 'https://venue.example/show', quote: 'Show 21:00' }] }] }
     }
     await job.tick()
     slot(w)
     await job.tick()
-    expect(attempts).toBe(0)
+    expect(modes).toEqual([true])
     expect(w.draft().review?.investigation).toMatchObject({ catalogWriteHold: true, findings: { [flaggedId]: { verdict: 'ask' } } })
     expect(w.broadcasts()).toEqual([])
     expect(w.ig.published).toHaveLength(0)
@@ -1302,16 +1370,17 @@ describe('tick: publisher investigation', () => {
         const body = JSON.parse(String(request?.body))
         const payload = JSON.parse(body.input[0].content[0].text)
         if (body.text.format.name === 'publisher_citation_check') {
-          expect(payload.claims).toMatchObject([{ id: cepa, citations: [{ url: pricePost, quote: priceCaption }] }])
-          return modelResponse({ direct: [cepa] })
+          expect(payload.claims).toContainEqual(expect.objectContaining({ id: nomades, venue: expect.objectContaining({ url: nomadesPost, quote: addressFlyer }) }))
+          if (!silent && mode !== 'resources') expect(payload.claims).toContainEqual(expect.objectContaining({ id: cepa, proposed: expect.objectContaining({ citations: [{ url: pricePost, quote: priceCaption }] }) }))
+          return modelResponse({ direct: [cepa], venue: [nomades] })
         }
         expect(body.text.format.name).toBe('publisher_question_resolution')
-        expect(payload.events).toMatchObject([{ id: cepa, observations: [{ postUrl: genericPost }, { postUrl: pricePost }] }])
+        expect(payload.events).toContainEqual(expect.objectContaining({ id: cepa, posts: [expect.objectContaining({ url: genericPost }), expect.objectContaining({ url: pricePost })] }))
         // If a source lacks the cited fact, even a confident model output cannot clear that question.
         return resolverResponse([
-          { id: nomades, verdict: 'ok', field: 'barrio', reason: 'USIG confirms Agronomía.', citations: [{ url: usig, quote: 'Agronomia' }] },
           { id: cepa, verdict: 'ok', field: 'price', reason: 'The linked caption explicitly says entry is free.', citations: [{ url: pricePost, quote: priceCaption }] },
-        ])
+        ], [selection(nomades, [{ url: nomadesPost, quote: addressFlyer }], { url: nomadesPost, quote: addressFlyer, street: 'Av. San Martín', number: '5885' }),
+          selection(cepa, [{ url: pricePost, quote: priceFlyer }])])
       })
     if (mode === 'quick') job.s.resolveQuestions = resolver
     const draft = await job.regenerate(id, [])
@@ -1319,6 +1388,10 @@ describe('tick: publisher investigation', () => {
     if (mode === 'fallback') {
       // The first check left these questions open. Run the independent check at the investigation cap.
       draft.review!.result!.questionResolution = { quick: { model: 'fake-vision', resolved: [] } }
+      job.s.resolveQuestions = resolver
+    } else if (mode === 'resources') {
+      // Simulate an already reviewed, capped draft, with the model choosing quotes for the reply only.
+      draft.review!.result!.questionResolution = { quick: { model: 'fake-vision', resolved: [] }, fallback: { model: 'fake-vision', resolved: [] } }
       job.s.resolveQuestions = resolver
     }
     writeFileSync(job.draftFile(id), JSON.stringify(draft))
@@ -1329,10 +1402,11 @@ describe('tick: publisher investigation', () => {
       expect(w.reel(id)?.slack.ts).toBeNull()
       expect(w.broadcasts()).toEqual([])
       const audit = w.reel(id)?.review?.result?.questionResolution?.[mode === 'quick' ? 'quick' : 'fallback']
-      expect(audit?.resolved).toEqual([
-        expect.objectContaining({ id: nomades, verdict: 'ok', citations: [{ url: usig, quote: 'Agronomia' }] }),
+      expect(audit?.resolved).toEqual(expect.arrayContaining([
+        expect.objectContaining({ id: nomades, verdict: 'ok', citations: [{ url: nomadesPost, quote: addressFlyer }, { url: usig, quote: 'Agronomia' }] }),
         expect.objectContaining({ id: cepa, verdict: 'ok', citations: [{ url: pricePost, quote: priceCaption }] }),
-      ])
+      ]))
+      expect(audit?.resolved).toHaveLength(2)
       w.at('2026-11-27', 12, 1)
       await job.tick()
       expect(w.reel(id)?.state).toBe('published')
