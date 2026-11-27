@@ -1841,6 +1841,23 @@ describe('delegated draft decisions', () => {
     expect(w.logs).toContain(`${id}: could not send the delegated approve Slack reply`)
   })
 
+  it.each(['Slack', 'delegated'])('refuses a new approval on an already approved preview after a %s veto', async veto => {
+    const w = await previewed()
+    const job = w.job()
+    const { id, revision } = w.draft()
+    await job.delegateDecision('approve', id, revision, reason)
+    if (veto === 'Slack') w.reject()
+    else await job.delegateDecision('skip', id, revision, 'Slack message 1234.5679')
+    // The next tick has not settled the veto yet.
+    const draft = w.draft()
+    expect(draft.state).toBe('previewed')
+    const replies = w.replies()
+    await expect(job.delegateDecision('approve', id, revision, 'Slack message 1234.5680')).rejects.toThrow('Hanif already vetoed the draft')
+    await expect(job.delegateDecision('approve', id, revision, reason)).resolves.toBe(false)
+    expect(w.draft()).toEqual(draft)
+    expect(w.replies()).toEqual(replies)
+  })
+
   it('clears a delegated approval on rebuild and honors a veto on an earlier preview', async () => {
     const w = await previewed()
     const { id, slack } = w.draft()

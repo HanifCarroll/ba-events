@@ -1186,11 +1186,11 @@ export class Job {
       if (matches.length > 1) throw new Error(`${id}: multiple previews for r${revision}; use --preview-ts to identify the one Hanif approved.`)
       if (!matches[0] || this.pendingPreview(draft)) throw new Error(`${id}: no confirmed current preview for r${revision}.`)
       preview = matches[0]
-      if (draft.delegatedApprovals?.some(entry => entry.preview.revision === revision && entry.preview.ts === preview.ts && entry.preview.channel === preview.channel)) return false
       const decision = await this.readDecision(draft)
       const now = this.s.now()
       if (now >= cutoff) throw new Error(`${id}: the Instagram approval cutoff has passed.`)
       if (decision.rejected) throw new Error(`${id}: Hanif already vetoed the draft.`)
+      if (draft.delegatedApprovals?.some(entry => entry.preview.revision === revision && entry.preview.ts === preview.ts && entry.preview.channel === preview.channel)) return false
       const needsInstagram = preview.instagram && !decision.approved && !this.instagramAuto(draft)
       const needsThreads = preview.threads && !decision.threadsApproved && this.threadsApprovalOpen(draft) && !this.threadsAuto(draft)
       if (!needsInstagram && !needsThreads) throw new Error(`${id}: no destination on the specified preview needs approval.`)
