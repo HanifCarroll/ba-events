@@ -4,7 +4,7 @@ import type { FixReceipt } from './catalog-fix.ts'
 import type { RecordedCheck } from './investigation.ts'
 import type { ReviewEvidenceFlag } from './review.ts'
 import type { ReviewResources } from './review-evidence.ts'
-import type { ReviewSelection, VenueAddress } from './review-resolution.ts'
+import type { QuestionEvidence, ReviewSelection, VenueAddress } from './review-resolution.ts'
 
 export interface ReviewPartReceipt { id: string; since: number }
 export interface ReviewReplyDelivery {
@@ -97,8 +97,7 @@ export interface ReviewEventReply {
   checks?: RecordedCheck[]
 }
 
-export function eventResourceLines(id: string, evidence: ReviewResources | undefined, selection?: ReviewSelection) {
-  const lines = [`<https://baeventos.com/events/${encodeURIComponent(id)}|Evento en BA Eventos>`]
+export function sourceReadings(evidence: ReviewResources | undefined, selection?: ReviewSelection) {
   const sources = new Map<string, { label: string; caption?: string; excerpt?: string }>()
   for (const observation of evidence?.observations ?? []) {
     if (!publicReviewUrl(observation.postUrl)) continue
@@ -113,18 +112,29 @@ export function eventResourceLines(id: string, evidence: ReviewResources | undef
     source.excerpt ||= page.excerpt.trim()
     sources.set(page.url, source)
   }
-  for (const [url, { label, caption, excerpt }] of sources) {
-    const chosen = selection?.quotes.find(item => item.url === url)?.quote ?? (caption || excerpt)
-    lines.push(`${label}: ${slackLink(url)}\n${chosen ? quote(chosen) : 'Sin texto en esta fuente.'}`)
+  return [...sources].map(([url, { label, caption, excerpt }]) => ({ url, label, quote:
+    selection?.quotes.find(item => item.url === url)?.quote ?? (caption || excerpt)?.trim().slice(0, 400) ?? null }))
+}
+
+export function eventResourceLines(id: string, evidence: ReviewResources | undefined, selection?: ReviewSelection, record?: QuestionEvidence) {
+  const lines = [`<https://baeventos.com/events/${encodeURIComponent(id)}|Evento en BA Eventos>`]
+  const readings = record?.sources ?? sourceReadings(evidence, selection)
+  for (const source of readings) {
+    lines.push(`${source.label}: ${slackLink(source.url)}\n${source.quote ? quote(source.quote) : 'Sin texto en esta fuente.'}`)
   }
-  if (!evidence) lines.push('No se pudo cargar la evidencia del catálogo.')
+  if (!record && !evidence) lines.push('No se pudo cargar la evidencia del catálogo.')
+  if (record?.state === 'complete' && !record.conclusion) {
+    const why = !readings.length ? 'No hay fuentes públicas vinculadas.' : selection?.conflictingAddresses
+      ? 'Las fuentes no coinciden en el lugar de la función.' : 'Las fuentes consultadas no permiten confirmar el dato para esta función.'
+    lines.push(`Por qué sigue abierta la pregunta: ${why}`)
+  }
   if (selection && selection.topic !== 'other') lines.push(barrioLine(selection))
   return lines
 }
 
-export function eventReplyLines(item: ReviewEventReply, evidence: ReviewResources | undefined, fixes: FixReceipt[], selection?: ReviewSelection) {
-  const lines = [withReviewLinks(`${item.title}: ${item.detail}`), ...eventResourceLines(item.id, evidence, selection)]
-  const checks = recordedCheckLines(item.checks ?? [], fixes)
+export function eventReplyLines(item: ReviewEventReply, evidence: ReviewResources | undefined, fixes: FixReceipt[], selection?: ReviewSelection, record?: QuestionEvidence) {
+  const lines = [withReviewLinks(`${item.title}: ${item.detail}`), ...eventResourceLines(item.id, evidence, record ?? selection, record)]
+  const checks = recordedCheckLines([...(record?.history ?? []), ...(item.checks ?? [])], fixes)
   lines.push(...(checks.length ? checks : [`Not investigated: ${slackLiteral(item.notInvestigated)}`]))
   return lines
 }
