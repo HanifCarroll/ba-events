@@ -4,6 +4,7 @@ import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSyn
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { applyCatalogFix, catalogRowSql, eventId, fixInput, line, StaleCatalogFix, type CatalogQuery, type FixInput, type FixReceipt } from './catalog-fix.ts'
+import { hasDelegatedVeto } from './delegation.ts'
 import { parseDraftId } from './formats.ts'
 import { InvestigatorToolError } from './investigator-error.ts'
 import { finding, hasCompleted, location, readJson, unitName, type InvestigationRequest } from './investigation.ts'
@@ -49,7 +50,7 @@ function active(dir: string) {
   const draft = readJson(join(runtime.STATE_DIR, 'drafts', `${request.id}.json`)) as Draft | null
   const saved = draft?.review?.investigation
   if (!draft || draft.state !== 'previewed' || draft.revision !== request.revision || draft.framesHash !== request.framesHash ||
-      draft.publish || draft.storyShare || draft.approvedSeenAt || saved?.findings || saved?.request.startsAt !== request.startsAt ||
+      draft.publish || draft.storyShare || draft.approvedSeenAt || hasDelegatedVeto(runtime.STATE_DIR, request.id) || saved?.findings || saved?.request.startsAt !== request.startsAt ||
       saved.request.copyHash !== request.copyHash) throw new InvestigatorToolError('The investigation no longer owns this preview.')
   return request
 }

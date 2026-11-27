@@ -4,19 +4,18 @@ import type { D1Database, VectorizeIndex } from '@cloudflare/workers-types'
 import type { ChatEventPayload, EventFilters, Venue } from '../types.ts'
 import { BA_TIMEZONE } from '../constants.ts'
 import { tsRankCd, websearchToFts5 } from '../search/websearch-fts5.ts'
+import { eventColumnsWith } from './event-columns.ts'
 
 /** Vectorize returns at most 100 matches when it doesn't return values or metadata. */
 export const VECTORIZE_TOP_K = 100
 /** The cosine similarity a semantic match must exceed, as in `match_events_with_venues_filtered`. */
 export const SEMANTIC_MATCH_THRESHOLD = 0.2
 
-/** The `events_with_venues` columns (without embedding and search_document), over events e and venues v. */
-export const EVENT_COLUMNS = `e.id, e.name, e.description_es, e.description_en, e.description_display_es, e.description_display_en,
-  e.description_summary_es, e.description_summary_en, e.starts_at, e.ends_at, e.doors_at, e.is_all_day, e.time_tba, e.venue_id,
-  e.categories, e.price, e.is_free, e.min_age, e.image_url, e.image_width, e.image_height, e.link, e.ticket_url, e.source,
-  e.external_id, e.status, e.location_hidden, e.location_tba, e.description_unavailable, e.enrichment_status,
-  e.enrichment_error, e.enriched_at, e.created_at, e.updated_at, v.name AS venue_name, v.neighborhood AS venue_neighborhood,
-  v.address AS venue_address, e.facets`
+/** Event fields and joined venue fields in the search projection. */
+export const EVENT_COLUMNS = [
+  ...eventColumnsWith('public', 'card', 'search').map(column => `e.${column}`),
+  'v.name AS venue_name', 'v.neighborhood AS venue_neighborhood', 'v.address AS venue_address',
+].join(', ')
 export const FROM_EVENTS = 'events e LEFT JOIN venues v ON v.id = e.venue_id'
 
 const text = Schema.NullOr(Schema.String)

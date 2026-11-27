@@ -8,6 +8,7 @@ import type {
 import { generateEmbedding } from '../ai/embeddings.ts'
 import { rrfFuse } from '../search/rrf.ts'
 import { withReadSignal } from './read-signal.ts'
+import { eventColumnsWith } from './event-columns.ts'
 import { cloudflareSearchBackend } from './search-bindings.server.ts'
 import {
   countEventsWithFiltersD1,
@@ -65,13 +66,10 @@ const EVENT_ADMIN_COLUMNS = `
   venue_name, venue_neighborhood, venue_address
 `
 
-// Columns needed by chat tools and event cards. Excludes embedding so vectors do
-// not leave the database for chat display or message attachment paths.
-const PUBLIC_EVENT_COLUMNS = `
-  id, name, description_display_es, description_display_en, description_summary_es, description_summary_en,
-  starts_at, ends_at, doors_at, is_all_day, time_tba, venue_id, categories, price, is_free, min_age, image_url,
-  link, ticket_url, status, location_hidden, venue_name, venue_neighborhood, venue_address
-`
+// Columns needed by chat tools and event cards.
+const PUBLIC_EVENT_COLUMNS = [
+  ...eventColumnsWith('public', 'card'), 'venue_name', 'venue_neighborhood', 'venue_address',
+].join(', ')
 
 export async function getEventsWithVenues(limit = 50) {
   return (await eventsByStartD1(boundCatalogD1(), limit)).map(row => pickColumns<EventWithVenue>(row, EVENT_ADMIN_COLUMNS))

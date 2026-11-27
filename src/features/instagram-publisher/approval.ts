@@ -1,11 +1,11 @@
 /** The approval state machine: what a tick does with a previewed draft, given Hanif's reactions and the clock. */
-import type { SkipReason } from './copy.ts'
+import { delegatedReply, type SkipReason } from './copy.ts'
 import { TICK_MS, type RunWindow } from './formats.ts'
 
 /** Ticks run every 10 minutes and Slack's reactions carry no time, so a ✅ first seen within one tick of the cutoff counts. */
 export const TICK_GRACE_MS = TICK_MS
 
-export interface Reactions { approved: boolean; rejected: boolean }
+export interface Reactions { approved: boolean; rejected: boolean; delegatedVeto?: boolean }
 
 export type Decision = { action: 'wait' } | { action: 'publish' } | { action: 'skip'; reason: SkipReason }
 
@@ -15,7 +15,7 @@ export type Decision = { action: 'wait' } | { action: 'publish' } | { action: 's
  * publishing at or after the deadline (Hoy 19:00, carousels the cutoff).
  */
 export function decide(window: RunWindow, reactions: Reactions, approvedSeenAt: Date | null, auto: boolean, now: Date): Decision {
-  if (reactions.rejected) return { action: 'skip', reason: { kind: 'rejected' } }
+  if (reactions.rejected) return { action: 'skip', reason: { kind: reactions.delegatedVeto ? 'delegated-skip' : 'rejected' } }
   if (now < window.publishAt) return { action: 'wait' }
   const approvedInTime = reactions.approved && approvedSeenAt !== null && approvedSeenAt.getTime() < window.cutoff.getTime() + TICK_GRACE_MS
   if (now < window.deadline && (approvedInTime || auto)) return { action: 'publish' }
@@ -31,13 +31,20 @@ export class PublishStop extends Error {
     message: string,
     /** For 'stale': the event and why it no longer belongs in the post. */
     readonly stale?: { id: string; title: string; why: 'cancelled' | 'over' | 'scope'; detail: string },
+    readonly delegatedVeto = false,
   ) { super(message) }
+}
+
+export function checkVeto(reactions: Reactions) {
+  if (reactions.rejected) {
+    throw new PublishStop('rejected', reactions.delegatedVeto ? delegatedReply.skip : 'Hanif reacted ❌', undefined, reactions.delegatedVeto)
+  }
 }
 
 /** The check before every new Instagram write: the deadline, then Hanif's current reactions. */
 export function checkWrite(window: RunWindow, reactions: Reactions, auto: boolean, now: Date) {
   if (now >= window.deadline) throw new PublishStop('deadline', 'The publishing deadline has passed')
-  if (reactions.rejected) throw new PublishStop('rejected', 'Hanif reacted ❌')
+  checkVeto(reactions)
   if (!auto && !reactions.approved) throw new PublishStop('unapproved', "Hanif's ✅ is no longer on the preview")
 }
 

@@ -79,8 +79,13 @@ function barrioLine({ lookup, conflictingAddresses }: ReviewSelection) {
 function checkText({ finding }: RecordedCheck, fixes: FixReceipt[]) {
   if (finding.verdict === 'ask') return [finding.checked]
   if (finding.verdict === 'ok') return [`${finding.reason} (${finding.url})`, finding.checked]
-  if (finding.verdict === 'exclude') return [finding.checked ?? finding.hermes ?? finding.reason]
+  // The investigator may cite the correction in the instruction to Hermes, with or without a checked note.
+  if (finding.verdict === 'exclude') return [finding.reason, finding.checked, finding.hermes]
   return [finding.checked, ...fixes.filter(fix => finding.fixes.includes(fix.operation)).map(fix => fix.evidence)]
+}
+
+export function recordedCheckLines(checks: RecordedCheck[], fixes: FixReceipt[]) {
+  return [...new Set(checks.flatMap(check => checkText(check, fixes).flatMap(text => text ? [`Checked (r${check.revision}): ${withReviewLinks(text)}`] : [])))]
 }
 
 export interface ReviewEventReply {
@@ -119,8 +124,8 @@ export function eventResourceLines(id: string, evidence: ReviewResources | undef
 
 export function eventReplyLines(item: ReviewEventReply, evidence: ReviewResources | undefined, fixes: FixReceipt[], selection?: ReviewSelection) {
   const lines = [withReviewLinks(`${item.title}: ${item.detail}`), ...eventResourceLines(item.id, evidence, selection)]
-  const checks = (item.checks ?? []).flatMap(check => checkText(check, fixes).flatMap(text => text ? [`Checked (r${check.revision}): ${withReviewLinks(text)}`] : []))
-  lines.push(...(checks.length ? [...new Set(checks)] : [`Not investigated: ${slackLiteral(item.notInvestigated)}`]))
+  const checks = recordedCheckLines(item.checks ?? [], fixes)
+  lines.push(...(checks.length ? checks : [`Not investigated: ${slackLiteral(item.notInvestigated)}`]))
   return lines
 }
 

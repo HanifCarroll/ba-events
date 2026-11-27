@@ -88,19 +88,27 @@ The Reel MUST be one 1080 × 1920 H.264/AAC MP4 at 30 fps, drafted Thursday 18:0
 - **THEN** the draft fails with an alert that names the install command
 
 ### Requirement: Slack previews request approval only when needed
-While approval is open, a rendered draft MUST request approval in a top-level Slack preview when an enabled publication needs Hanif's ✅. This includes manual mode, an unavailable review, and unresolved questions requiring Hanif's decision. A confirmed error alone does not require his decision. If Threads later needs approval and its text was not shown, the new preview MUST show its text and request only the missing approval. A ✅ applies only to the destinations and content revision it showed and does not replace approval for unchanged Instagram content. The preview MUST attach every frame (for a Reel, the video, and a last line naming the track). It MUST use `slack.channel` from publisher config, defaulting to #alerts (`C0CG3EGKKP1`), and save that channel with the preview. Existing previews without a stored channel MUST keep using #ba-eventos (`C0CHBCSEV3R`). Only Hanif's ✅ and ❌ reactions on an existing preview count; thread replies do not. Routine outcomes MUST only reply under an existing preview. Failures continue through the alert path.
+While approval is open, a rendered draft MUST request approval in a top-level Slack preview when an enabled publication needs Hanif's ✅. This includes manual mode, an unavailable review, and unresolved questions requiring Hanif's decision. A confirmed error alone does not require his decision. If Threads later needs approval and its text was not shown, the new preview MUST show its text and request only the missing approval. A ✅ applies only to the destinations and content revision it showed and does not replace approval for unchanged Instagram content. The preview MUST attach every frame (for a Reel, the video, and a last line naming the track). It MUST use `slack.channel` from publisher config, defaulting to #alerts (`C0CG3EGKKP1`), and save that channel with the preview. Existing previews without a stored channel MUST keep using #ba-eventos (`C0CHBCSEV3R`). Only Hanif's ✅ and ❌ reactions on an existing preview count as Slack decisions; bot reactions and thread replies do not. Hermes may record Hanif's explicit decision using the local publisher CLI. Routine outcomes MUST only reply under an existing preview. Failures continue through the alert path.
 
 #### Scenario: Hanif reacts ❌
 - **WHEN** Hanif's ❌ is on any preview of the draft before the post goes out, including an earlier revision or a preview for only one destination
 - **THEN** the draft is skipped, even if it later qualified for auto mode, and the thread gets "Skipped: you reacted ❌"
 
-#### Scenario: No ✅ by the cutoff
-- **WHEN** there is no ✅ by 17:00 for Hoy, Friday 18:00 for Este finde and the Reel, or Tuesday 20:00 for Gratis, and auto mode is off
+#### Scenario: Hanif asks Hermes to decide
+- **WHEN** Hermes runs `approve <draft-id> --revision <n> --reason "<instruction source>"` for the current preview while it still needs approval and before the Instagram approval cutoff
+- **THEN** the job checks the current votes before recording a new approval. If the revision has multiple previews, a new approval requires `--preview-ts <Slack timestamp>` for the one Hanif approved. Retrying an instruction never approves a different preview
+- **AND** the job records the revision, preview destinations, time, actor `hermes`, and reason. The approval is equivalent to an in-time ✅ for those destinations only and is checked before new publishing writes. A recorded Instagram approval closes the investigator's catalog-correction guard; a Threads-only approval does not
+- **AND** a rebuild clears delegated approvals. Hanif's ❌ on any preview still wins, but removing a ✅ does not withdraw a delegated approval
+- **AND** `skip <draft-id> --revision <n> --reason "<instruction source>"` can record a permanent veto for a retained preview even while a tick is running. The veto prevents rebuilding and stops new writes to either destination, including an unsent Threads post after Instagram publishes. Already-dispatched writes can finish, and the publisher still reconciles the outcome and recovers permalinks
+- **AND** a repeated decision for the same preview does not rewrite the audit entry or send another reply. A newly recorded decision posts one Spanish acknowledgment attempt in the preview thread; the job logs a Slack failure without undoing the decision
+
+#### Scenario: No approval by the cutoff
+- **WHEN** there is no in-time approval by 17:00 for Hoy, Friday 18:00 for Este finde and the Reel, or Tuesday 20:00 for Gratis, and auto mode is off
 - **THEN** the draft is skipped and the thread gets "Skipped: no ✅ by {HH:MM}"
 
 #### Scenario: Approval changes after publishing has started
-- **WHEN** a draft is publishing and Hanif reacts ❌, or removes his ✅ with auto mode off
-- **THEN** no further Instagram write is made: ❌ skips the draft, a removed ✅ pauses it
+- **WHEN** a draft is publishing and Hanif reacts ❌, Hermes records a veto, or Hanif removes his ✅ with auto mode off and without a delegated approval
+- **THEN** no further Instagram write is made: a veto skips the draft, a withdrawn approval pauses it
 
 #### Scenario: Past the deadline
 - **WHEN** the deadline has passed (Hoy 19:00, a carousel's or the Reel's cutoff)
@@ -189,7 +197,7 @@ After rendering, the publisher MUST review the still frames (for a Reel, its cov
 #### Scenario: Public evidence answers a pending question
 - **WHEN** a quick-review event question or a fallback question would otherwise need Hanif's decision
 - **THEN** the publisher asks its configured reviewer model to check every linked source's full caption and stored excerpts, regardless of intake tags, and all official page excerpts
-- **AND** it may clear or confirm the flag only with a public URL and a verified verbatim quote about the flagged fact. For an address or barrio question, the model must identify a quoted street and number for this event's performance venue, not a ticket office or another location. The publisher verifies the quoted street and number and uses USIG only when the public sources agree. It compares the official USIG barrio directly with the card for a barrio question; the catalog's own address cannot substitute for public proof. It records the original question, conclusion, and citations on that revision
+- **AND** it may clear or confirm the flag only with a public URL and a verified verbatim quote about the flagged fact. For an address or barrio question, the model must identify a quoted street and number for this event's performance venue, not a ticket office or another location. The publisher verifies that both values appear verbatim in the cited quote without interpreting its layout. The reviewer checks that they are the complete street and number of the same performance address. The publisher uses USIG only when the public sources agree. It compares the official USIG barrio directly with the card for a barrio question; the catalog's own address cannot substitute for public proof. It records the original question, conclusion, and citations on that revision
 - **AND** a confirmed contradiction goes to Hermes even when a replacement can be built immediately. Missing, conflicting, unverified, or unavailable evidence leaves the original question open. A fallback answer never overrides a hold for an unreconciled catalog correction
 
 #### Scenario: An unresolved review needs Hanif's decision
@@ -202,8 +210,8 @@ After rendering, the publisher MUST review the still frames (for a Reel, its cov
 - **WHEN** the job sends a quick-review or investigation reply with an event question or problem
 - **THEN** for each flagged event it includes a one-line question or problem, the public catalog event link, and every linked public source post and official page URL. For each URL it shows a short verbatim excerpt the model selected for the current flag. If the model provides no valid selection, the reply shows the start of the source caption or available excerpt instead. Event-specific fix alerts include the same links and excerpts
 - **AND** for an address or barrio flag with a verified performance address, it reports the result or failure of the short anonymous USIG lookup and includes the lookup link
-- **AND** it includes recorded investigator conclusions and their cited URLs for that event from this or earlier rounds of the same draft. If none were recorded, it says why the event was not investigated instead of presenting a cap or failure as evidence. Event-specific fix alerts carry the investigator's `checked` finding and links, even if a rebuild removed the event without creating a Slack preview
-- **AND** untrusted text cannot inject Slack formatting or mentions. The job saves every part of an ordinary multipart reply before sending and reconciles uncertain sends, including its first part, before retrying. Overflow continues in the same Slack thread without cutting links or broadcasting a second decision notice
+- **AND** it includes recorded investigator conclusions and their cited URLs for that event from this or earlier rounds of the same draft, including exclusion evidence recorded in `hermes`. If none were recorded, it says why the event was not investigated instead of presenting a cap or failure as evidence. Event-specific fix alerts carry the investigator's conclusion, `checked` notes, and cited URLs from the current and earlier rounds, even if a rebuild removed the event without creating a Slack preview
+- **AND** untrusted text cannot inject Slack formatting or mentions. The job saves every part of an ordinary multipart reply before sending and reconciles uncertain sends, including its first part, before retrying. Overflow continues in order in its Slack thread without cutting links or broadcasting a second decision notice. An unreconciled send does not block delivery to other threads
 
 #### Scenario: Investigation fails
 - **WHEN** the investigator cannot start, times out, or exits without a complete, valid, on-time result

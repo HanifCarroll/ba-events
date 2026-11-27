@@ -9,10 +9,11 @@ import { randomUUID } from 'node:crypto'
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { FixReceipt } from './catalog-fix.ts'
-import { PublishStop, checkWrite, decide, readReactions, type Reactions } from './approval.ts'
+import { PublishStop, checkVeto, checkWrite, decide, readReactions, type Reactions } from './approval.ts'
 import * as alerts from './alerts.ts'
 import { fetchArtwork, type Artwork } from './artwork.ts'
-import { caption as captionFor, footerHandle, heldText, postedText, skippedMentionsText, skipText, slackPreview, tooFewText, type SkipReason } from './copy.ts'
+import { caption as captionFor, delegatedReply, footerHandle, heldText, postedText, skippedMentionsText, skipText, slackPreview, tooFewText, type SkipReason } from './copy.ts'
+import { hasDelegatedVeto, recordDelegatedVeto, type DelegatedDecision, type PreviewThread } from './delegation.ts'
 import { baLocal } from './format.ts'
 import { FORMATS, activeRuns, draftId, parseDraftId, runWindow, type FormatKey, type RunWindow } from './formats.ts'
 import { FRAME, LAYOUT_VERSION, framesHtml } from './html.ts'
@@ -22,7 +23,7 @@ import { fixLog, investigatorRunning, startInvestigator, stopInvestigator } from
 import { nextTrack, readTracks, readyTrack, type DraftTrack, type ReadyTrack } from './reel/music.ts'
 import { reelTiming, type ReelTiming } from './reel/project.ts'
 import type { ReviewResources } from './review-evidence.ts'
-import { eventReplyLines, eventResourceLines, lookupReviewBarrio, splitReviewReply, streetForUsig, withReviewLinks, type ReviewBarrioLookup, type ReviewEventReply, type ReviewPartReceipt, type ReviewReplyDelivery } from './review-reply.ts'
+import { eventReplyLines, eventResourceLines, lookupReviewBarrio, recordedCheckLines, splitReviewReply, streetForUsig, withReviewLinks, type ReviewBarrioLookup, type ReviewEventReply, type ReviewPartReceipt, type ReviewReplyDelivery } from './review-reply.ts'
 import { adjudicateReviewQuestions, type QuestionResolver, type ReviewCitation, type ReviewSubject } from './review-resolution.ts'
 import { allOk, copyHash, validateReview, type ReviewInput, type ReviewResult, type ReviewState, type Reviewer, type Verdict } from './review.ts'
 import * as runtime from './runtime.ts'
@@ -69,7 +70,9 @@ export interface Draft {
   catalogFixes?: FixReceipt[]
   /** The active preview can outlive its revision. A pending share does not replace it until confirmed. */
   slack: { fileIds: string[]; ts: string | null; auto?: boolean; channel?: string; revision?: number; previews?: PreviewThread[]; pending?: PreviewShare }
+  /** First observed Instagram ✅ or the time Hermes recorded Instagram approval for this revision. */
   approvedSeenAt: string | null
+  delegatedApprovals?: DelegatedDecision[]
   r2Uploaded: string | null
   publish: PublishState | null
   /** Present only when a new preview was built with Threads enabled. It owns its own outcome and Slack reply. */
@@ -169,7 +172,7 @@ const REVIEW_ALERT_LEAD_MS = 30 * 60_000
 /** States a tick no longer advances (a pending notification is still delivered). */
 const SETTLED: DraftState[] = ['published', 'skipped', 'failed', 'held']
 
-type PreviewThread = { ts: string; channel: string; revision: number; instagram: boolean; threads: boolean }
+type DelegatedAction = keyof typeof delegatedReply
 type PreviewShare = { fileIds: string[]; channel: string; revision: number; includesThreads: boolean; includesInstagram?: boolean }
 type DraftDecision = Reactions & { threadsApproved: boolean }
 const undecided: DraftDecision = { approved: false, rejected: false, threadsApproved: false }
@@ -468,8 +471,19 @@ export class Job {
       && (threads.state === 'waiting' || threads.state === 'publishing') ? threadsWindow(draft.format, draft.from) : null
   }
 
+  private delegatedApproval(draft: Draft, destination: 'instagram' | 'threads') {
+    return draft.delegatedApprovals?.find(({ preview }) => preview.revision === draft.revision && preview[destination])
+  }
+
+  private delegatedVeto(draft: Draft): DraftDecision | undefined {
+    if (hasDelegatedVeto(this.s.stateDir, draft.id)) return { ...undecided, rejected: true, delegatedVeto: true }
+  }
+
   private async readDecision(draft: Draft): Promise<DraftDecision> {
-    const decision = { ...undecided }
+    const veto = this.delegatedVeto(draft)
+    if (veto) { this.assertCurrent(draft); return veto }
+    const decision = { approved: Boolean(this.delegatedApproval(draft, 'instagram')), rejected: false,
+      threadsApproved: Boolean(this.delegatedApproval(draft, 'threads')) }
     let failure = this.pendingPreview(draft) ? new DecisionUnknown('Slack preview lookup failed: the upload has no message yet') : undefined
     for (const preview of this.previewThreads(draft)) {
       try {
@@ -484,6 +498,8 @@ export class Job {
       }
     }
     this.assertCurrent(draft)
+    const latestVeto = this.delegatedVeto(draft) // Hermes can veto while Slack is responding.
+    if (latestVeto) return latestVeto
     if (decision.rejected) return { ...undecided, rejected: true }
     if (failure) throw failure
     return decision
@@ -672,22 +688,22 @@ export class Job {
     return citations.map(({ url, quote }) => `${url} — “${quote}”`).join('; ')
   }
 
-  private queueReviewFix(draft: Draft, id: string, finding: Verdict, checked?: string) {
+  private queueReviewFix(draft: Draft, id: string, finding: Verdict, { checked, recorded }: alerts.ReviewFixEvidence = {}) {
     const quick = draft.review?.result?.questionResolution?.quick?.resolved.find(item => item.id === id && item.verdict === 'wrong')
     const pending = draft.pendingReviewFixes ??= []
-    pending.push(alerts.reviewFix(draft, id, finding, checked ?? (quick ? this.citationText(quick.citations) : undefined)))
+    pending.push(alerts.reviewFix(draft, id, finding, { checked: checked ?? (quick ? this.citationText(quick.citations) : undefined), recorded }))
   }
 
   private queueInvestigationRepairAlert(draft: Draft, investigation: Investigation) {
     if (investigation.repairAlertQueued) return
     for (const [id, item] of Object.entries(investigation.findings ?? {})) {
       const field = investigation.request.events.find(event => event.id === id)?.field ?? null
+      const evidence = { recorded: { revision: draft.revision, finding: item } }
       if (item.verdict === 'exclude' && !item.hermes) {
-        this.queueReviewFix(draft, id, { verdict: 'wrong', field, reason: item.reason, question: null }, item.checked)
+        this.queueReviewFix(draft, id, { verdict: 'wrong', field, reason: item.reason, question: null }, evidence)
       } else if (item.verdict === 'fixed') {
-        const checked = [item.checked, ...(draft.catalogFixes ?? []).filter(fix => item.fixes.includes(fix.operation)).map(fix => fix.evidence)].filter(Boolean).join('; ')
         this.queueReviewFix(draft, id, { verdict: 'wrong', field, question: null,
-          reason: 'The catalog was corrected but this revision still shows the old information. Rebuild before publishing.' }, checked)
+          reason: 'The catalog was corrected but this revision still shows the old information. Rebuild before publishing.' }, evidence)
       }
     }
     investigation.repairAlertQueued = true
@@ -857,7 +873,7 @@ export class Job {
           investigation.findings = findings
           for (const [id, item] of Object.entries(findings)) if ('hermes' in item && item.hermes) {
             const field = item.verdict === 'ask' ? null : request.events.find(event => event.id === id)?.field ?? null
-            this.queueReviewFix(draft, id, { verdict: 'wrong', field, reason: item.hermes, question: null }, item.checked)
+            this.queueReviewFix(draft, id, { verdict: 'wrong', field, reason: item.hermes, question: null }, { recorded: { revision: request.revision, finding: item } })
           }
           this.collectCatalogFixes(draft)
           this.save(draft)
@@ -975,7 +991,7 @@ export class Job {
       const checked = this.citationText(item.citations)
       findings[item.id] = item.verdict === 'ok' ? { verdict: 'ok', reason: item.reason, url, checked }
         : { verdict: 'exclude', reason: item.reason, checked, hermes: item.reason }
-      if (item.verdict === 'wrong') this.queueReviewFix(draft, item.id, { verdict: 'wrong', field: item.field, reason: item.reason, question: null }, checked)
+      if (item.verdict === 'wrong') this.queueReviewFix(draft, item.id, { verdict: 'wrong', field: item.field, reason: item.reason, question: null }, { checked })
     }
     result.questionResolution = { ...result.questionResolution, fallback: audit }
     this.save(draft)
@@ -1078,32 +1094,38 @@ export class Job {
   private async sendReviewOverflow(draft: Draft) {
     const pending = draft.pendingReviewReplies
     if (!pending?.length) return
-    while (pending.length) {
-      const delivery = pending[0]!
+    const blocked = new Set<string>()
+    for (const delivery of [...pending]) {
+      let threadKey: string | undefined
       try {
         if (!delivery.threadTs && delivery.parent) {
           delivery.threadTs = await this.s.slackReviewReceipt(delivery.channel, null, delivery.parent)
           if (delivery.threadTs) this.save(draft)
         }
-        if (!delivery.threadTs) return
-        const posted = delivery.inFlight && await this.s.slackReviewReceipt(delivery.channel, delivery.threadTs, delivery.inFlight)
-        if (!posted) {
-          delivery.inFlight ??= this.reviewPartReceipt()
-          this.save(draft)
-          try { await this.s.slackPost(delivery.parts[0]!, delivery.threadTs, delivery.channel, false, delivery.inFlight) } catch (error) {
-            if (error instanceof runtime.SlackRejected) { delete delivery.inFlight; this.save(draft) }
-            throw error
+        // A missing parent can only belong to its own top-level notice, not another preview thread.
+        if (!delivery.threadTs) continue
+        threadKey = `${delivery.channel}:${delivery.threadTs}`
+        if (blocked.has(threadKey)) continue
+        while (delivery.parts.length) {
+          const posted = delivery.inFlight && await this.s.slackReviewReceipt(delivery.channel, delivery.threadTs, delivery.inFlight)
+          if (!posted) {
+            delivery.inFlight ??= this.reviewPartReceipt()
+            this.save(draft)
+            try { await this.s.slackPost(delivery.parts[0]!, delivery.threadTs, delivery.channel, false, delivery.inFlight) } catch (error) {
+              if (error instanceof runtime.SlackRejected) { delete delivery.inFlight; this.save(draft) }
+              throw error
+            }
           }
+          delete delivery.inFlight
+          delivery.parts.shift()
+          if (!delivery.parts.length) pending.splice(pending.indexOf(delivery), 1)
+          this.save(draft)
         }
-        delete delivery.inFlight
-        delivery.parts.shift()
-        if (!delivery.parts.length) pending.shift()
-        this.save(draft)
       } catch (error) {
         if (error instanceof DraftChanged) throw error
-        // Rejections of a read are not proof about the write. Keep the part and its receipt either way.
+        // A failed read is not proof about the write. Keep the receipt and this thread's ordering.
+        if (threadKey) blocked.add(threadKey)
         this.s.log(`${draft.id}: could not deliver or reconcile review continuation.`)
-        return
       }
     }
   }
@@ -1131,12 +1153,72 @@ export class Job {
   }
 
   private async skip(draft: Draft, reason: SkipReason) {
-    if (reason.kind === 'rejected' && draft.threads && this.s.config().threads.enabled) stopThreads(draft.threads, 'rejected')
+    if (draft.threads && (reason.kind === 'delegated-skip' || (reason.kind === 'rejected' && this.s.config().threads.enabled))) {
+      stopThreads(draft.threads, reason.kind)
+    }
     const text = skipText(reason)
-    await this.settle(draft, 'skipped', text, { skipReason: text })
+    await this.settle(draft, 'skipped', reason.kind === 'delegated-skip' ? null : text, { skipReason: text })
     if (draft.publishFailures && reason.kind !== 'too-few') {
       await this.s.resolveAlert(alerts.draftKey(draft), alerts.publishSkipped(draft, reason, this.s.now()))
     }
+  }
+
+  /** Approval takes the tick lock. Veto writes only its own permanent receipt, even during a tick. */
+  async delegateDecision(action: DelegatedAction, id: string, revision: number, reason: string, previewTs?: string): Promise<boolean> {
+    const { format, from } = parseDraftId(id)
+    const draft = this.loadDraft(id)
+    if (!draft) throw new Error(`No draft ${id}; see \`status\``)
+    reason = reason.trim()
+    if (!reason) throw new Error('Give the source of Hanif’s instruction in --reason.')
+    const previews = this.previewThreads(draft)
+    let preview: PreviewThread
+    if (action === 'approve') {
+      if (revision !== draft.revision) throw new Error(`${id}: current revision is r${draft.revision}, not r${revision}.`)
+      if (draft.state !== 'previewed') throw new Error(`${id}: cannot approve a draft in state ${draft.state}.`)
+      const { cutoff } = runWindow(format, from)
+      if (this.s.now() >= cutoff) throw new Error(`${id}: the Instagram approval cutoff has passed.`)
+      const replay = draft.delegatedApprovals?.find(entry => entry.preview.revision === revision && entry.reason === reason)
+      if (replay) {
+        if (previewTs && replay.preview.ts !== previewTs) throw new Error(`${id}: that instruction already approved a different preview.`)
+        return false
+      }
+      const matches = previews.filter(item => item.revision === revision && (!previewTs || item.ts === previewTs))
+      if (matches.length > 1) throw new Error(`${id}: multiple previews for r${revision}; use --preview-ts to identify the one Hanif approved.`)
+      if (!matches[0] || this.pendingPreview(draft)) throw new Error(`${id}: no confirmed current preview for r${revision}.`)
+      preview = matches[0]
+      const decision = await this.readDecision(draft)
+      const now = this.s.now()
+      if (now >= cutoff) throw new Error(`${id}: the Instagram approval cutoff has passed.`)
+      if (decision.rejected) throw new Error(`${id}: Hanif already vetoed the draft.`)
+      if (draft.delegatedApprovals?.some(entry => entry.preview.revision === revision && entry.preview.ts === preview.ts && entry.preview.channel === preview.channel)) return false
+      const needsInstagram = preview.instagram && !decision.approved && !this.instagramAuto(draft)
+      const needsThreads = preview.threads && !decision.threadsApproved && this.threadsApprovalOpen(draft) && !this.threadsAuto(draft)
+      if (!needsInstagram && !needsThreads) throw new Error(`${id}: no destination on the specified preview needs approval.`)
+      ;(draft.delegatedApprovals ??= []).push({ actor: 'hermes', at: now.toISOString(), reason, preview })
+      if (preview.instagram) draft.approvedSeenAt ??= now.toISOString()
+      this.save(draft)
+    } else {
+      if (this.delegatedVeto(draft)) return false
+      const now = this.s.now()
+      const threads = draft.threads
+      // Threads may still be waiting for its slot or for the operator to re-enable it after Instagram finishes.
+      const threadsOpen = isThreadsFormat(format) && threads && ['waiting', 'publishing'].includes(threads.state)
+        && (threads.attemptedAt || threads.mediaId || now < threadsWindow(format, from).cutoff)
+      if (!threadsOpen && !['previewing', 'previewed', 'publishing', 'held', 'rebuilding'].includes(draft.state)) {
+        throw new Error(`${id}: cannot skip a draft in state ${draft.state} with no remaining publication.`)
+      }
+      const matches = previews.filter(item => (!previewTs || item.ts === previewTs) && (item.revision === revision || revision === draft.revision))
+      const target = previewTs && matches.length !== 1 ? undefined : matches.at(-1)
+      if (!target) throw new Error(`${id}: no matching confirmed preview for r${revision}.`)
+      preview = target
+      if (!recordDelegatedVeto(this.s.stateDir, id, { actor: 'hermes', at: now.toISOString(), reason, preview })) return false
+    }
+    try {
+      await this.s.slackPost(delegatedReply[action], preview.ts, preview.channel)
+    } catch {
+      this.s.log(`${id}: could not send the delegated ${action} Slack reply`)
+    }
+    return true
   }
 
   /** Deliver a pending Slack message. A failure leaves it pending for the next tick. */
@@ -1260,8 +1342,10 @@ export class Job {
     let eventsChecked = false
     const beforeWrite = async () => {
       if (this.s.now() >= window.deadline) throw new PublishStop('deadline', 'The publishing deadline has passed')
-      checkWrite(window, await this.readDecision(draft), this.instagramAuto(draft), this.s.now())
+      const decision = await this.readDecision(draft)
+      checkWrite(window, decision, this.instagramAuto(draft), this.s.now())
       if (!eventsChecked) { await this.checkEvents(draft); eventsChecked = true }
+      checkVeto(this.delegatedVeto(draft) ?? decision)
       this.assertCurrent(draft)
     }
     if (draft.format === 'hoy' && config.linkStickers.hoy && !draft.publish && !draft.stickerFallback) {
@@ -1344,8 +1428,7 @@ export class Job {
       await this.s.alert(alerts.draftKey(draft), alerts.draftTitle(draft), alerts.partialAlert(draft, stop.message, out, this.draftFile(draft.id)))
       return
     }
-    const reason: SkipReason = stop.kind === 'rejected' ? { kind: 'rejected' } : { kind: 'late', by: window.deadline }
-    await this.skip(draft, reason)
+    await this.skip(draft, stop.kind === 'rejected' ? { kind: stop.delegatedVeto ? 'delegated-skip' : 'rejected' } : { kind: 'late', by: window.deadline })
   }
 
   async advance(id: string, failures: alerts.TickFailures): Promise<boolean | void> {
@@ -1469,7 +1552,7 @@ export class Job {
         let text = fix.text
         // Older queued alerts only saved the text and key; recover at least the event and its resources.
         const oldId = /^review-fix\/([\da-f-]+)$/u.exec(fix.key)?.[1]
-        const event = fix.event ?? (oldId ? { id: oldId, flag: { field: null, reason: null }, card: undefined, checked: undefined } : undefined)
+        const event = fix.event ?? (oldId ? { id: oldId, flag: { field: null, reason: null }, card: undefined, checked: undefined, recorded: undefined } : undefined)
         if (event) {
           const evidence = await this.reviewEvidence(draft, [event.id])
           const detail = event.flag.reason ?? ''
@@ -1477,7 +1560,11 @@ export class Job {
           if (event.card) input.events = [event.card]
           const selection = (await this.adjudicateQuestions(draft, [{ id: event.id, field: event.flag.field, question: detail, displayOnly: true }], evidence, input)).selections?.[0]
           if (event.checked) text += `\nChecked: ${withReviewLinks(event.checked)}`
-          text += `\n${eventResourceLines(event.id, evidence.get(event.id), selection).join('\n')}`
+          const { recorded } = event
+          const earlier = readRecordedChecks(this.s.stateDir, { id: draft.id, revision: recorded?.revision ?? draft.revision },
+            [event.id], this.s.now().getTime(), !recorded).get(event.id) ?? []
+          const checks = recorded ? [recorded, ...earlier] : earlier
+          text += `\n${[...recordedCheckLines(checks, draft.catalogFixes ?? []), ...eventResourceLines(event.id, evidence.get(event.id), selection)].join('\n')}`
         }
         const sent = await this.s.alert(fix.key, fix.title, text, fix.fingerprint, 20_000).catch(() => false)
         if (!sent) pending.push(fix)
@@ -1510,6 +1597,7 @@ export class Job {
       const ts = threads.threadTs ?? (active ? draft.slack.ts : null)
       const channel = threads.threadChannel ?? (ts === draft.slack.ts ? previewChannel(draft) : runtime.LEGACY_SLACK_CHANNEL)
       const window = threadsWindow(format, draft.from)
+      if (this.delegatedVeto(draft) && stopThreads(threads, 'delegated-skip')) this.save(draft)
       const advanced = await advanceThreads(threads, window, {
         api,
         now: () => this.s.now(),
@@ -1517,7 +1605,7 @@ export class Job {
         save: () => this.save(draft),
         reactions: async () => {
           const decision = await this.readDecision(draft)
-          return { approved: active && decision.threadsApproved, rejected: decision.rejected }
+          return { ...decision, approved: active && decision.threadsApproved }
         },
         enabled,
         auto: () => this.threadsAuto(draft),
@@ -1575,6 +1663,7 @@ export class Job {
     if (now >= cutoff) throw new Error(`${id} is past its cutoff`)
     await this.recoverPreview(old)
     const decision = await this.readDecision(old)
+    if (decision.delegatedVeto) throw new DecisionUnknown(`${id}: Hermes recorded a veto; it can't be rebuilt.`)
     if (decision.rejected || (reviewRebuilds && this.rebuildBlockedByReaction(old, decision))) throw new DecisionUnknown(`${id}: a Slack reaction stopped the rebuild`)
     if (this.s.now() >= cutoff) throw new Error(`${id} is past its cutoff`)
     this.assertCurrent(old)
@@ -1594,6 +1683,7 @@ export class Job {
         threadChannel: old.threads.threadChannel ?? (old.threads.threadTs === undefined || old.threads.threadTs === old.slack.ts ? old.slack.channel : undefined) }
       : undefined
     await this.stopInvestigation(old, 'rebuild')
+    if (this.delegatedVeto(old)) throw new DecisionUnknown(`${id}: Hermes recorded a veto; it can't be rebuilt.`)
     this.collectCatalogFixes(old)
     const reviewHistory = old.review?.result ? [...(old.reviewHistory ?? []), old.review.result] : old.reviewHistory
     const threadsHoldOpen = old.threadsHoldOpen || (old.threads?.state === 'held' && Boolean(old.threads.hold)) || undefined
@@ -1601,6 +1691,7 @@ export class Job {
     const previousPreview = { fileIds: old.slack.ts ? old.slack.fileIds : [], ts: old.slack.ts, channel: old.slack.channel,
       revision: old.slack.revision ?? old.revision, previews: this.previewThreads(old) }
     const decisionBroadcastAttempted = old.decisionBroadcastAttempted || old.review?.homeAttempted || undefined
+    delete old.delegatedApprovals
     Object.assign(old, { decisionBroadcastAttempted, reviewHistory, reviewRebuilds: reviewRebuilds ?? old.reviewRebuilds, review: { unavailableAlert },
       revision, state: 'rebuilding', exclude, track: savedTrack, approvedSeenAt: null, slack: previousPreview, notify: null, r2Uploaded: null, threads, threadsHoldOpen })
     this.save(old)
