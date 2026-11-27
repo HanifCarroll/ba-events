@@ -12,6 +12,11 @@ import { Data, Effect } from 'effect'
 import type { CatalogStore } from './catalog-store.ts'
 import { importTry } from './effect-utils.ts'
 
+interface VenueReviewResult {
+  success: true
+  venueWrites: Awaited<ReturnType<CatalogStore['setEventsVenue']>>
+}
+
 interface VenueReviewInput {
   id: string
   notes?: string | null
@@ -41,7 +46,7 @@ const reviewError = (operation: string, message: string, cause?: unknown) =>
 function settleReviewEffect(
   catalog: CatalogStore,
   input: VenueReviewInput & { finalVenueId: string | null; status: 'approved' | 'rejected' | 'merged' }
-): Effect.Effect<{ success: true }, VenueReviewError> {
+): Effect.Effect<VenueReviewResult, VenueReviewError> {
   return Effect.gen(function* () {
     const { id, notes, reviewedBy, finalVenueId, status } = input
 
@@ -53,20 +58,20 @@ function settleReviewEffect(
       notes: notes ?? null,
     })).pipe(Effect.mapError((cause) => reviewError('venue-review.update-queue', cause.message, cause)))
 
-    // Update events to use the settled venue. A failed read re-points nothing, as before.
+    const unchanged: VenueReviewResult = { success: true, venueWrites: [] }
     if (finalVenueId) {
       const eventIds = yield* importTry('venue-review.load-queue', () => catalog.venueReviewEventIds(id))
         .pipe(Effect.mapError((cause) => reviewError('venue-review.load-queue', cause.message, cause)))
 
       if (eventIds.length) {
-        yield* importTry('venue-review.repoint-events', () => catalog.setEventsVenue(eventIds, finalVenueId)).pipe(
-          Effect.mapError((cause) => reviewError('venue-review.repoint-events', cause.message, cause)),
-          Effect.asVoid
+        const venueWrites = yield* importTry('venue-review.repoint-events', () => catalog.setEventsVenue(eventIds, finalVenueId)).pipe(
+          Effect.mapError((cause) => reviewError('venue-review.repoint-events', cause.message, cause))
         )
+        return { success: true, venueWrites } satisfies VenueReviewResult
       }
     }
 
-    return { success: true as const }
+    return unchanged
   })
 }
 
@@ -81,7 +86,7 @@ const runReview = <A>(effect: Effect.Effect<A, VenueReviewError>): Promise<A> =>
 export function approveVenueReviewEffect(
   catalog: CatalogStore,
   input: ApproveVenueReviewInput
-): Effect.Effect<{ success: true }, VenueReviewError> {
+): Effect.Effect<VenueReviewResult, VenueReviewError> {
   return settleReviewEffect(catalog, {
     ...input,
     finalVenueId: input.venueId,
@@ -92,7 +97,7 @@ export function approveVenueReviewEffect(
 export async function approveVenueReview(
   catalog: CatalogStore,
   input: ApproveVenueReviewInput
-): Promise<{ success: true }> {
+): Promise<VenueReviewResult> {
   return runReview(approveVenueReviewEffect(catalog, input))
 }
 
@@ -102,7 +107,7 @@ export async function approveVenueReview(
 export function rejectVenueReviewEffect(
   catalog: CatalogStore,
   input: VenueReviewInput
-): Effect.Effect<{ success: true }, VenueReviewError> {
+): Effect.Effect<VenueReviewResult, VenueReviewError> {
   return settleReviewEffect(catalog, {
     ...input,
     finalVenueId: null,
@@ -113,7 +118,7 @@ export function rejectVenueReviewEffect(
 export async function rejectVenueReview(
   catalog: CatalogStore,
   input: VenueReviewInput
-): Promise<{ success: true }> {
+): Promise<VenueReviewResult> {
   return runReview(rejectVenueReviewEffect(catalog, input))
 }
 
@@ -123,7 +128,7 @@ export async function rejectVenueReview(
 export function mergeVenueReviewEffect(
   catalog: CatalogStore,
   input: MergeVenueReviewInput
-): Effect.Effect<{ success: true }, VenueReviewError> {
+): Effect.Effect<VenueReviewResult, VenueReviewError> {
   return settleReviewEffect(catalog, {
     ...input,
     finalVenueId: input.targetVenueId,
@@ -134,6 +139,6 @@ export function mergeVenueReviewEffect(
 export async function mergeVenueReview(
   catalog: CatalogStore,
   input: MergeVenueReviewInput
-): Promise<{ success: true }> {
+): Promise<VenueReviewResult> {
   return runReview(mergeVenueReviewEffect(catalog, input))
 }
