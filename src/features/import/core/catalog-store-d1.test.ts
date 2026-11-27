@@ -3,8 +3,7 @@ import { Effect } from 'effect'
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { CURRENT_EMBEDDING_VERSION } from '#shared/lib/ai/embeddings.ts'
 import { planVectorWrite, reconcileCatalog } from '#shared/lib/db/vector-sync.ts'
-import { freshD1 } from '../../../../tests/support/d1.ts'
-import { intakeCommitBatch } from '#shared/lib/db/d1.server.ts'
+import { freshD1, withTestIntakeContext } from '../../../../tests/support/d1.ts'
 import { fakeVectorize } from '../../../../tests/support/vectorize.ts'
 import { closeScrapeRun, openScrapeRun } from '../../../jobs-worker/daily-scrape.ts'
 import { reconcileStaleScrapeRuns, recordEnrichmentAudit } from '../../../jobs-worker/daily-scrape-outcome.ts'
@@ -121,16 +120,35 @@ describe('events and their vectors', () => {
 		expect(await db.prepare('SELECT event_id FROM vector_sync').first()).toBeNull()
 	})
 
-	it('keeps the old vector when intake protection reverts the new search document', async () => {
+	it('reports a protected-only importer patch as kept, without writing or queuing it', async () => {
 		const { catalog, vectors } = store()
 		const input = event({ embedding: [0.1], search_document: 'Intake text' })
 		await catalog.insertEvent(input)
 		const id = await eventId(input.external_id)
 		await protectIntakeName(id)
-		await catalog.updateEvent(id, { name: 'Scraped name', embedding: [0.9], search_document: 'Scraped text', embedding_version: 2 })
+		const before = await db.prepare('SELECT updated_at FROM events WHERE id = ?').bind(id).first('updated_at')
+		const result = await catalog.updateEvent(id, { name: 'Scraped name', embedding: [0.9], search_document: 'Scraped text', embedding_version: 2 })
+		expect(result.applied).toEqual([])
+		expect(result.kept).toEqual(['name', 'search_document', 'embedding_version'])
+		expect(await db.prepare('SELECT updated_at FROM events WHERE id = ?').bind(id).first('updated_at')).toBe(before)
 		expect(await db.prepare('SELECT name, search_document FROM events WHERE id = ?').bind(id).first()).toEqual({ name: 'Jazz Sintético', search_document: 'Intake text' })
 		expect(vectors.get(id)!.values).toEqual([0.1])
 		expect(await db.prepare('SELECT event_id FROM vector_sync').first()).toBeNull()
+	})
+
+	it('applies a mixed import patch without writing the protected fact or its document', async () => {
+		const { catalog, vectors } = store()
+		const input = event({ embedding: [0.1], search_document: 'Intake text' })
+		await catalog.insertEvent(input)
+		const id = await eventId(input.external_id)
+		await protectIntakeName(id)
+		const starts = future(5)
+		const result = await catalog.updateEvent(id, { name: 'Scraped name', starts_at: starts,
+			search_document: 'Unaccepted document', embedding: [0.9] })
+		expect(result).toMatchObject({ applied: ['starts_at'], kept: ['name', 'search_document'] })
+		expect(await db.prepare('SELECT name, starts_at, search_document FROM events WHERE id = ?').bind(id).first())
+			.toEqual({ name: input.name, starts_at: starts, search_document: 'Intake text' })
+		expect(vectors.get(id)).toMatchObject({ values: [0.1], metadata: { starts_at: Date.parse(starts) } })
 	})
 
 	it('preserves a failed nightly rebuild through a protected importer mismatch and repairs it on reconcile', async () => {
@@ -187,7 +205,7 @@ describe('events and their vectors', () => {
 			.toMatchObject({ ...credits, offers_valid_from: '2026-08-01T23:00:00.000Z' })
 		expect(await db.prepare('SELECT scope, search_document FROM events WHERE id = ?').bind(id).first())
 			.toEqual({ scope: 'in', search_document: 'Synthetic source text' })
-		await db.batch(intakeCommitBatch(db, [db.prepare('UPDATE events SET organizer_name = ? WHERE id = ?').bind('New direct evidence', id)]))
+		await withTestIntakeContext(db, [db.prepare('UPDATE events SET organizer_name = ? WHERE id = ?').bind('New direct evidence', id)])
 		expect(await db.prepare('SELECT organizer_name, scope, scope_invalidated_at FROM events WHERE id = ?').bind(id).first())
 			.toEqual({ organizer_name: 'New direct evidence', scope: 'in', scope_invalidated_at: null })
 	})
@@ -288,16 +306,34 @@ describe('venues on D1', () => {
 		expect(await db.prepare("SELECT count(*) AS n FROM venues WHERE name = 'San Telmo'").first('n')).toBe(1)
 	})
 
-	it('approving a review re-points its events', async () => {
+	it('reports applied and kept venues for every event in an approved review', async () => {
 		const { catalog } = store()
 		const keep = await catalog.createVenue(venue('Sala Sintética', null))
 		const input = event()
 		await catalog.insertEvent(input)
 		const id = await eventId(input.external_id)
-		await catalog.queueVenueReview({ scrape_run_id: null, source: 'luma', source_venue_name: 'Sala S.', match_confidence: 0.7, source_event_ids: [id], status: 'pending' })
+		const original = await catalog.createVenue(venue('Sala Confirmada', 'Calle Norte 34'))
+		const protectedEvent = event({ venue_id: original.id })
+		const hiddenEvent = event({ location_hidden: true })
+		const unchangedEvent = event({ venue_id: keep.id })
+		for (const row of [protectedEvent, hiddenEvent, unchangedEvent]) await catalog.insertEvent(row)
+		const protectedId = await eventId(protectedEvent.external_id)
+		const hiddenId = await eventId(hiddenEvent.external_id)
+		const unchangedId = await eventId(unchangedEvent.external_id)
+		const missingId = crypto.randomUUID()
+		await protectIntakeName(protectedId)
+		await db.prepare(`UPDATE event_intake_protection SET fields = '["venue_id"]' WHERE event_id = ?`).bind(protectedId).run()
+		await catalog.queueVenueReview({ scrape_run_id: null, source: 'luma', source_venue_name: 'Sala S.', match_confidence: 0.7,
+			source_event_ids: [id, protectedId, hiddenId, unchangedId, missingId], status: 'pending' })
 		const reviewId = (await db.prepare('SELECT id FROM venue_review_queue').first<string>('id'))!
-		await approveVenueReview(catalog, { id: reviewId, venueId: keep.id, notes: 'same place' })
-		expect(await db.prepare('SELECT venue_id FROM events WHERE id = ?').bind(id).first('venue_id')).toBe(keep.id)
+		expect(await approveVenueReview(catalog, { id: reviewId, venueId: keep.id, notes: 'same place' })).toEqual({ success: true, venueWrites: [
+			{ id, applied: ['venue_id'], kept: [] }, { id: protectedId, applied: [], kept: ['venue_id'] },
+			{ id: hiddenId, applied: [], kept: ['venue_id'] }, { id: unchangedId, applied: [], kept: [] }, { id: missingId, applied: [], kept: [] },
+		] })
+		const venueFor = (id: string) => db.prepare('SELECT venue_id FROM events WHERE id = ?').bind(id).first('venue_id')
+		expect(await venueFor(id)).toBe(keep.id)
+		expect(await venueFor(protectedId)).toBe(original.id)
+		expect(await venueFor(hiddenId)).toBeNull()
 		expect(await db.prepare('SELECT status, final_venue_id, notes FROM venue_review_queue').first()).toEqual({ status: 'approved', final_venue_id: keep.id, notes: 'same place' })
 	})
 })

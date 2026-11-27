@@ -1,4 +1,4 @@
-import { freshD1 } from '../tests/support/d1.ts'
+import { freshD1 } from './d1.ts'
 
 /** Local synthetic catalog for chat transport dogfood, not a Vectorize relevance test. */
 export async function openDogfoodCatalog(now = new Date()) {

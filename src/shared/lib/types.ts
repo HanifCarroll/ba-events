@@ -1,6 +1,7 @@
 import type { RecommendationFraming } from './recommendation-framing.ts'
 
 import type { EventFacets } from '#shared/lib/search-facets.ts'
+import type { ConversationChannel } from '#features/chat/api/channels.ts'
 
 // All 48 official CABA neighborhoods
 export const NEIGHBORHOODS = [
@@ -829,8 +830,6 @@ export interface MessageAttachedData {
    */
   canonical?: unknown
 }
-
-export type ConversationChannel = 'web' | 'telegram'
 
 /** Database record for a conversation */
 export interface Conversation {

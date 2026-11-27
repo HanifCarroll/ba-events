@@ -2,12 +2,17 @@ import childProcess, { type ChildProcess } from 'node:child_process'
 import { readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Readable } from 'node:stream'
-import type { D1Database } from '@cloudflare/workers-types'
+import type { D1Database, D1PreparedStatement } from '@cloudflare/workers-types'
 import { getPlatformProxy, unstable_splitSqlQuery } from 'wrangler'
 
 const root = join(import.meta.dirname, '../..')
 
 type Proxy = Awaited<ReturnType<typeof getPlatformProxy<{ DB: D1Database }>>>
+
+/** Exercise the SQL backstop directly, independent of application write policy. */
+export const withTestIntakeContext = (db: D1Database, statements: D1PreparedStatement[]) => db.batch([
+	db.prepare('INSERT INTO write_context (intake_commit) VALUES (1)'), ...statements, db.prepare('DELETE FROM write_context'),
+])
 
 /** How long one Miniflare start may take before it is abandoned and tried again. */
 const START_TIMEOUT_MS = 20_000

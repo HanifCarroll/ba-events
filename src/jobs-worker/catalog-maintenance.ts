@@ -3,7 +3,8 @@ import { formatInTimeZone, fromZonedTime } from 'date-fns-tz'
 import { judgeScheduledScope } from '#features/events/scope/catalog.ts'
 import { BA_TIMEZONE } from '#shared/lib/constants.ts'
 import { boundD1Database } from '#shared/lib/db/d1.server.ts'
-import { boundVectorize, reconcileCatalog, settlePastVectors } from '#shared/lib/db/vector-sync.ts'
+import { expireEvents } from '#shared/lib/db/event-write.ts'
+import { boundVectorize, reconcileCatalog } from '#shared/lib/db/vector-sync.ts'
 import type { CRON_TASKS } from './schedule.ts'
 
 const HOUR = 3_600_000
@@ -14,14 +15,13 @@ export async function markPastEvents(db: D1Database, vectors: Vectorize, now = n
   const iso = (ms: number) => new Date(ms).toISOString()
   const today = formatInTimeZone(now, BA_TIMEZONE, 'yyyy-MM-dd')
   const midnight = fromZonedTime(`${today}T00:00:00`, BA_TIMEZONE).toISOString()
-  const { results } = await db.prepare(`UPDATE events SET status = 'past'
-    WHERE status IN ('scheduled', 'pending_review') AND (
+  return expireEvents(db, vectors, {
+    sql: `status IN ('scheduled', 'pending_review') AND (
       (ends_at < ?1 AND (NOT ${DATE_ONLY} OR starts_at < ?4))
       OR (ends_at IS NULL AND NOT ${DATE_ONLY} AND starts_at < ?2)
-      OR (ends_at IS NULL AND ${DATE_ONLY} AND starts_at < ?3))
-    RETURNING id`).bind(now.toISOString(), iso(now.getTime() - 4 * HOUR), iso(now.getTime() - 28 * HOUR), midnight).all<{ id: string }>()
-  // RETURNING shows the row before the intake-protection trigger; settle reads the final status.
-  return settlePastVectors(db, vectors, results.map(row => row.id))
+      OR (ends_at IS NULL AND ${DATE_ONLY} AND starts_at < ?3))`,
+    values: [now.toISOString(), iso(now.getTime() - 4 * HOUR), iso(now.getTime() - 28 * HOUR), midnight],
+  })
 }
 
 /** Run the hourly expiration or nightly Vectorize reconcile only where D1 is bound. */

@@ -127,7 +127,8 @@ describe('reconcileCatalog (nightly reembed-stale and Vectorize check)', () => {
     await insert('changed', { starts_at: '2030-02-01T23:00:00.000Z', search_document: 'old text' })
     await index.upsert([{ id: 'changed', values: [0.1], metadata: { status: 'scheduled', starts_at: Date.parse('2030-02-01T23:00:00.000Z') } }])
     failUpserts(1)
-    await expect(catalog.updateEvent('changed', { name: 'New name', search_document: 'new text', embedding: [0.8] })).rejects.toThrow('injected')
+    const write = await catalog.updateEvent('changed', { name: 'New name', search_document: 'new text', embedding: [0.8] })
+    expect(write).toMatchObject({ applied: ['name', 'search_document'], vectorFailure: { error: expect.any(Error) } })
     expect(await db.prepare("SELECT search_document FROM events WHERE id = 'changed'").first('search_document')).toBe('new text')
     expect(vectors.get('changed')!.values).toEqual([0.1])
 
@@ -184,6 +185,20 @@ describe('manual embedding repair', () => {
     expect(embedText).toHaveBeenCalledWith('doc missing')
     expect(vectors.get('missing')).toMatchObject({ values: [0.7], metadata: { status: 'past', starts_at: Date.parse(startsAt) } })
     expect(vectors.get('present')?.values).toEqual([0.1])
+  })
+
+  it('skips a manual rebuild if its document inputs changed during preparation', async () => {
+    const { index, vectors } = fakeVectorize()
+    await insert('renamed', { starts_at: startsAt, embedding_version: CURRENT_EMBEDDING_VERSION - 1 })
+    const embed = async () => {
+      await db.prepare("UPDATE events SET name = 'Nueva función' WHERE id = 'renamed'").run()
+      return { embedding: [0.9], searchDocument: 'Old name' }
+    }
+    expect(await runEmbeddingTask('reembed-stale', db, index, 1, { embed }))
+      .toEqual({ checked: 1, updated: 0, blocked: 1, more: false })
+    expect(await db.prepare("SELECT search_document FROM events WHERE id = 'renamed'").first('search_document')).toBe('doc renamed')
+    expect(vectors.has('renamed')).toBe(false)
+    expect(await db.prepare('SELECT event_id FROM vector_sync').first()).toBeNull()
   })
 
   it('limits stale repairs in start/id order and queues a failed Vectorize write', async () => {

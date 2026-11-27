@@ -10,6 +10,7 @@ import {
   runSharedChatTurnEffect,
 } from '#features/chat/api/agent/shared-turn.server.ts'
 import { buildAgentHistoryFromStoredMessages } from '#features/chat/api/agent/history.ts'
+import { EXTERNAL_CHANNEL } from '#features/chat/api/channels.ts'
 import {
   clearExternalConversationMessages,
   clearExternalConversationMessagesEffect,
@@ -405,7 +406,7 @@ export function processTelegramTurnEffect(
       const action = parseConsentCallback(input.callbackData)
       const prompt = parsePromptCallback(input.callbackData)
       if (action === 'decline') {
-        yield* service.deleteConversation({ channel: 'telegram', conversationId })
+        yield* service.deleteConversation({ channel: EXTERNAL_CHANNEL.telegram, conversationId })
         yield* service.redactClaims(input.identityHash)
         yield* Effect.tryPromise({
           try: () => answerCallbackBestEffort(input.callbackId!, COPY[locale].declined, service, turnSignal),
@@ -419,7 +420,7 @@ export function processTelegramTurnEffect(
       }
 
       if (action === 'accept') {
-        conversation = yield* service.getConversation({ channel: 'telegram', conversationId })
+        conversation = yield* service.getConversation({ channel: EXTERNAL_CHANNEL.telegram, conversationId })
         locale = localeFrom(input.languageCode, conversation.metadata.locale)
         yield* Effect.tryPromise({
           try: () => answerCallbackBestEffort(input.callbackId!, COPY[locale].legacyAccepted, service, turnSignal),
@@ -443,7 +444,7 @@ export function processTelegramTurnEffect(
         ),
         catch: (cause) => turnFailure('Failed to answer Telegram callback', cause),
       })
-      conversation = yield* service.getConversation({ channel: 'telegram', conversationId })
+      conversation = yield* service.getConversation({ channel: EXTERNAL_CHANNEL.telegram, conversationId })
       locale = localeFrom(input.languageCode, conversation.metadata.locale)
       if (input.rateLimited) {
         yield* dependencyEffect(
@@ -476,7 +477,7 @@ export function processTelegramTurnEffect(
     }
 
     if (parsed.kind === 'command' && parsed.command === 'delete') {
-      yield* service.deleteConversation({ channel: 'telegram', conversationId })
+      yield* service.deleteConversation({ channel: EXTERNAL_CHANNEL.telegram, conversationId })
       yield* service.redactClaims(input.identityHash)
       yield* Effect.tryPromise({
         try: () => sendMessageBestEffort(input.chatId, { text: COPY[locale].deleted }, service, turnSignal),
@@ -485,7 +486,7 @@ export function processTelegramTurnEffect(
       return
     }
 
-    conversation ??= yield* service.getConversation({ channel: 'telegram', conversationId })
+    conversation ??= yield* service.getConversation({ channel: EXTERNAL_CHANNEL.telegram, conversationId })
     locale = localeFrom(input.languageCode, conversation.metadata.locale)
 
     if (parsed.kind === 'command') {
@@ -503,9 +504,9 @@ export function processTelegramTurnEffect(
           'Failed to send Telegram message',
         )
       } else if (parsed.command === 'new') {
-        yield* service.clearMessages({ channel: 'telegram', conversationId })
+        yield* service.clearMessages({ channel: EXTERNAL_CHANNEL.telegram, conversationId })
         yield* service.updateMetadata({
-            channel: 'telegram',
+            channel: EXTERNAL_CHANNEL.telegram,
             conversationId,
             metadataPatch: { locale },
           })
@@ -531,12 +532,12 @@ export function processTelegramTurnEffect(
     const setupStarted = performance.now()
     const metadataEffect = conversation.metadata.locale !== locale
       ? service.updateMetadata({
-            channel: 'telegram',
+            channel: EXTERNAL_CHANNEL.telegram,
             conversationId,
             metadataPatch: { locale },
           })
       : Effect.succeed(conversation)
-    const messagesEffect = service.loadMessages({ channel: 'telegram', conversationId })
+    const messagesEffect = service.loadMessages({ channel: EXTERNAL_CHANNEL.telegram, conversationId })
     const [metadataResult, messagesResult] = yield* Effect.all([
       settle(metadataEffect),
       settle(messagesEffect),
@@ -586,7 +587,7 @@ export function processTelegramTurnEffect(
       }
       const userInsertStarted = performance.now()
       const userMessageEffect = service.insertMessage({
-          channel: 'telegram',
+          channel: EXTERNAL_CHANNEL.telegram,
           conversationId,
           clientMessageId: `telegram:${payload.updateId}:user`,
           role: 'user',
@@ -644,7 +645,7 @@ export function processTelegramTurnEffect(
         catch: (cause) => turnFailure('Failed to render Telegram message', cause),
       })
       yield* service.insertMessage({
-          channel: 'telegram',
+          channel: EXTERNAL_CHANNEL.telegram,
           conversationId,
           parentMessageId: userResult.value.id,
           clientMessageId: assistantClientMessageId,

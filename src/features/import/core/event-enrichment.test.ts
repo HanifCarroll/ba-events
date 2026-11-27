@@ -34,14 +34,21 @@ import { enrichSingleEvent, enrichEventsEffect, getEventsNeedingEnrichmentEffect
 import { embedEventWithDocument, CURRENT_EMBEDDING_VERSION } from '#shared/lib/ai/embeddings.ts'
 import { getEnrichmentAdapter } from '#features/import/adapters/enrichment/registry.ts'
 import { HttpError } from '#shared/lib/errors.ts'
+import { eventColumnsWith } from '#shared/lib/db/event-columns.ts'
 import { ENRICHMENT_VERSION, type EnrichmentStageRecord } from './enrichment-provenance.ts'
 
 const embedEventWithDocumentMock = embedEventWithDocument as unknown as Mock
 const getEnrichmentAdapterMock = getEnrichmentAdapter as unknown as Mock
 
-function makeClient() {
+const appliedFields = (patch: EventWrite) => eventColumnsWith('catalog', 'write', 'read-write').filter(key => Object.hasOwn(patch, key))
+
+function makeClient(protectStatus = false) {
   const updates: Array<{ id: string; data: EventWrite }> = []
-  const catalog = { updateEvent: async (id, data) => { updates.push({ id, data }) } } satisfies Partial<CatalogStore>
+  const catalog = { updateEvent: async (id, data) => {
+    updates.push({ id, data })
+    const kept = protectStatus && data.status ? ['status' as const] : []
+    return { applied: appliedFields(data).filter(key => !(key === 'status' && kept.length)), kept }
+  } } satisfies Partial<CatalogStore>
   return { catalog: catalog as unknown as CatalogStore, updates }
 }
 
@@ -150,7 +157,7 @@ describe('imported pending rows leave the enrichment queue', () => {
     const catalog = {
       eventsNeedingEnrichment: async ({ statuses = ['pending', 'failed'] }) => rows.filter(row =>
         statuses.some(status => status === row.enrichment_status)).map(row => ({ ...row })),
-      updateEvent: async (id, data) => { Object.assign(rows.find(row => row.id === id)!, data) },
+      updateEvent: async (id, data) => { Object.assign(rows.find(row => row.id === id)!, data); return { applied: appliedFields(data), kept: [] } },
     } satisfies Partial<CatalogStore>
     return catalog as unknown as CatalogStore
   }
@@ -360,7 +367,7 @@ describe('enrichSingleEvent terminal skipped handling', () => {
     expect(written.enrichment_error).toBe('passline requires client-side extraction')
   })
 
-  it('writes skipped + canceled on a 404 page', async () => {
+  it.each([false, true])('reports only an applied cancellation on a 404 page (status protected: %s)', async protectStatus => {
     getEnrichmentAdapterMock.mockReturnValue({
       source: 'eventbrite',
       config: { requiresClientSide: false },
@@ -368,7 +375,7 @@ describe('enrichSingleEvent terminal skipped handling', () => {
         throw new HttpError(404, 'Not Found', 'https://example.com/gone')
       },
     })
-    const client: ReturnType<typeof makeClient> = makeClient()
+    const client = makeClient(protectStatus)
 
     const result = await enrichSingleEvent(client.catalog, {
       id: 'evt-5',
@@ -377,7 +384,7 @@ describe('enrichSingleEvent terminal skipped handling', () => {
       source: 'eventbrite',
     })
 
-    expect(result.canceled).toBe(true)
+    expect(result).toMatchObject({ canceled: !protectStatus, success: protectStatus })
     expect(client.updates).toHaveLength(1)
     const written = client.updates[0].data as Record<string, unknown>
     expect(written.status).toBe('canceled')
@@ -396,7 +403,7 @@ describe('enrichSingleEvent hidden locations', () => {
     const venueLookups: string[] = []
     const venue = { id: 'venue-existing', name: 'Sala Sintética', neighborhood: 'Retiro', address: 'Av. Ficticia 1234' }
     const client = {
-      updateEvent: async (_id: string, data: EventWrite) => { updates.push(data); Object.assign(row, data) },
+      updateEvent: async (_id: string, data: EventWrite) => { updates.push(data); Object.assign(row, data); return { applied: appliedFields(data), kept: [] } },
       venuesNamed: async () => { venueLookups.push('named'); return [{ ...venue, event_count: 0 }] },
       venueNameAndNeighborhood: async () => { venueLookups.push('by-id'); return venue },
     } as unknown as CatalogStore
