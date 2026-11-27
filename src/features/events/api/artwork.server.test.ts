@@ -134,6 +134,15 @@ describe('R2 artwork (a Worker that binds D1)', () => {
     expect(options.bucket.get).toHaveBeenCalledWith(key)
   })
 
+  it.each([
+    ['image/jpg', 'image/jpeg'],
+    ['Image/PNG ; charset=binary', 'image/png'],
+  ])('serves a legacy original with R2 metadata %s as %s', async (metadata, normalized) => {
+    const response = await serveArtwork(original({ bucket: bucket(metadata) }))
+    expect(response.status).toBe(200)
+    expect(response.headers.get('Content-Type')).toBe(normalized)
+  })
+
   it('serves a stored reference at the same public URL and rejects a stale key before reading R2', async () => {
     const options = original({ lookup: vi.fn(async () => ({ image_url: `r2:image/jpeg:${key}` })) })
     expect((await serveArtwork({ ...options, variant: `${'b'.repeat(64)}.jpg` })).status).toBe(404)

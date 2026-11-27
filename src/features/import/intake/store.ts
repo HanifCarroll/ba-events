@@ -89,7 +89,6 @@ export interface IntakeStore extends CollectionStore {
   /** Every event starting in [from, to), by id. */
   eventsBetween(from: string, to: string): Op<Row[]>
   eventsByIds(ids: string[]): Op<Row[]>
-  /** The public artwork URL an event gets for a retained image. */
   insertPlan(plan: PlanInsert): Op<IntakePlanRow>
   plan(id: string): Op<IntakePlanRow>
   readonly publishingEnabled: Op<boolean>

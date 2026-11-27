@@ -153,7 +153,8 @@ Passline, Venti, Meetup, Eventbrite, and Luma artwork SHALL use the same catalog
 
 #### Scenario: Artwork stored in R2 on a Worker that binds D1
 - **WHEN** a browser requests `/api/event-artwork/<event id>/<sha256>.<ext>` and the Worker binds the `ARTWORK` bucket
-- **THEN** that path serves the stored original from R2 with an immutable one-year cache only while the key and content type match that displayable event's current reference
+- **THEN** that path serves the stored original from R2 with an immutable one-year cache only while the key matches that displayable event's current reference
+- **AND** it serves only JPEG, PNG, or WebP, using the object's content type without parameters and treating `image/jpg` as `image/jpeg`
 - **AND** the finite-size variants read the same object from R2 instead of fetching a URL, and fall back to that original path on this host
 
 #### Scenario: A small original is selected through a larger cached candidate

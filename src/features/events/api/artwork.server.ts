@@ -1,5 +1,5 @@
 import { isExternalArtworkOriginAllowed } from '#shared/lib/artwork-origins.ts'
-import { decodeArtworkRef, isStoredArtworkKey, type ArtworkRef } from '#shared/lib/artwork-ref.ts'
+import { decodeArtworkRef, isStoredArtworkKey } from '#shared/lib/artwork-ref.ts'
 import { ARTWORK_PUBLIC_ORIGIN, eventArtworkPath, isArtworkEventId, publicArtworkUrl } from '#shared/lib/artwork-url.ts'
 import { ARTWORK_WIDTHS, artworkVersion } from '../lib/artwork-delivery.ts'
 import type { PublicCache } from './platform-cache.ts'
@@ -89,7 +89,7 @@ export async function serveArtwork(options: Options): Promise<Response> {
     fallback = reference.kind === 'stored' ? eventArtworkPath(id, reference.key) : reference.url
     if (!images) throw new Error('Images binding unavailable')
     // Do not forward user cookies/authentication; do not follow upstream redirects.
-    const source = reference.kind === 'stored' ? await r2Image(options.bucket, reference)
+    const source = reference.kind === 'stored' ? await r2Image(options.bucket, reference.key)
       : await (options.fetchImage ?? fetch)(reference.url, { redirect: 'manual', signal, headers: { Accept: 'image/*' } })
     if (!source?.ok || !/^image\/(jpeg|png|webp|gif|avif)(?:;|$)/i.test(source.headers.get('Content-Type') ?? '')) {
       await source?.body?.cancel()
@@ -129,11 +129,12 @@ export async function serveArtwork(options: Options): Promise<Response> {
 }
 
 /** An R2 artwork object as a fetch response, so it takes the same bounded path as a fetched image. */
-async function r2Image(bucket: ArtworkBucket | undefined, reference: Extract<ArtworkRef, { kind: 'stored' }>): Promise<Response | null> {
-  const object = await bucket?.get(reference.key)
+async function r2Image(bucket: ArtworkBucket | undefined, key: string): Promise<Response | null> {
+  const object = await bucket?.get(key)
   if (!object) return null
-  const type = object.httpMetadata?.contentType
-  if (!type || type.toLowerCase() !== reference.contentType) {
+  const mediaType = object.httpMetadata?.contentType?.split(';', 1)[0]?.trim().toLowerCase()
+  const type = mediaType === 'image/jpg' ? 'image/jpeg' : mediaType
+  if (type !== 'image/jpeg' && type !== 'image/png' && type !== 'image/webp') {
     await object.body.cancel()
     return null
   }
@@ -157,7 +158,7 @@ async function serveOriginal(options: Options, url: URL): Promise<Response> {
     const event = await options.lookup(id, signal)
     const reference = decodeArtworkRef(event?.image_url, id)
     if (reference?.kind !== 'stored' || reference.key !== variant) return unavailable()
-    const response = await r2Image(options.bucket, reference)
+    const response = await r2Image(options.bucket, reference.key)
     if (!response) return unavailable()
     response.headers.set('Cache-Control', 'public, max-age=31536000, immutable')
     response.headers.set('X-Content-Type-Options', 'nosniff')
