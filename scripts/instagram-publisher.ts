@@ -15,7 +15,6 @@
  */
 import { parseArgs } from 'node:util'
 import { isFormatKey } from '../src/features/instagram-publisher/formats.ts'
-import { Job, dryRun, liveServices, regenerate, review, status, stickersDryRun, tick } from '../src/features/instagram-publisher/job.ts'
 import { InvestigatorToolError, investigatorErrorMessage } from '../src/features/instagram-publisher/investigator-error.ts'
 import { catalogFix, investigatorTool, runInvestigator } from '../src/features/instagram-publisher/investigator-run.ts'
 import { renderFramesInProcess, withLock } from '../src/features/instagram-publisher/runtime.ts'
@@ -33,6 +32,28 @@ function flags(args: string[], name: string): string[] {
 
 async function main(argv: string[]) {
   const [command, ...args] = argv
+  // Investigator tools run in a fresh process per call. They do not need the publishing job.
+  if (command === 'catalog-fix') {
+    const [id, ...options] = args
+    const { values } = parseArgs({ args: options, options: { field: { type: 'string' }, from: { type: 'string' }, to: { type: 'string' },
+      evidence: { type: 'string' }, 'all-occurrences': { type: 'boolean' } } })
+    const dir = process.env.BA_INVESTIGATION_DIR
+    const { from, to, field, evidence } = values
+    if (!dir) throw new InvestigatorToolError('catalog-fix requires an active investigator request.')
+    if (!id || field === undefined || from === undefined || to === undefined || evidence === undefined) throw new Error(USAGE)
+    const { fixInput } = await import('../src/features/instagram-publisher/catalog-fix.ts')
+    const input = fixInput.parse({ id, field, from: from === 'null' ? null : from, to: to === 'null' ? null : to, evidence, allOccurrences: values['all-occurrences'] === true })
+    console.log(JSON.stringify(await catalogFix(dir, input)))
+    return
+  }
+  if (command === 'investigator-run') return runInvestigator(args[0]!)
+  if (command === 'investigator-tool') {
+    const [dir, action, data] = args
+    console.log(JSON.stringify(await investigatorTool(dir!, action!, data!)))
+    return
+  }
+
+  const { Job, dryRun, liveServices, regenerate, review, status, stickersDryRun, tick } = await import('../src/features/instagram-publisher/job.ts')
   switch (command) {
     case 'tick': return tick()
     case 'status': return status()
@@ -55,25 +76,6 @@ async function main(argv: string[]) {
       const job = new Job(liveServices())
       const plan = flag ? await job.investigate(id, true) : await withLock(() => job.investigate(id, false))
       console.log(JSON.stringify(plan, null, 2))
-      return
-    }
-    case 'catalog-fix': {
-      const [id, ...options] = args
-      const { values } = parseArgs({ args: options, options: { field: { type: 'string' }, from: { type: 'string' }, to: { type: 'string' },
-        evidence: { type: 'string' }, 'all-occurrences': { type: 'boolean' } } })
-      const dir = process.env.BA_INVESTIGATION_DIR
-      const { from, to, field, evidence } = values
-      if (!dir) throw new InvestigatorToolError('catalog-fix requires an active investigator request.')
-      if (!id || field === undefined || from === undefined || to === undefined || evidence === undefined) throw new Error(USAGE)
-      const { fixInput } = await import('../src/features/instagram-publisher/catalog-fix.ts')
-      const input = fixInput.parse({ id, field, from: from === 'null' ? null : from, to: to === 'null' ? null : to, evidence, allOccurrences: values['all-occurrences'] === true })
-      console.log(JSON.stringify(await catalogFix(dir, input)))
-      return
-    }
-    case 'investigator-run': return runInvestigator(args[0]!)
-    case 'investigator-tool': {
-      const [dir, action, data] = args
-      console.log(JSON.stringify(await investigatorTool(dir!, action!, data!)))
       return
     }
     case 'threads-report': {

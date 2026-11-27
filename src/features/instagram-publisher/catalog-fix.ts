@@ -1,6 +1,5 @@
 import { z } from 'zod'
 import type { EventColumn } from '#shared/lib/db/event-columns.ts'
-import { invalidateCorrectedVector } from '#shared/lib/db/vector-sync.ts'
 import { baLocal } from './format.ts'
 
 export const eventId = z.string().regex(/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/)
@@ -71,6 +70,8 @@ export async function applyCatalogFix(query: CatalogQuery, input: FixInput, befo
   const rows = z.array(rowSchema).parse(await query(`${select} ${filter} ORDER BY e.id LIMIT 41`, ids))
   const anchor = rows.find(row => row.id === id)
   if (!anchor || rows.length > 40 || anchor[field] !== old) throw new Error('Catalog correction refused: stale --from or unsupported occurrence set.')
+  // The investigator also imports this module for validation and reads. Load vector repair only for a correction.
+  const { invalidateCorrectedVector } = await import('#shared/lib/db/vector-sync.ts')
   const changes: FixReceipt['changes'] = []
   const updates = rows.map(row => {
     let replacement = next
