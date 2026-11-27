@@ -200,7 +200,7 @@ The English weekend and free-event pages SHALL show the same selection as their 
 - **AND** the visitor's saved preference does not change, and event cards still link to the existing event detail URLs
 
 ### Requirement: The site feedback controls use the active language
-The navigation label, dialog, and its submission states SHALL use the active language. The privacy and about pages SHALL refer to the option by the same name as the menu.
+The navigation label, dialog, and its submission states SHALL use the active language. The icon-only dialog close button SHALL have an accessible name in the active language. The privacy and about pages SHALL refer to the option by the same name as the menu.
 
 #### Scenario: A feedback submission fails in Spanish
 - **WHEN** a person opens **Comentarios** and the submission fails
