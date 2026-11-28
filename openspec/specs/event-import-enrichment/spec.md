@@ -176,7 +176,7 @@ Imports, venue settlement, the venue review queue, enrichment, the blocklist, an
 - **WHEN** the hourly task finds a timed event whose explicit end passed, or, without an explicit end, a timed event more than 4 hours after its start or a date-only event more than 28 hours after its start
 - **THEN** the event becomes `past` and its vector's status follows
 - **AND** a date-only event with an explicit end becomes `past` only after that end has passed and its Buenos Aires start day is over
-- **AND** aging uses the publisher-corrected start when present and may move `scheduled` to `past` even when the publisher locked `status`. The same expiry rule limits the direct-write status exception
+- **AND** aging uses the publisher-corrected start when present and may move `scheduled` to `past` even when the publisher locked `status`. The same expiry rule limits the direct-write status exception, and an update that changes the start, end, or timed or date-only flags cannot use it
 
 #### Scenario: Vectorize drifts from D1
 - **WHEN** the nightly reconcile finds a stale search document, a live event without a vector, or vector metadata that differs from the row

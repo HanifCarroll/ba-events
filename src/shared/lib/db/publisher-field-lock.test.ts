@@ -143,6 +143,25 @@ it('the SQL status exception agrees with hourly aging and refuses an event with 
   } finally { await dispose() }
 }, 30_000)
 
+it('does not age a locked status in the same UPDATE that changes any timing input', async () => {
+  const { db, dispose } = await freshD1()
+  try {
+    const start = new Date(Date.now() - 6 * 3_600_000).toISOString()
+    await event(db, 'mixed-aging', start)
+    await fix(db, 'mixed-aging-status', 'status', [change('mixed-aging', 'scheduled')])
+    // The stored event qualifies for the four-hour fallback, but these changes would alter its expiry.
+    for (const [column, value] of [['ends_at', future], ['starts_at', future], ['time_tba', 1], ['is_all_day', 1]] as const) {
+      await expect(db.prepare(`UPDATE events SET ${column} = ?, status = 'past' WHERE id = 'mixed-aging'`).bind(value).run())
+        .rejects.toThrow('Publisher-corrected event field is locked')
+    }
+    const read = () => db.prepare("SELECT status, starts_at, ends_at, time_tba, is_all_day FROM events WHERE id = 'mixed-aging'").first()
+    const original = { status: 'scheduled', starts_at: start, ends_at: null, time_tba: 0, is_all_day: 0 }
+    expect(await read()).toEqual(original)
+    await db.prepare("UPDATE events SET status = 'past' WHERE id = 'mixed-aging'").run()
+    expect(await read()).toEqual({ ...original, status: 'past' })
+  } finally { await dispose() }
+}, 30_000)
+
 it('ages a publisher-locked scheduled status using the publisher-corrected start', async () => {
   const { db, dispose } = await freshD1()
   try {

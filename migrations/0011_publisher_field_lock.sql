@@ -36,9 +36,13 @@ WHEN NOT EXISTS (SELECT 1 FROM publisher_fix_context c JOIN publisher_catalog_fi
     WHEN 'starts_at' THEN NEW.starts_at IS NOT OLD.starts_at
     WHEN 'price' THEN NEW.price IS NOT OLD.price OR NEW.is_free IS NOT OLD.is_free
     WHEN 'is_free' THEN NEW.price IS NOT OLD.price OR NEW.is_free IS NOT OLD.is_free
+    -- Only elapsed time can bypass the status lock. A write that changes any aging input is not aging.
     -- Mirror markPastEvents: explicit end first, then the timed/date-only fallback. CABA midnight is 03:00 UTC.
     WHEN 'status' THEN NEW.status IS NOT OLD.status AND NOT (
-      OLD.status = 'scheduled' AND NEW.status = 'past' AND EXISTS (
+      OLD.status = 'scheduled' AND NEW.status = 'past'
+      AND NEW.starts_at IS OLD.starts_at AND NEW.ends_at IS OLD.ends_at
+      AND NEW.time_tba IS OLD.time_tba AND NEW.is_all_day IS OLD.is_all_day
+      AND EXISTS (
         SELECT 1 FROM (SELECT (OLD.time_tba = 1 OR coalesce(OLD.is_all_day, 0) = 1) AS date_only)
         WHERE (OLD.ends_at < strftime('%Y-%m-%dT%H:%M:%fZ', 'now') AND (NOT date_only OR
           OLD.starts_at < strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-3 hours', 'start of day', '+3 hours')))
