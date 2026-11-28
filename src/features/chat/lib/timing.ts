@@ -1,4 +1,5 @@
 import { logger } from '#shared/lib/logger.ts'
+import { CHAT_EXECUTION_PATH, DELIVERY_ATTEMPT_HEADER, EXECUTION_STAGE_HEADER } from './delivery-protocol.ts'
 
 export type ChatTimingPhase = 'ingress' | 'generate' | 'commit' | 'fail' | 'delivery' | 'workflow'
 export type ChatTimingStage =
@@ -50,12 +51,12 @@ export function createChatTiming(identity: { requestId: string; phase: ChatTimin
 
 export function requestChatTiming(event: { request: Request; locals: { chatTiming?: ChatTiming } }): ChatTiming {
   const path = new URL(event.request.url).pathname
-  if (path !== '/api/chat' && path !== '/api/chat/execute') return NO_TIMING
-  const requestId = event.request.headers.get('x-chat-attempt') ?? ''
+  if (path !== '/api/chat' && path !== CHAT_EXECUTION_PATH) return NO_TIMING
+  const requestId = event.request.headers.get(DELIVERY_ATTEMPT_HEADER) ?? ''
   // Missing/invalid correlation must not access downstream request context.
   if (!uuid.test(requestId)) return NO_TIMING
   if (event.locals.chatTiming) return event.locals.chatTiming
-  const stage = event.request.headers.get('x-chat-execution-stage')
+  const stage = event.request.headers.get(EXECUTION_STAGE_HEADER)
   const phase = path === '/api/chat' ? 'ingress' : stage === 'commit' || stage === 'fail' ? stage : 'generate'
   const timing = createChatTiming({ requestId, phase })
   event.locals.chatTiming = timing

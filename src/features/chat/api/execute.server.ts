@@ -73,15 +73,17 @@ import { getLastUserQuery } from '#features/chat/lib/extract-visible-text.ts'
 import { buildAgentHistoryFromStoredMessages, buildAgentHistoryFromUIMessages } from '#features/chat/api/agent/history.ts'
 import { parseMainChatRequest } from '#features/chat/api/main-request.ts'
 import { beginChatDeliveryCommit, getChatDeliveryCheckpoint, saveChatDeliveryCheckpoint } from './delivery.server.ts'
-import { EXECUTION_FENCE_HEADER, EXECUTION_STAGE_HEADER } from '../../../chat-delivery-worker/recovery.ts'
-import { DELIVERY_OWNER_HEADER, DELIVERY_TURN_HEADER, parseDeliveryIdentity } from '#features/chat/lib/delivery-protocol.ts'
+import {
+  CHAT_PROGRESS_CHUNK, CHAT_RESPONSE_CHUNK, DELIVERY_CLIENT_IP_HEADER, DELIVERY_OWNER_HEADER, DELIVERY_TURN_HEADER,
+  EXECUTION_FENCE_HEADER, EXECUTION_STAGE_HEADER, parseDeliveryIdentity,
+} from '#features/chat/lib/delivery-protocol.ts'
 import { progressArtifactKey, progressText } from '#features/chat/lib/progress.ts'
 import { requestChatTiming } from '#features/chat/lib/timing.ts'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 function getClientIP(event: RequestEvent): string {
-  const forwardedClient = event.request.headers.get('x-chat-client-ip')
+  const forwardedClient = event.request.headers.get(DELIVERY_CLIENT_IP_HEADER)
   if (forwardedClient) return forwardedClient
   const clientAddress = event.getClientAddress()
   if (clientAddress) return clientAddress
@@ -336,7 +338,7 @@ export const POST = async (event: RequestEvent, dependencies: { rateLimit?: type
 
       const writeResponse = (canonical: CanonicalChatResponse) => {
         writer.write({
-          type: 'data-response',
+          type: CHAT_RESPONSE_CHUNK,
           data: canonical,
         } as never)
       }
@@ -355,7 +357,7 @@ export const POST = async (event: RequestEvent, dependencies: { rateLimit?: type
           writer.write({ type: 'text-start', id: `replay:${replayAssistant.id}` })
           writer.write({ type: 'text-delta', id: `replay:${replayAssistant.id}`, delta: replayAssistant.canonical.text })
           writer.write({ type: 'text-end', id: `replay:${replayAssistant.id}` })
-          writer.write({ type: 'data-response', data: replayAssistant.canonical } as never)
+          writer.write({ type: CHAT_RESPONSE_CHUNK, data: replayAssistant.canonical } as never)
           writeStatus('done')
           writer.write({ type: 'finish', finishReason: 'stop' })
           return
@@ -394,7 +396,7 @@ export const POST = async (event: RequestEvent, dependencies: { rateLimit?: type
             const artifacts = progressArtifactKey(response)
             if (artifacts !== lastProgressArtifacts) {
               lastProgressArtifacts = artifacts
-              writer.write({ type: 'data-progress', id: `progress:${requestId}`, transient: true, data: response } as never)
+              writer.write({ type: CHAT_PROGRESS_CHUNK, id: `progress:${requestId}`, transient: true, data: response } as never)
             } else {
               writer.write({ type: 'data-progress-text', id: `progress-text:${requestId}`, transient: true, data: progressText(response) } as never)
             }
