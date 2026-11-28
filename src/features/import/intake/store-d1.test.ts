@@ -11,6 +11,7 @@ import { fakeVectorize } from '../../../../tests/support/vectorize.ts'
 import { fakeR2 } from '../../../../tests/support/r2.ts'
 import { buildSearchDocument, CURRENT_EMBEDDING_VERSION } from '#shared/lib/ai/embeddings.ts'
 import { reconcileCatalog } from '#shared/lib/db/vector-sync.ts'
+import { d1Catalog } from '../core/catalog-store-d1.ts'
 import { applyCatalogFix } from '#features/instagram-publisher/catalog-fix.ts'
 import { describeImage } from './collection.ts'
 import { readOfficialPage } from './official-page.ts'
@@ -258,7 +259,7 @@ describe.skipIf(bun)('commit_intake_plan on D1', () => {
     expect(await db.prepare('SELECT event_id FROM vector_sync WHERE event_id = ?').bind(event).first()).toBeNull()
   }, 15_000)
 
-  it('rejects a stale intake plan after a publisher correction; fresh direct intake evidence can supersede it', async () => {
+  it('keeps a publisher correction against fresh direct intake evidence and an importer update', async () => {
     await source()
     const venueId = await venue()
     const post = await observation((await run(store.reserveCollection)).id)
@@ -282,11 +283,33 @@ describe.skipIf(bun)('commit_intake_plan on D1', () => {
     expect(await run(commitPlanEffect(store, created))).toEqual(original)
     expect(await db.prepare('SELECT event_id FROM vector_sync WHERE event_id = ?').bind(event).first('event_id')).toBe(event)
 
-    const fresh = await plan(candidate, 2, 'update', event, payload, cited)
-    expect(await run(store.commitPlan(fresh))).toMatchObject({ previous_event: { name: 'Publisher correction' } })
-    expect(await db.prepare('SELECT name FROM events WHERE id = ?').bind(event).first('name')).toBe('Confirmed by venue')
+    const readback = () => db.prepare('SELECT name, image_url, min_age, search_document, embedding_version FROM events WHERE id = ?').bind(event).first()
+    const before = await readback()
+    const newer = await observation((await run(store.reserveCollection)).id, 'Confirmed by venue', 'newer-post')
+    const fresh = await plan(candidate, 2, 'update', event, { ...payload, embedding: undefined, image_url: 'https://example.test/artwork.jpg' },
+      [{ observation_id: newer, fields: ['name'] }])
+    const embed = vi.fn(async () => { throw new Error('A refused name must not reach the embedding provider') })
+    const receipt = await run(commitPlanEffect(store, fresh, { embed, presentation: async () => ({}) }))
+    expect(embed).not.toHaveBeenCalled()
+    expect(receipt).toMatchObject({ previous_event: { name: 'Publisher correction' }, kept: ['name'] })
+    const afterIntake = await readback()
+    expect(afterIntake).toEqual({ ...before, image_url: 'https://example.test/artwork.jpg' })
     expect(await db.prepare('SELECT plan_id FROM event_intake_protection WHERE event_id = ?').bind(event).first('plan_id')).toBe(fresh)
-  })
+
+    const catalog = d1Catalog(db, vectors.index)
+    const importer = await catalog.updateEvent(event, { name: 'Importer conflict', search_document: 'Importer conflict', embedding: [0.9], min_age: 18 })
+    expect(importer).toEqual({ applied: ['min_age'], kept: ['name', 'search_document'], vectorUpdated: false })
+    const afterImporter = await readback()
+    expect(afterImporter).toEqual({ ...afterIntake, min_age: 18 })
+    expect(vectors.vectors.get(event)?.values[0]).toBeCloseTo(0.1)
+    if (process.env.SHOW_PUBLISHER_PRECEDENCE_PROOF === '1') {
+      console.log(JSON.stringify({ before, intake: { kept: receipt.kept, after: afterIntake }, importer: { ...importer, after: afterImporter } }, null, 2))
+    }
+
+    await applyCatalogFix(query, { id: event, field: 'name', from: 'Publisher correction', to: 'Second publisher correction',
+      allOccurrences: false, evidence: 'Updated synthetic program' }, id)
+    expect(await readback()).toMatchObject({ name: 'Second publisher correction' })
+  }, 15_000)
 
   it('refuses held, expired and superseded plans, curator corrections, and a duplicate that appeared after preview', async () => {
     await source(); await source('synthetic_curator', 'curator')

@@ -79,13 +79,18 @@ async function startProxy(): Promise<Proxy> {
  * A fresh, empty Miniflare D1 database with every file in `migrations/` applied in order, the way
  * `wrangler d1 migrations apply` does. Nothing is persisted; call `dispose()` when the test file is done.
  */
-export async function freshD1(): Promise<{ db: D1Database; dispose: () => Promise<void> }> {
+export async function freshD1(through?: string): Promise<{ db: D1Database; dispose: () => Promise<void> }> {
 	const proxy = await startProxy()
 	const db = proxy.env.DB
 	const dir = join(root, 'migrations')
 	for (const file of (await readdir(dir)).filter((name) => name.endsWith('.sql')).sort()) {
-		const statements = unstable_splitSqlQuery(await readFile(join(dir, file), 'utf8'))
-		await db.batch(statements.map((sql) => db.prepare(sql)))
+		if (through && file > through) break
+		await applyD1Migration(db, file)
 	}
 	return { db, dispose: proxy.dispose }
+}
+
+export async function applyD1Migration(db: D1Database, file: string) {
+	const statements = unstable_splitSqlQuery(await readFile(join(root, 'migrations', file), 'utf8'))
+	await db.batch(statements.map((sql) => db.prepare(sql)))
 }

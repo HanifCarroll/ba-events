@@ -225,7 +225,8 @@ After rendering, the publisher MUST review the still frames (for a Reel, its cov
 - **THEN** only the narrow correction command can change title, start time, price, free flag, display or summary descriptions, or cancel an event; it changes only matching scheduled rows whose old values still agree with the request
 - **AND** it maintains derived search data, queues changed search text or vector metadata for reconciliation, logs every correction in publisher state and the draft, and refers unsupported corrections to Hermes
 - **AND** a correction that only changes vector metadata reuses the existing vector values during reconcile and never replaces an outstanding document repair
-- **AND** it does not replace intake evidence authority. Intake plans made before the correction become stale; a fresh intake plan with current direct evidence can supersede the corrected value
+- **AND** each publisher correction atomically locks that field for each affected event. Intake plans made before the correction become stale; a fresh intake plan with direct evidence may change other fields but keeps the locked value. A later publisher correction may replace it
+- **AND** historical publisher receipts establish the same locks without replaying their old values
 - **AND** `investigate <draft id> --dry-run` shows what would be queued without applying fixes, launching Pi, or writing state.
 
 #### Scenario: The review is unavailable or Hanif decides explicitly

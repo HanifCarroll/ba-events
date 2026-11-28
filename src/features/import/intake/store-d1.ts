@@ -12,7 +12,8 @@ import { Effect } from 'effect'
 import { decodeArtworkRef, encodeArtworkRef } from '#shared/lib/artwork-ref.ts'
 import { batchAssert } from '#shared/lib/db/d1.server.ts'
 import { eventColumnsWith } from '#shared/lib/db/event-columns.ts'
-import { checkIntakeAuthority, commitIntakeEvent, intakeVenueChecks, replayIntakeVector, type IntakeEventPatch } from '#shared/lib/db/event-write.ts'
+import { checkIntakeAuthority, commitIntakeEvent, hasRefusedPublisherSearchInput, intakeVenueChecks, publisherFields, replayIntakeVector,
+  type IntakeEventPatch } from '#shared/lib/db/event-write.ts'
 import type { EventInsert } from '#shared/lib/types.ts'
 import { importTry, ImportOperationError } from '../core/effect-utils.ts'
 import { mostSimilarVenue, similarIntakeVenues } from '../core/venue-similarity-d1.ts'
@@ -286,7 +287,8 @@ export function d1Intake({ db, evidence, artwork, vectors }: IntakeBindings): In
     linkedEventIds: id => d1('intake.links', async () => (await db.prepare('SELECT event_id FROM event_source_evidence WHERE candidate_id = ?')
       .bind(id).all<{ event_id: string }>()).results.map(row => row.event_id)),
     eventsBetween: (from, to) => d1('intake.read', () => all(db.prepare('SELECT * FROM events WHERE starts_at >= ? AND starts_at < ? ORDER BY id').bind(iso(from), iso(to)))),
-    eventsByIds: ids => d1('intake.targets', () => all(db.prepare('SELECT * FROM events WHERE id IN (SELECT value FROM json_each(?))').bind(JSON.stringify(ids)))),
+    eventsByIds: ids => d1('intake.targets', () => all(db.prepare(`SELECT *, ${publisherFields} AS publisher_fields FROM events
+      WHERE id IN (SELECT value FROM json_each(?))`).bind(JSON.stringify(ids)))),
     insertPlan: plan => d1('intake.plan', async () => (await first<IntakePlanRow>(db.prepare(`INSERT INTO intake_plans
         (id, candidate_id, revision, action, event_id, expected_event_updated_at, artwork_media_id, artwork_note, payload, evidence, reasons)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`).bind(crypto.randomUUID(), plan.candidate_id, plan.revision, plan.action, plan.event_id,
@@ -355,7 +357,8 @@ export function d1Intake({ db, evidence, artwork, vectors }: IntakeBindings): In
       }
       const level = Math.max(...evidenceRows.map(row => row.authority === 'curator' ? 1 : 2))
       const observed = evidenceRows.map(row => row.observed_at).sort().at(-1)!
-      const stored = plan.action === 'create' ? null : await db.prepare('SELECT * FROM events WHERE id = ?').bind(plan.event_id).first<Row>()
+      const stored = plan.action === 'create' ? null : await db.prepare(`SELECT *, ${publisherFields} AS publisher_fields FROM events WHERE id = ?`)
+        .bind(plan.event_id).first<Row>()
       const previous = stored ? decodeRow(stored) : null
       if (plan.action !== 'create' && !previous) throw new Error('Catalog changed after preview')
       const oldStart = typeof previous?.starts_at === 'string' ? previous.starts_at : undefined
@@ -396,7 +399,8 @@ export function d1Intake({ db, evidence, artwork, vectors }: IntakeBindings): In
           }
         }
       }
-      const needsEmbedding = plan.action === 'create' || plan.action === 'update' && previous && searchInputsChanged(previous, e)
+      const needsEmbedding = plan.action === 'create' || plan.action === 'update' && previous &&
+        searchInputsChanged(previous, e) && !hasRefusedPublisherSearchInput(previous, e)
       if (needsEmbedding && (!e.embedding || e.search_document == null)) throw new Error('Search preparation is required')
 
       const performers = e.performers ?? previous?.performers
@@ -420,6 +424,7 @@ export function d1Intake({ db, evidence, artwork, vectors }: IntakeBindings): In
         performers: performers ? JSON.stringify(performers) : null,
         offers_valid_from: e.offers_valid_from ?? (replacedTicket ? null : previous?.offers_valid_from ?? null), doors_at: e.doors_at ?? retainedDoors,
       } satisfies IntakeEventPatch
+      if (previous) delete previous.publisher_fields
       const receipt = { plan_id: plan.id, candidate_id: plan.candidate_id, revision: plan.revision, action: plan.action, event_id: plan.event_id,
         committed_at: at, previous_event: replacing ? previous : null }
       const recordEvidence = db.prepare(`INSERT INTO event_source_evidence (event_id, candidate_id, observation_id, revision)
@@ -436,7 +441,8 @@ export function d1Intake({ db, evidence, artwork, vectors }: IntakeBindings): In
             e[column === 'organizer_url' ? 'organizer_name' : column] !== undefined) },
           checks: [...planChecks(plan, at), batchAssert(db, 'Candidate revision already committed through another plan',
             'NOT EXISTS (SELECT 1 FROM intake_plans WHERE candidate_id = ? AND revision = ? AND receipt IS NOT NULL)', plan.candidate_id, plan.revision)],
-          recordEvidence, recordReceipt: db.prepare('UPDATE intake_plans SET receipt = ? WHERE id = ?').bind(JSON.stringify(receipt), plan.id),
+          recordEvidence, recordReceipt: result => db.prepare('UPDATE intake_plans SET receipt = ? WHERE id = ?')
+            .bind(JSON.stringify({ ...receipt, ...result }), plan.id),
         })
       } catch (error) {
         // A concurrent commit of this plan won; its receipt is the answer, as the publication lock made it in Postgres.
@@ -445,11 +451,11 @@ export function d1Intake({ db, evidence, artwork, vectors }: IntakeBindings): In
         throw error
       }
       await commit.settle()
-      return receipt
+      return { ...receipt, ...commit.result }
     }),
     replayReceipt: plan => d1('intake.commit', async () => {
       if (plan.action !== 'link') await replayIntakeVector(db, vectors, plan.event_id, plan.id, plan.payload,
-        (plan.receipt!.previous_event as Row | null) ?? null)
+        (plan.receipt!.previous_event as Row | null) ?? null, plan.receipt!.kept)
       return plan.receipt!
     }),
 

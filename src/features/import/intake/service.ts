@@ -1,5 +1,6 @@
 import { Effect } from 'effect'
 import { encodeArtworkRef } from '#shared/lib/artwork-ref.ts'
+import { hasRefusedPublisherSearchInput } from '#shared/lib/db/event-write.ts'
 import type { EventInsert } from '#shared/lib/types.ts'
 import { EMPTY_FACETS, type EventFacets } from '#shared/lib/search-facets.ts'
 import { CURRENT_EMBEDDING_VERSION, embedEventWithDocument } from '#shared/lib/ai/embeddings.ts'
@@ -226,7 +227,7 @@ export const commitPlanEffect = Effect.fn('intake.commit')(function*(store: Inta
   }
   if (plan.action !== 'link' && !plan.payload.embedding) {
     const [previous] = plan.action === 'update' ? yield* store.eventsByIds([plan.event_id]) : []
-    const rebuildSearch = !previous || searchInputsChanged(previous, plan.payload)
+    const rebuildSearch = !previous || searchInputsChanged(previous, plan.payload) && !hasRefusedPublisherSearchInput(previous, plan.payload)
     const rebuildPresentation = !previous || descriptionChanged(previous, plan.payload)
     const [search, presentation] = yield* Effect.all([
       rebuildSearch ? Effect.gen(function* () {

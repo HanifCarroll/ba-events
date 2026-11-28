@@ -147,6 +147,12 @@ Imports, venue settlement, the venue review queue, enrichment, the blocklist, an
 - **THEN** the catalog reports the protected fields it kept and applies any permitted changes
 - **AND** the daily scrape counts the event as updated only if at least one stored field changed
 
+#### Scenario: An automatic or manual writer conflicts with a publisher correction
+- **WHEN** intake, import, enrichment, or manual repair proposes a different value for a publisher-locked event field
+- **THEN** the gateway reports that field as `kept` and applies permitted changes to other fields, including on an intake commit with current direct evidence
+- **AND** it does not store a search document or vector prepared from a refused value. If a permitted change also changes a search input, it builds the document from the accepted values and queues vector work for that document
+- **AND** the database rejects conflicting direct updates even inside the intake write context
+
 #### Scenario: A venue review settles a mix of event rows
 - **WHEN** a venue review assigns a venue to several event IDs
 - **THEN** the result identifies the assignments it applied and those it kept because of intake authority or a hidden location
@@ -169,6 +175,7 @@ Imports, venue settlement, the venue review queue, enrichment, the blocklist, an
 - **WHEN** the hourly task finds a timed event whose explicit end passed, or, without an explicit end, a timed event more than 4 hours after its start or a date-only event more than 28 hours after its start
 - **THEN** the event becomes `past` and its vector's status follows
 - **AND** a date-only event with an explicit end becomes `past` only after that end has passed and its Buenos Aires start day is over
+- **AND** aging uses the publisher-corrected start when present and may move `scheduled` to `past` even when the publisher locked `status`
 
 #### Scenario: Vectorize drifts from D1
 - **WHEN** the nightly reconcile finds a stale search document, a live event without a vector, or vector metadata that differs from the row

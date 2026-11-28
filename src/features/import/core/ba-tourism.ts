@@ -30,6 +30,7 @@ import { settleVenuesEffect, getVenueIdFromResults, isPlaceholderResult, type Ve
 import { delayEffect } from './nominatim.ts'
 import type { CatalogStore } from './catalog-store.ts'
 import { importTry, ImportOperationError } from './effect-utils.ts'
+import { hasRefusedPublisherSearchInput } from '#shared/lib/db/event-write.ts'
 import type { EventInsert, ImportBlocklistEntry } from '#shared/lib/types.ts'
 
 // ============================================================================
@@ -271,7 +272,7 @@ export function processBATourismImportEffect(
               description_en: transformed.description_en,
             }))
             : Effect.succeed({}),
-          baTourismTry('ba-tourism.embed', () =>
+          hasRefusedPublisherSearchInput(existing && { ...existing }, transformed) ? Effect.succeed(null) : baTourismTry('ba-tourism.embed', () =>
             embedEventWithDocument({
               name: transformed.name,
               description_es: transformed.description_es,
@@ -286,13 +287,12 @@ export function processBATourismImportEffect(
           ),
         ], { concurrency: 2, mode: 'result' })
         const presentationFields = yield* Effect.fromResult(presentationResult)
-        const { embedding, searchDocument } = yield* Effect.fromResult(embeddingResult)
+        const indexed = yield* Effect.fromResult(embeddingResult)
+        const indexFields = indexed ? { embedding: indexed.embedding, search_document: indexed.searchDocument, embedding_version: CURRENT_EMBEDDING_VERSION } : {}
         const eventWithEmbedding = {
           ...transformed,
           ...presentationFields,
-          embedding,
-          search_document: searchDocument,
-          embedding_version: CURRENT_EMBEDDING_VERSION,
+          ...indexFields,
           enrichment_status: 'pending' as const,
         }
 
@@ -304,9 +304,7 @@ export function processBATourismImportEffect(
               ...presentationFields,
               categories: eventWithEmbedding.categories,
               is_free: eventWithEmbedding.is_free,
-              embedding: eventWithEmbedding.embedding,
-              search_document: eventWithEmbedding.search_document,
-              embedding_version: eventWithEmbedding.embedding_version,
+              ...indexFields,
               ...getChangedMutableFields(eventWithEmbedding, existing),
             }).catch((error: Error) => error)
           )

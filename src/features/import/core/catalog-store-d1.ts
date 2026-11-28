@@ -8,7 +8,7 @@
 import type { D1Database, Vectorize } from '@cloudflare/workers-types'
 import { Schema } from 'effect'
 import { eventColumnsWith } from '#shared/lib/db/event-columns.ts'
-import { insertImportedEvent, setEventVenues, writeEvent } from '#shared/lib/db/event-write.ts'
+import { insertImportedEvent, publisherFields, setEventVenues, writeEvent } from '#shared/lib/db/event-write.ts'
 import { removeEventVectors } from '#shared/lib/db/vector-sync.ts'
 import type { BlocklistSource, ImportBlocklistEntry, Venue } from '#shared/lib/types.ts'
 import { trigramSimilarity } from '#shared/lib/search/trigram.ts'
@@ -85,6 +85,7 @@ const detailFields = {
 
 const existingEventRow = Schema.Struct({
   ...detailFields,
+  publisher_fields: Schema.String,
   id: Schema.String, external_id: Schema.String, name: Schema.String, description_es: Text, description_en: Text,
   starts_at: Schema.String, ends_at: Text, is_all_day: Bit, time_tba: Bit, venue_id: Text, categories: Strings, price: Price,
   is_free: Bit, min_age: Int, image_url: Text, image_width: Int, image_height: Int, link: Text, ticket_url: Text,
@@ -208,7 +209,8 @@ export function d1Catalog(db: D1Database, vectors: Vectorize): CatalogStore {
 
     async existingEvents(source, externalIds) {
       if (!externalIds.length) return []
-      const { results } = await db.prepare(`SELECT ${EXISTING_EVENT_COLUMNS} FROM events WHERE source = ? AND external_id IN (SELECT value FROM json_each(?))`)
+      const { results } = await db.prepare(`SELECT ${EXISTING_EVENT_COLUMNS}, ${publisherFields} AS publisher_fields FROM events
+        WHERE source = ? AND external_id IN (SELECT value FROM json_each(?))`)
         .bind(source, JSON.stringify(externalIds)).all()
       return results.map(row => {
         const event = decodeExisting(row)
