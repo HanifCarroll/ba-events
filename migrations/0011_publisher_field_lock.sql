@@ -34,10 +34,17 @@ WHEN NOT EXISTS (SELECT 1 FROM publisher_fix_context c JOIN publisher_catalog_fi
   AND EXISTS (SELECT 1 FROM publisher_field_lock WHERE event_id = OLD.id AND CASE field
     WHEN 'name' THEN NEW.name IS NOT OLD.name
     WHEN 'starts_at' THEN NEW.starts_at IS NOT OLD.starts_at
-    WHEN 'price' THEN NEW.price IS NOT OLD.price
-    WHEN 'is_free' THEN NEW.is_free IS NOT OLD.is_free
+    WHEN 'price' THEN NEW.price IS NOT OLD.price OR NEW.is_free IS NOT OLD.is_free
+    WHEN 'is_free' THEN NEW.price IS NOT OLD.price OR NEW.is_free IS NOT OLD.is_free
+    -- Mirror markPastEvents: explicit end first, then the timed/date-only fallback. CABA midnight is 03:00 UTC.
     WHEN 'status' THEN NEW.status IS NOT OLD.status AND NOT (
-      OLD.status = 'scheduled' AND NEW.status = 'past' AND OLD.starts_at < strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+      OLD.status = 'scheduled' AND NEW.status = 'past' AND EXISTS (
+        SELECT 1 FROM (SELECT (OLD.time_tba = 1 OR coalesce(OLD.is_all_day, 0) = 1) AS date_only)
+        WHERE (OLD.ends_at < strftime('%Y-%m-%dT%H:%M:%fZ', 'now') AND (NOT date_only OR
+          OLD.starts_at < strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-3 hours', 'start of day', '+3 hours')))
+          OR (OLD.ends_at IS NULL AND NOT date_only AND OLD.starts_at < strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-4 hours'))
+          OR (OLD.ends_at IS NULL AND date_only AND OLD.starts_at < strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-28 hours'))
+      ))
     WHEN 'description_display_es' THEN NEW.description_display_es IS NOT OLD.description_display_es
     WHEN 'description_display_en' THEN NEW.description_display_en IS NOT OLD.description_display_en
     WHEN 'description_summary_es' THEN NEW.description_summary_es IS NOT OLD.description_summary_es

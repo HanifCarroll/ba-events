@@ -444,6 +444,58 @@ describe.skipIf(bun)('the operator flow on D1', () => {
     presentation: async () => ({ description_display_es: null, description_display_en: null, description_summary_es: null, description_summary_en: null }),
   }
 
+  it('keeps the end and original doors when a locked start refuses the proposed schedule', async () => {
+    await source()
+    const venueId = await venue(), event = id(), day = shiftDay(baToday(), 4), proposedDay = shiftDay(day, 2)
+    const at = (date: string, time: string) => new Date(`${date}T${time}:00-03:00`).toISOString()
+    const startsAt = at(day, '21:00'), endsAt = at(day, '23:00'), doorsAt = at(day, '19:00')
+    await db.prepare(`INSERT INTO events (id,name,starts_at,ends_at,doors_at,venue_id,categories,source,search_document)
+      VALUES (?, 'Synthetic Jazz', ?, ?, ?, ?, '["music"]', 'luma', 'Original search')`)
+      .bind(event, at(day, '20:00'), endsAt, doorsAt, venueId).run()
+    await db.prepare("INSERT INTO publisher_catalog_fixes (operation, field, changes) VALUES ('start', 'starts_at', ?)")
+      .bind(JSON.stringify([{ id: event, to: startsAt, document: 'Original search', version: 2 }])).run()
+    const excerpt = 'Synthetic Jazz at Synthetic Venue'
+    const post = await observation((await run(store.reserveCollection)).id, excerpt)
+    const candidate = id()
+    await run(submitCandidateEffect(store, candidateInput(candidate, post, venueId, { intent: 'update', target_event_id: event,
+      date: proposedDay, time: null, doors_time: '20:00', evidence: [{ observation_id: post, fields: ['name', 'venue'], excerpt, media_id: null }] })))
+    const preview = await run(previewCandidateEffect(store, candidate))
+    expect(preview).toMatchObject({ action: 'update', reasons: [], payload: { starts_at: at(proposedDay, '00:00'), ends_at: endsAt } })
+    expect(await run(commitPlanEffect(store, preview.id, publishers))).toMatchObject({ kept: ['starts_at'] })
+    expect(await db.prepare('SELECT starts_at, ends_at, time_tba, doors_at FROM events WHERE id = ?').bind(event).first())
+      .toEqual({ starts_at: startsAt, ends_at: endsAt, time_tba: 0, doors_at: doorsAt })
+  }, 15_000)
+
+  it('skips evidence for kept admission and status so independently sourced credits can commit', async () => {
+    await source()
+    const venueId = await venue(), event = id(), date = shiftDay(baToday(), 5)
+    const startsAt = new Date(`${date}T21:00:00-03:00`).toISOString()
+    await db.prepare(`INSERT INTO events (id,name,starts_at,venue_id,categories,source,search_document)
+      VALUES (?, 'Synthetic Jazz', ?, ?, '["music"]', 'luma', 'Original search')`).bind(event, startsAt, venueId).run()
+    for (const [field, to] of [['price', 1500], ['status', 'scheduled']] as const) {
+      await db.prepare('INSERT INTO publisher_catalog_fixes (operation, field, changes) VALUES (?, ?, ?)')
+        .bind(field, field, JSON.stringify([{ id: event, to, document: 'Original search', version: 2 }])).run()
+    }
+    const excerpt = 'Synthetic Jazz 21:00 en Synthetic Venue, organiza Nube'
+    const post = await observation((await run(store.reserveCollection)).id, excerpt)
+    const candidate = id()
+    await run(submitCandidateEffect(store, candidateInput(candidate, post, venueId, { intent: 'update', target_event_id: event, date,
+      status: 'canceled', price_kind: 'free', organizer: { name: 'Nube' }, evidence: [
+        { observation_id: post, fields: ['name', 'date', 'time', 'venue', 'organizer'], excerpt, media_id: null },
+        { kind: 'official_page', fields: ['price'], excerpt: 'Entrada libre', url: 'https://example.test/admission' },
+      ] })))
+    const readPage = vi.fn(async () => { throw new Error('A page cited only for a refused price must not be read') })
+    const preview = await run(previewCandidateEffect(store, candidate, new Date(), readPage))
+    expect(preview).toMatchObject({ action: 'update', reasons: [] })
+    const embed = vi.fn(async () => { throw new Error('Refused admission must not be embedded') })
+    const receipt = await run(commitPlanEffect(store, preview.id, { ...publishers, readPage, embed }))
+    expect(readPage).not.toHaveBeenCalled()
+    expect(embed).not.toHaveBeenCalled()
+    expect(receipt).toMatchObject({ kept: ['price', 'is_free', 'status'] })
+    expect(await db.prepare('SELECT price, is_free, status, organizer_name, search_document FROM events WHERE id = ?').bind(event).first())
+      .toEqual({ price: 1500, is_free: 0, status: 'scheduled', organizer_name: 'Nube', search_document: 'Original search' })
+  }, 15_000)
+
   it.each(['current', 'legacy'])('commits selected artwork as a reference from a %s preview and lists the held backlog', async (format) => {
     await source()
     const runId = (await run(store.reserveCollection)).id

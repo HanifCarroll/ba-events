@@ -1,5 +1,6 @@
 import type { D1Database } from '@cloudflare/workers-types'
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
+import * as embeddings from '../ai/embeddings.ts'
 import { applyD1Migration, freshD1, withTestIntakeContext } from '../../../../tests/support/d1.ts'
 import { fakeVectorize } from '../../../../tests/support/vectorize.ts'
 import { markPastEvents } from '../../../jobs-worker/catalog-maintenance.ts'
@@ -74,6 +75,71 @@ it('queues a mixed write from accepted search facts and keeps manual repair from
     expect(document).not.toContain('Refused title')
     expect(vectors.get('mixed')?.values).toEqual([0.2])
     expect(await db.prepare("SELECT event_id FROM vector_sync WHERE event_id = 'mixed'").first()).not.toBeNull()
+  } finally { await dispose() }
+}, 30_000)
+
+it('does not build a document for a non-search-only write on a publisher-corrected event', async () => {
+  const { db, dispose } = await freshD1()
+  const build = vi.spyOn(embeddings, 'buildSearchDocument')
+  try {
+    await event(db, 'metadata')
+    await fix(db, 'title', 'name', [change('metadata', 'Publisher title', 'Publisher title')])
+    const result = await writeEvent(db, null, { writer: 'enrichment', id: 'metadata', patch: { min_age: 18 } })
+    expect(result).toMatchObject({ applied: ['min_age'], kept: [], vectorUpdated: false })
+    expect(build).not.toHaveBeenCalled()
+    expect(await db.prepare('SELECT * FROM vector_sync').first()).toBeNull()
+  } finally { build.mockRestore(); await dispose() }
+}, 30_000)
+
+it.each([['price', 1500, 'is_free', 1], ['is_free', 1, 'price', 1500]] as const)(
+  'a publisher %s lock also protects the other admission column', async (locked, to, companion, value) => {
+    const { db, dispose } = await freshD1()
+    try {
+      await event(db, 'admission')
+      await fix(db, 'admission', locked, [change('admission', to)])
+      const before = await db.prepare('SELECT price, is_free FROM events').first()
+      expect(await writeEvent(db, null, { writer: 'importer', id: 'admission', patch: { [companion]: value } }))
+        .toMatchObject({ applied: [], kept: [companion] })
+      await expect(db.prepare(`UPDATE events SET ${companion} = ?`).bind(value).run())
+        .rejects.toThrow('Publisher-corrected event field is locked')
+      expect(await db.prepare('SELECT price, is_free FROM events').first()).toEqual(before)
+    } finally { await dispose() }
+  }, 30_000,
+)
+
+it('the SQL status exception agrees with hourly aging and refuses an event with a future end', async () => {
+  const { db, dispose } = await freshD1()
+  try {
+    const now = new Date((await db.prepare("SELECT strftime('%Y-%m-%dT%H:%M:%fZ', 'now') AS now").first<string>('now'))!)
+    const hour = 3_600_000
+    const at = (hours: number) => new Date(now.getTime() + hours * hour).toISOString()
+    const midnight = (await db.prepare("SELECT strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-3 hours', 'start of day', '+3 hours') AS midnight")
+      .first<string>('midnight'))!
+    const cases = [
+      { id: 'running', start: at(-6), end: at(2), dateOnly: 0, expires: false },
+      { id: 'ended', start: at(-2), end: at(-1), dateOnly: 0, expires: true },
+      { id: 'timed-early', start: at(-3), end: null, dateOnly: 0, expires: false },
+      { id: 'timed-late', start: at(-5), end: null, dateOnly: 0, expires: true },
+      { id: 'date-early', start: at(-27), end: null, dateOnly: 1, expires: false },
+      { id: 'date-late', start: at(-29), end: null, dateOnly: 1, expires: true },
+      { id: 'date-today', start: midnight, end: at(-1), dateOnly: 1, expires: false },
+      { id: 'date-yesterday', start: at(-25), end: at(-1), dateOnly: 1, expires: true },
+    ]
+    const rows = cases.flatMap(test => ['direct', 'hourly'].map(kind => ({ ...test, id: `${kind}-${test.id}` })))
+    await db.batch(rows.map(row => db.prepare(`INSERT INTO events (id, name, starts_at, ends_at, time_tba, source)
+      VALUES (?, 'Synthetic', ?, ?, ?, 'luma')`).bind(row.id, row.start, row.end, row.dateOnly)))
+    await fix(db, 'status', 'status', rows.map(row => change(row.id, 'scheduled')))
+    const expireDirectly = (id: string) => db.prepare("UPDATE events SET status = 'past' WHERE id = ?").bind(id).run()
+    for (const test of cases) {
+      if (test.expires) await expireDirectly(`direct-${test.id}`)
+      else await expect(expireDirectly(`direct-${test.id}`)).rejects.toThrow('Publisher-corrected event field is locked')
+    }
+    expect(await markPastEvents(db, fakeVectorize().index, now)).toMatchObject({ marked: cases.filter(test => test.expires).length })
+    const results = await db.prepare("SELECT id FROM events WHERE status = 'past' ORDER BY id").all<{ id: string }>()
+    expect(results.results.map(row => row.id)).toEqual(rows.filter(row => row.expires).map(row => row.id).sort())
+    await db.prepare("UPDATE events SET ends_at = ? WHERE id = 'direct-running'").bind(at(-1)).run()
+    await expireDirectly('direct-running')
+    expect(await db.prepare("SELECT status FROM events WHERE id = 'direct-running'").first('status')).toBe('past')
   } finally { await dispose() }
 }, 30_000)
 

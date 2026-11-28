@@ -23,6 +23,7 @@ export type CatalogUpdateResult = EventWriteResult & { vectorFailure?: { error: 
 const facts = new Set<string>(eventColumnsWith('protection', 'facts'))
 const details = new Set<string>(eventColumnsWith('protection', 'details'))
 const derived = ['search_document', 'embedding_version'] as const
+const derivedFields = new Set<EventColumn>(derived)
 const intakeFields = eventColumnsWith('intakeWrite', 'both')
 export type IntakeEventPatch = Record<(typeof intakeFields)[number], unknown>
 const intakeDetails = eventColumnsWith('protection', 'details')
@@ -119,7 +120,7 @@ export async function writeEvent(db: D1Database, vectors: Vectorize | null, requ
     if (hidden && previous.venue_id !== null) effective.push(['venue_id', null])
     const changedSearch = effective.some(([key]) => searchInputs.has(key))
     const protectsInputs = [...searchInputs].some(key => locked.has(key))
-    const proposesDocument = embedding?.length || changes.some(([key]) => derived.some(column => key))
+    const proposesDocument = Boolean(embedding?.length) || changes.some(([key]) => derivedFields.has(key))
     const document = (publisherRefusal && changedSearch || protectsInputs && (changedSearch || proposesDocument))
       ? await documentFromEffectiveFacts(session, previous, effective) : undefined
     const stalePreparation = document !== undefined && proposesDocument &&
@@ -187,9 +188,10 @@ export async function setEventVenues(db: D1Database, ids: readonly string[], ven
 }
 
 export async function expireEvents(db: D1Database, vectors: Vectorize, { sql, values }: Guard) {
-  const eligible = `(${sql}) AND ((status = 'scheduled' AND starts_at < ?) OR NOT EXISTS (
-    SELECT 1 FROM json_each(${protectionFields}) WHERE value = 'status'
-    UNION ALL SELECT 1 FROM publisher_field_lock WHERE event_id = events.id AND field = 'status'))`
+  const eligible = `(${sql}) AND (status = 'scheduled' OR NOT EXISTS (
+    SELECT 1 FROM publisher_field_lock WHERE event_id = events.id AND field = 'status'))
+    AND ((status = 'scheduled' AND starts_at < ?) OR NOT EXISTS (
+      SELECT 1 FROM json_each(${protectionFields}) WHERE value = 'status'))`
   const params = [...values, new Date().toISOString()]
   const vector = planPastVectors(db, eligible, params)
   const [queued, expired] = await db.batch<StoredVector>([
@@ -233,7 +235,7 @@ export async function commitIntakeEvent(db: D1Database, vectors: Vectorize, requ
   const { patch } = request
   const fields = linked ? [] : pairs(action === 'create' ? { ...patch, ...request.create, source: 'instagram' } : patch,
     action === 'create' ? eventColumnsWith('intakeWrite', 'create', 'both') : intakeFields)
-  const locked = previous ? publisherSet(previous) : new Set<string>()
+  const locked = publisherSet(previous)
   const kept = fields.filter(([key, value]) => locked.has(key) && value !== previous?.[key]).map(([key]) => key)
   const refusedSearch = kept.some(key => searchInputs.has(key))
   const effective = fields.filter(([key]) => !locked.has(key) && (!refusedSearch || !derived.some(column => column === key)))
