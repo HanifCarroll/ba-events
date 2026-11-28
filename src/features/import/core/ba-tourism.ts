@@ -30,7 +30,7 @@ import { settleVenuesEffect, getVenueIdFromResults, isPlaceholderResult, type Ve
 import { delayEffect } from './nominatim.ts'
 import type { CatalogStore } from './catalog-store.ts'
 import { importTry, ImportOperationError } from './effect-utils.ts'
-import { hasRefusedPublisherSearchInput } from '#shared/lib/db/event-write.ts'
+import { hasRefusedPublisherSearchInput } from '#shared/lib/db/publisher-field-authority.ts'
 import type { EventInsert, ImportBlocklistEntry } from '#shared/lib/types.ts'
 
 // ============================================================================

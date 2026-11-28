@@ -2,6 +2,7 @@ import type { D1Database, D1PreparedStatement, Vectorize } from '@cloudflare/wor
 import { buildSearchDocument, CURRENT_EMBEDDING_VERSION } from '../ai/embeddings.ts'
 import { batchAssert } from './d1.server.ts'
 import { eventColumnsWith, type EventColumn } from './event-columns.ts'
+import { publisherFields, publisherSet, searchInputs } from './publisher-field-authority.ts'
 import { hasPendingVector, planCorrectedVector, planPastVectors, planVectorWrite, sourceForEmbedding, type StoredVector, type VectorPatch } from './vector-sync.ts'
 
 type Row = Record<string, unknown>
@@ -29,8 +30,6 @@ const intakeProtected = [...eventColumnsWith('protectOnCommit', true), 'embeddin
 const catalogFields = eventColumnsWith('catalog', 'write', 'read-write')
 const revisionFields = eventColumnsWith('advancesRevision', true)
 
-const searchInputs = new Set<EventColumn>(eventColumnsWith('searchDocument', true))
-
 /** Field precedence for catalog writers; SQL triggers backstop direct writes.
  * A publisher correction owns its field until another publisher correction; intake's evidence and write context
  * cannot override it. Intake may still correct other facts. Import, enrichment, and manual repair also respect intake
@@ -50,13 +49,6 @@ function pairs(patch: Patch, allowed: readonly EventColumn[]) {
 }
 
 type Assignments = ReturnType<typeof pairs>
-
-/** Compare a proposed search input with the prevailing publisher value before calling the embedding provider. */
-export function hasRefusedPublisherSearchInput(previous: Row | null | undefined, patch: Patch) {
-  if (!previous) return false
-  const locked = publisherSet(previous)
-  return [...searchInputs].some(key => locked.has(key) && (previous[key] ?? null) !== (patch[key] ?? null))
-}
 
 /** Read the document inputs from the effective row, not from a refused proposal or a stale caller snapshot. */
 async function documentFromEffectiveFacts(db: Pick<D1Database, 'prepare'>, previous: Row, effective: Assignments) {
@@ -91,8 +83,6 @@ export async function insertImportedEvent(db: D1Database, vectors: Vectorize, id
 }
 
 const protectionFields = '(SELECT fields FROM event_intake_protection WHERE event_id = events.id)'
-export const publisherFields = `(SELECT json_group_object(field, operation ORDER BY field) FROM publisher_field_lock WHERE event_id = events.id)`
-const publisherSet = (row: Row) => new Set(Object.keys(JSON.parse(typeof row.publisher_fields === 'string' ? row.publisher_fields : '{}')))
 const staleWrite = 'Event write snapshot changed'
 
 /** Read authority on the primary, then check the same revision fields and ledger inside the write batch. */

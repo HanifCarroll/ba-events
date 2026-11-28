@@ -35,7 +35,7 @@ import { filterEventsByLocation } from './geo-validation.ts'
 import type { EventInsert, ImportBlocklistEntry } from '#shared/lib/types.ts'
 import type { CatalogStore } from './catalog-store.ts'
 import { importTry, ImportOperationError } from './effect-utils.ts'
-import { hasRefusedPublisherSearchInput } from '#shared/lib/db/event-write.ts'
+import { hasRefusedPublisherSearchInput } from '#shared/lib/db/publisher-field-authority.ts'
 import { catalogImportProvenance, type CatalogImportProvenance } from './enrichment-provenance.ts'
 
 // ============================================================================
