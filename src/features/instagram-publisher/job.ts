@@ -645,9 +645,9 @@ export class Job {
       && (draft.reviewRebuilds?.day !== baLocal(this.s.now()).date || draft.reviewRebuilds.count < MAX_REVIEW_REBUILDS)
   }
 
-  private threadsApprovalOpen(draft: Draft) {
+  private threadsApprovalOpen(draft: Draft, now = this.s.now()) {
     const window = this.openThreadsWindow(draft)
-    return Boolean(window && this.s.now() < window.cutoff)
+    return Boolean(window && now < window.cutoff)
   }
 
   private investigationOverridden(draft: Draft, window: RunWindow, decision: DraftDecision) {
@@ -1283,22 +1283,35 @@ export class Job {
     let preview: PreviewThread
     if (action === 'approve') {
       if (revision !== draft.revision) throw new Error(`${id}: current revision is r${draft.revision}, not r${revision}.`)
-      if (draft.state !== 'previewed') throw new Error(`${id}: cannot approve a draft in state ${draft.state}.`)
-      const { cutoff } = runWindow(format, from)
-      if (this.s.now() >= cutoff) throw new Error(`${id}: the Instagram approval cutoff has passed.`)
-      const replay = draft.delegatedApprovals?.find(entry => entry.preview.revision === revision && entry.reason === reason)
-      if (replay) {
-        if (previewTs && replay.preview.ts !== previewTs) throw new Error(`${id}: that instruction already approved a different preview.`)
-        return false
+      const threadsOnly = draft.state === 'published'
+      if (!threadsOnly && draft.state !== 'previewed') throw new Error(`${id}: cannot approve a draft in state ${draft.state}.`)
+      const instagramCutoff = threadsOnly ? null : runWindow(format, from).cutoff
+      const checkWindow = (now: Date) => {
+        if (threadsOnly && !this.threadsApprovalOpen(draft, now)) throw new Error(`${id}: the Threads approval window is closed.`)
+        if (instagramCutoff && now >= instagramCutoff) throw new Error(`${id}: the Instagram approval cutoff has passed.`)
       }
-      const matches = previews.filter(item => item.revision === revision && (!previewTs || item.ts === previewTs))
+      checkWindow(this.s.now())
+      if (threadsOnly && !previewTs) throw new Error(`${id}: use --preview-ts to identify the Threads-only preview after Instagram publishes.`)
+      const replay = draft.delegatedApprovals?.find(entry => entry.preview.revision === revision && entry.reason === reason)
+      const alreadyRecorded = () => {
+        if (!replay) return false
+        if (previewTs && replay.preview.ts !== previewTs) throw new Error(`${id}: that instruction already approved a different preview.`)
+        return true
+      }
+      if (!threadsOnly && alreadyRecorded()) return false
+      const matches = previews.filter(item => item.revision === revision && (!previewTs || item.ts === previewTs)
+        && (!threadsOnly || (item.threads && !item.instagram)))
       if (matches.length > 1) throw new Error(`${id}: multiple previews for r${revision}; use --preview-ts to identify the one Hanif approved.`)
-      if (!matches[0] || this.pendingPreview(draft)) throw new Error(`${id}: no confirmed current preview for r${revision}.`)
+      if (!matches[0] || this.pendingPreview(draft)) {
+        if (threadsOnly) throw new Error(`${id}: no confirmed Threads-only preview for r${revision} matches --preview-ts.`)
+        throw new Error(`${id}: no confirmed current preview for r${revision}.`)
+      }
       preview = matches[0]
       const decision = await this.readDecision(draft)
       const now = this.s.now()
-      if (now >= cutoff) throw new Error(`${id}: the Instagram approval cutoff has passed.`)
+      checkWindow(now)
       if (decision.rejected) throw new Error(`${id}: Hanif already vetoed the draft.`)
+      if (threadsOnly && alreadyRecorded()) return false
       if (draft.delegatedApprovals?.some(entry => entry.preview.revision === revision && entry.preview.ts === preview.ts && entry.preview.channel === preview.channel)) return false
       const needsInstagram = preview.instagram && !decision.approved && !this.instagramAuto(draft)
       const needsThreads = preview.threads && !decision.threadsApproved && this.threadsApprovalOpen(draft) && !this.threadsAuto(draft)
