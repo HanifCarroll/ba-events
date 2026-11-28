@@ -59,6 +59,12 @@ describe('GET /sitemap.xml', () => {
       'https://baeventos.com/agenda/fin-de-semana',
       'https://baeventos.com/agenda/esta-semana',
       'https://baeventos.com/agenda/gratis',
+      'https://baeventos.com/agenda/teatro',
+      'https://baeventos.com/agenda/musica-en-vivo',
+      'https://baeventos.com/agenda/ferias',
+      'https://baeventos.com/agenda/muestras',
+      'https://baeventos.com/agenda/poesia',
+      'https://baeventos.com/agenda/tango',
     ])
     expect(Array.from(xml.matchAll(/<lastmod>(.*?)<\/lastmod>/g), match => match[1])).toEqual([
       modified, modified, modified, modified, modified,

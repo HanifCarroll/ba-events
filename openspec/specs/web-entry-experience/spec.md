@@ -179,6 +179,14 @@ The site SHALL serve `/agenda/hoy`, `/agenda/fin-de-semana`, `/agenda/esta-seman
 - **WHEN** the visitor opens a Spanish agenda URL with an English preference cookie or English `Accept-Language`
 - **THEN** the initial document and event-card labels are Spanish, and the site does not change the saved language preference
 
+### Requirement: Public topic agendas classify the shared Agenda selection
+The site SHALL serve and list in the sitemap weekly agendas for theatre, live music, fairs, exhibitions, poetry, and tango. Topic criteria SHALL apply to eligible Agenda events before grouping. Fairs, exhibitions, poetry, and tango SHALL show at most six matching later cards within 60 Buenos Aires days, distinguish no matches this week from no matches in that horizon, and never substitute another topic's events.
+
+#### Scenario: A listing has ambiguous wording
+- **WHEN** a title mentions a holiday rather than a fair, or a tarot reading rather than poetry
+- **THEN** the listing is not selected solely for that wording
+- **AND** a concert at a theatre can appear on both the theatre and live music agendas because the theatre page explicitly includes other events at theatre venues
+
 ### Requirement: Card artwork preserves complete posters with a subtle background
 Event artwork SHALL preserve the full image without cropping inside a softly tinted container. The container SHALL remain visually quieter than the card content when artwork dimensions leave unused space.
 

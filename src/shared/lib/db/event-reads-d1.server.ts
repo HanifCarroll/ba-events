@@ -1,6 +1,7 @@
 /** Public catalog reads on D1: home, event, artwork, venue, event facts, and the events API. */
 import type { D1Database } from '@cloudflare/workers-types'
 import { catalogArtworkUrl } from '../artwork-url.ts'
+import { eventFacetsSchema, type EventFacets } from '../search-facets.ts'
 import type { ChatEventPayload, EventCredit, Venue } from '../types.ts'
 import { isPayWhatYouCan } from '#features/events/lib/admission.ts'
 import { HOME_DOORS_ONLY_DURATION_MS, HOME_EVENT_DEFAULT_DURATION_MS, HOME_FALLBACK_LIMIT, homeWindow, occurrenceEnd, type HomeAgendaEvent, type HomeWindow } from '#features/events/lib/home-feed.ts'
@@ -89,10 +90,11 @@ export type AgendaListing = HomeAgendaEvent & {
     source: ChatEventPayload['source']
     ticket_url: string | null
     description_es: string | null
+    facets?: EventFacets
   }
 }
 
-type DiscoveryRow = AgendaRow & Omit<AgendaListing['details'], 'description_es'>
+type DiscoveryRow = AgendaRow & Omit<AgendaListing['details'], 'description_es' | 'facets'> & { facets: string }
 
 async function selectAgendaRows<T extends AgendaRow>(db: D1Database, window: HomeWindow, discovery: boolean) {
   // Buenos Aires calendar days currently use UTC−03:00. Keep complete days so grouped slots are not cut off.
@@ -107,7 +109,7 @@ async function selectAgendaRows<T extends AgendaRow>(db: D1Database, window: Hom
       UNION ALL
       SELECT id FROM tail WHERE ? OR day_rank <= ?
     )
-    SELECT ${discovery ? 'e.updated_at, e.source, e.ticket_url,' : ''} e.id, e.name, e.description_es, e.starts_at, e.ends_at, e.doors_at, e.time_tba, e.is_all_day, e.image_url, e.image_width, e.image_height,
+    SELECT ${discovery ? 'e.updated_at, e.source, e.ticket_url, e.facets,' : ''} e.id, e.name, e.description_es, e.starts_at, e.ends_at, e.doors_at, e.time_tba, e.is_all_day, e.image_url, e.image_width, e.image_height,
       CASE WHEN coalesce(e.location_hidden, 0) = 0 AND NOT e.location_tba THEN v.id END AS venue_id,
       CASE WHEN coalesce(e.location_hidden, 0) = 0 AND NOT e.location_tba THEN v.name END AS venue_name,
       CASE WHEN coalesce(e.location_hidden, 0) = 0 AND NOT e.location_tba THEN v.neighborhood END AS venue_neighborhood,
@@ -140,9 +142,10 @@ export async function homeAgendaD1(db: D1Database, window: HomeWindow): Promise<
 
 /** Scheduled, in-scope public cards with event images, including later dates for discovery. */
 export async function discoveryAgendaD1(db: D1Database, window: HomeWindow): Promise<AgendaListing[]> {
-  return (await selectAgendaRows<DiscoveryRow>(db, window, true)).map(({ updated_at, source, ticket_url, ...row }) => ({
-    ...toAgendaEvent(row), details: { updated_at, source, ticket_url, description_es: row.description_es },
-  }))
+  return (await selectAgendaRows<DiscoveryRow>(db, window, true)).map(({ updated_at, source, ticket_url, facets, ...row }) => {
+    const parsed = eventFacetsSchema.safeParse(JSON.parse(facets))
+    return { ...toAgendaEvent(row), details: { updated_at, source, ticket_url, description_es: row.description_es, facets: parsed.data } }
+  })
 }
 
 export async function enabledInstagramSourceCountD1(db: D1Database): Promise<number> {
