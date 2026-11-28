@@ -89,7 +89,7 @@
 		{ label: m.nav_new_chat(), icon: MessageSquarePlus, action: handleNewChat },
 		{ to: '/saved', label: m.nav_saved(), icon: Bookmark, requiresAuth: true },
 		{ to: '/profile', label: m.nav_settings(), icon: Settings, requiresAuth: true },
-		{ label: 'Feedback', icon: MessageCircle, action: handleFeedback }
+		{ label: m.nav_feedback(), icon: MessageCircle, action: handleFeedback }
 	];
 
 	const filteredMainNavItems = $derived(

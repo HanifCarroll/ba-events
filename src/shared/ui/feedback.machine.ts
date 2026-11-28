@@ -7,7 +7,7 @@ export function createFeedbackMachine(deps: {
 }) {
 	return setup({
 		schemas: {
-			context: types<{ message: string; error: string | null }>(),
+			context: types<{ message: string; error: 'submit-failed' | null }>(),
 			events: {
 				OPEN: types<{}>(),
 				CLOSE: types<{}>(),
@@ -49,7 +49,7 @@ export function createFeedbackMachine(deps: {
 					},
 					onError: () => ({
 						target: 'editing',
-						context: { error: 'Feedback submission failed. Please try again.' }
+						context: { error: 'submit-failed' }
 					})
 				}
 			},

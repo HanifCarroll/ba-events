@@ -182,6 +182,9 @@ describe('GET /sitemap.xml', () => {
     expect(about.lang).toBe('en')
     expect(about.updated).toBe('Updated November 2026')
     expect(about.blocks.join(' ')).toContain('more than 10 accounts')
+    expect(about.blocks.join(' ')).toContain('the Feedback option')
+    const spanish = await loadAboutPage('/que-es-ba-eventos', () => {}, false)
+    expect(spanish.blocks.join(' ')).toContain('la opción Comentarios')
     expect(about.blocks.join(' ')).not.toMatch(/{{|\[HANIF:|Passline/)
   })
 

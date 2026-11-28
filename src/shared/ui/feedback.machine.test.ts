@@ -39,6 +39,21 @@ describe('feedback lifecycle', () => {
 		expect(actor.getSnapshot().matches('editing')).toBe(true)
 		actor.stop()
 	})
+	it('preserves a draft and reports a language-independent failure if submission fails', async () => {
+		const actor = createActor(createFeedbackMachine({
+			submit: async () => { throw new Error('Synthetic service error') },
+			close: () => {},
+			submitted: () => {}
+		})).start()
+		actor.send({ type: 'OPEN' })
+		actor.send({ type: 'EDIT', message: 'synthetic feedback' })
+		actor.send({ type: 'SUBMIT' })
+		const failed = await waitFor(actor, (state) => state.context.error === 'submit-failed')
+		expect(failed.matches('editing')).toBe(true)
+		expect(failed.context.message).toBe('synthetic feedback')
+		actor.stop()
+	})
+
 	it('auto-closes a successful submission once and clears the draft after closing', async () => {
 		const clock = new SimulatedClock()
 		let closes = 0

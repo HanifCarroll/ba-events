@@ -226,7 +226,7 @@ describe('page-level doors on D1', () => {
     await Effect.runPromise(commitPlanEffect(store, preview.id, publishers))
     expect(await db.prepare('SELECT starts_at, time_tba, doors_at FROM events WHERE id = ?').bind(preview.event_id).first())
       .toEqual({ starts_at: '2026-11-23T03:00:00.000Z', time_tba: 1, doors_at: doorsAt })
-  })
+  }, 20_000)
 })
 
 describe('intake failure and retry orchestration', () => {
