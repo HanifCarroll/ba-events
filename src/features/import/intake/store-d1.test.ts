@@ -289,7 +289,8 @@ describe.skipIf(bun)('commit_intake_plan on D1', () => {
     const fresh = await plan(candidate, 2, 'update', event, { ...payload, embedding: undefined, image_url: 'https://example.test/artwork.jpg' },
       [{ observation_id: newer, fields: ['name'] }])
     const embed = vi.fn(async () => { throw new Error('A refused name must not reach the embedding provider') })
-    const receipt = await run(commitPlanEffect(store, fresh, { embed, presentation: async () => ({}) }))
+    const presentation = async () => { throw new Error('A name-only correction does not change descriptions') }
+    const receipt = await run(commitPlanEffect(store, fresh, { embed, presentation }))
     expect(embed).not.toHaveBeenCalled()
     expect(receipt).toMatchObject({ previous_event: { name: 'Publisher correction' }, kept: ['name'] })
     const afterIntake = await readback()
