@@ -1,13 +1,16 @@
 import { readFileSync } from 'node:fs'
 import { trace } from '@opentelemetry/api'
 import type { RequestEvent } from '@sveltejs/kit'
+import { load } from 'cheerio'
 import { render } from 'svelte/server'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { useCloudflareBindings } from '#shared/lib/db/search-bindings.server.ts'
 import { handleLocaleSync, handleParaglide } from '../../hooks.server.ts'
 import { freshD1 } from '../../../tests/support/d1.ts'
+import { loadAboutPage } from './api/about-page.server.ts'
 import { loadAgendaPage } from './api/agenda-page.server.ts'
 import { loadBarrioPage, loadVenuePage } from './api/place-page.server.ts'
+import AboutPage from './components/AboutPage.svelte'
 import AgendaPage from './components/AgendaPage.svelte'
 
 vi.mock('$app/state', () => ({ page: { url: new URL('https://baeventos.com/agenda/gratis') } }))
@@ -105,6 +108,42 @@ describe('initial discovery HTML', () => {
       expect(html).toContain('<html lang="es"')
       expect(html).toMatch(/<article\b[^>]*>.*?>Gratis<.*?<\/article>/s)
     }
+  })
+
+  it.each(preferenceSources)('renders English agendas, cards, and nav with Spanish %s', async source => {
+    for (const [path, label, alternate, alternateLabel] of [
+      ['/en/things-to-do-this-weekend', 'This weekend', '/en/free-events-this-week', 'Free'],
+      ['/en/free-events-this-week', 'Free', '/en/things-to-do-this-weekend', 'This weekend'],
+    ] as const) {
+      const html = await requestAgenda(path, source, 'es')
+      expect(html).toContain('<html lang="en"')
+      expect(html).toMatch(/<article\b[^>]*>.*?>Free<.*?<\/article>/s)
+      const $ = load(html)
+      const nav = $('nav[aria-label="Agenda dates"]')
+      expect(nav.find('[aria-current="page"]').text()).toBe(label)
+      expect(nav.find('a[aria-current], a[href="' + path + '"]').length).toBe(0)
+      expect(nav.find('a[href="' + alternate + '"]').text()).toBe(alternateLabel)
+      expect(nav.find('a[href="/agenda/hoy"]').text()).toBe('Today')
+      expect(nav.find('a[href="/agenda/esta-semana"]').text()).toBe('This week')
+    }
+  })
+
+  it.each(preferenceSources)('keeps the about routes in their own document language with the opposite %s', async source => {
+    for (const [path, preference, expected] of [['/en/about', 'es', 'en'], ['/que-es-ba-eventos', 'en', 'es']] as const) {
+      const html = await requestPage(path, source, preference, async () => {
+        const data = await loadAboutPage(path, () => {}, false)
+        return render(AboutPage, { props: { data } })
+      })
+      expect(html).toContain(`<html lang="${expected}"`)
+    }
+  })
+
+  it('groups the same ongoing free card and count under Today in English', async () => {
+    const $ = load(await requestAgenda('/en/free-events-this-week', 'cookie', 'es'))
+    expect($('[data-section="discovery-page"] > p').text()).toContain('1 is today.')
+    const cards = $('[data-section="event-card"]')
+    expect(cards.length).toBe(1)
+    expect(cards.first().prev('[data-section="day"]').text()).toBe('Today')
   })
 
   it('puts a single ongoing free event under Today and counts it once', async () => {

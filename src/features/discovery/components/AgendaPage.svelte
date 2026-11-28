@@ -13,7 +13,7 @@
 	{@html '<script type="application/ld+json">' + jsonLd + '</' + 'script>'}
 </svelte:head>
 
-<DiscoveryShell {data} agenda={data.path.startsWith('/agenda/')}>
+<DiscoveryShell {data} agenda={data.lang === 'en' || data.path.startsWith('/agenda/')}>
 	<p class="mx-auto mb-6 max-w-[90rem] px-4 leading-relaxed sm:px-8 lg:px-12"><CopyText text={data.intro} /></p>
 	{#if data.info.length}
 		<dl class="mx-auto mb-6 grid max-w-[90rem] gap-2 px-4 sm:px-8 lg:px-12">

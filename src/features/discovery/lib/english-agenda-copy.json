@@ -1,0 +1,50 @@
+{
+  "/en/things-to-do-this-weekend": {
+    "title": "Things to do in Buenos Aires this weekend | BA Eventos",
+    "description": "Theater, live music, fairs, and poetry in Buenos Aires from Friday to Sunday, with times, neighborhoods, and links to each venue's own post.",
+    "heading": "Things to do in Buenos Aires this weekend",
+    "updated": "Updated {{updated_at}}",
+    "intro": "From {{friday}} to {{sunday}}, BA Eventos lists {{n_events}} at {{n_venues}} in Buenos Aires. The list covers theater, live music, fairs, poetry readings, and events at cultural centers, taken from what venues and organizers post. {{free_sentence}} Most listings come from Spanish-language posts, so many event names are in Spanish.",
+    "empty": "We haven't found anything for this weekend yet. The next date with events is {{next_date}}. See the [Spanish weekly agenda](/agenda/esta-semana) or ask the chat in English.",
+    "faq": [
+      {
+        "question": "What is there to do in Buenos Aires this weekend?",
+        "answer": "BA Eventos lists the weekend's theater, live music, fairs, and poetry in Buenos Aires, from Friday to Sunday. Each listing shows the time, venue, and neighborhood, and links to the source. The site focuses on independent culture and only lists events from the sources it follows."
+      },
+      {
+        "question": "Can I use BA Eventos in English?",
+        "answer": "Yes. The site has an English version, and the chat answers in English. Many event names stay in Spanish because the venues post in Spanish."
+      },
+      {
+        "question": "What does «a la gorra» mean?",
+        "answer": "«A la gorra» means there's no set ticket price. At the end, someone passes the hat and you give what you can. BA Eventos doesn't count these events as free."
+      },
+      {
+        "question": "Is there a list of free events?",
+        "answer": "Yes. [Free events in Buenos Aires this week](/en/free-events-this-week) lists only events with no charge."
+      }
+    ]
+  },
+  "/en/free-events-this-week": {
+    "title": "Free events in Buenos Aires this week | BA Eventos",
+    "description": "Free theater, live music, fairs, and exhibitions in Buenos Aires over the next 7 days, with times and neighborhoods. Pay-what-you-can shows not included.",
+    "heading": "Free events in Buenos Aires this week",
+    "updated": "Updated {{updated_at}}",
+    "intro": "Through {{last_day}}, BA Eventos lists {{n_free}} in Buenos Aires, at {{n_venues}}. {{today_sentence}} Free means the source asks for no ticket and no contribution. Events «a la gorra», where someone passes the hat at the end, aren't on this list.",
+    "empty": "We haven't found anything free this week yet. Check the [weekend listings](/en/things-to-do-this-weekend): some events show «Price TBA» and may turn out to be free.",
+    "faq": [
+      {
+        "question": "What free things are there to do in Buenos Aires this week?",
+        "answer": "This page lists every free event BA Eventos has for the next 7 days: theater, live music, fairs, exhibitions, and readings at venues and cultural centers in Buenos Aires. Each listing shows the time, venue, and neighborhood, and links to the source."
+      },
+      {
+        "question": "Do I need to book free events?",
+        "answer": "It depends on the event. Some ask you to register or get a free ticket, and others are open to everyone. Open the listing's link to see what the source asks for."
+      },
+      {
+        "question": "What's the difference between free and «a la gorra»?",
+        "answer": "A free event has no charge. At an event «a la gorra», there's no set price, and someone passes the hat at the end for you to give what you can. BA Eventos labels those events «A la gorra» and keeps them off the free list."
+      }
+    ]
+  }
+}

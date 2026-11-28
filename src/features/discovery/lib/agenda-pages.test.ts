@@ -55,6 +55,11 @@ describe('public date agendas', () => {
     expect(ids(select('/agenda/gratis').current)).toEqual(['sunday'])
   })
 
+  it('selects the same event IDs in the English and Spanish agendas', () => {
+    expect(ids(select('/en/free-events-this-week').current)).toEqual(ids(select('/agenda/gratis').current))
+    expect(ids(select('/en/things-to-do-this-weekend').current)).toEqual(ids(select('/agenda/fin-de-semana').current))
+  })
+
   it('fills real counts and skips unavailable optional sentences without losing surrounding copy', () => {
     const snapshot = fixture('2026-11-27T03:00:00.000Z')
     const definition = agendaPages['/agenda/hoy']

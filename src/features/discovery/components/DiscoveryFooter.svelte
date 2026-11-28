@@ -4,7 +4,7 @@
 
 <nav aria-label="Agenda" class="mb-4 flex flex-wrap gap-x-10 gap-y-5">
 	{#each footerGroups as group (group.heading)}
-		<section>
+		<section lang={group.heading === 'In English' ? 'en' : 'es'}>
 			<h2 class="text-sm font-semibold">{group.heading}</h2>
 			<ul class="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-[#ccccd4]">
 				{#each group.links as link (link.href)}

@@ -195,6 +195,14 @@ The site SHALL serve a page for each listed barrio even if its weekly Agenda is 
 - **THEN** the oldest record gets the bare slug, using the venue ID to break creation-time ties, and the other venues have ID-suffixed slugs
 - **AND** venue eligibility does not change which slug belongs to each venue
 
+### Requirement: Discovery URLs keep their own language
+The English weekend and free-event pages SHALL show the same selection as their Spanish counterparts, render their document and cards in English without changing the visitor’s saved language, and show English date navigation linking to English equivalents when available and Spanish agendas otherwise. The current item SHALL not be a link. The site SHALL serve the Spanish and English about pages with their approved copy and current count of enabled Instagram source accounts. All four routes SHALL be linked from the footer and sitemap.
+
+#### Scenario: A Spanish-preferring visitor opens an English listing
+- **WHEN** the visitor requests the English weekend, free-event, or about URL with a Spanish preference
+- **THEN** the document uses `lang="en"`, has an English title and metadata, and links to its Spanish counterpart
+- **AND** the visitor's saved preference does not change, and event cards still link to the existing event detail URLs
+
 ### Requirement: Card artwork preserves complete posters with a subtle background
 Event artwork SHALL preserve the full image without cropping inside a softly tinted container. The container SHALL remain visually quieter than the card content when artwork dimensions leave unused space.
 
