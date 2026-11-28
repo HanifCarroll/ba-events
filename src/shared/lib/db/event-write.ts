@@ -106,12 +106,10 @@ export async function writeEvent(db: D1Database, vectors: Vectorize | null, requ
     const changes = requested.filter(([key, value]) => value !== previous[key])
     const hidden = (protectedSet.has('location_hidden') ? previous.location_hidden : (patch.location_hidden === undefined ? previous.location_hidden : patch.location_hidden)) === 1
     const allowed = changes.filter(([key, value]) => {
-      if (writer === 'manual-repair' && !derived.some(column => column === key)) {
-        if (!locked.has(key)) throw new Error(`Manual embedding repair cannot set ${key}`)
-      } else {
-        if (key === 'status' && value === 'past' && previous.can_age) return true
-        if (!locked.has(key) && (repair || !protectedSet.has(key) || !facts.has(key) && !details.has(key) ||
-          (key === 'venue_id' && value === null && hidden))) return true
+      if (!locked.has(key)) {
+        if (writer === 'manual-repair' && !derived.some(column => column === key)) throw new Error(`Manual embedding repair cannot set ${key}`)
+        if (repair || !protectedSet.has(key) || !facts.has(key) && !details.has(key) ||
+          (key === 'status' && value === 'past' && previous.can_age) || (key === 'venue_id' && value === null && hidden)) return true
       }
       kept.push(key)
       return false

@@ -2,7 +2,8 @@ import type { D1Database } from '@cloudflare/workers-types'
 import { expect, it } from 'vitest'
 import { applyD1Migration, freshD1, withTestIntakeContext } from '../../../../tests/support/d1.ts'
 import { fakeVectorize } from '../../../../tests/support/vectorize.ts'
-import { expireEvents, writeEvent } from './event-write.ts'
+import { markPastEvents } from '../../../jobs-worker/catalog-maintenance.ts'
+import { writeEvent } from './event-write.ts'
 
 const migration = '0011_publisher_field_lock.sql'
 const oldStart = '2025-02-02T00:00:00.000Z'
@@ -88,7 +89,9 @@ it('ages a publisher-locked scheduled status using the publisher-corrected start
     await vectors.index.upsert([{ id: 'aged', values: [0.2], metadata: { status: 'scheduled', starts_at: Date.parse(older) } }])
     const attempted = await writeEvent(db, vectors.index, { writer: 'enrichment', id: 'aged', patch: { status: 'canceled', starts_at: future, min_age: 16 } })
     expect(attempted).toMatchObject({ applied: ['min_age'], kept: ['status', 'starts_at'] })
-    const expired = await expireEvents(db, vectors.index, { sql: "status = 'scheduled' AND starts_at < ?", values: [oldStart] })
+    const earlyPast = await writeEvent(db, vectors.index, { writer: 'importer', id: 'aged', patch: { status: 'past' } })
+    expect(earlyPast).toMatchObject({ applied: [], kept: ['status'] })
+    const expired = await markPastEvents(db, vectors.index, new Date('2025-02-02T10:00:00.000Z'))
     expect(expired).toEqual({ marked: 1, vectorsUpdated: 1 })
     expect(vectors.vectors.get('aged')).toEqual({ id: 'aged', values: [0.2], metadata: { status: 'past', starts_at: Date.parse(older) } })
     expect(await db.prepare("SELECT status FROM events WHERE id = 'future'").first('status')).toBe('scheduled')
