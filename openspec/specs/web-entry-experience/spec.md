@@ -99,6 +99,10 @@ The homepage SHALL lead with the current agenda and render exactly one centered 
 - **THEN** the agenda omits timed occurrences at their explicit end, or three hours after their start if no end is known
 - **AND** all-day and time-TBA events remain through their Buenos Aires start day, and ongoing multi-day events with a later explicit end remain eligible
 
+#### Scenario: An ongoing event started on a previous Buenos Aires day
+- **WHEN** the homepage or a public agenda shows an ongoing Event Listing that started before today's Buenos Aires midnight
+- **THEN** the agenda groups that card under Today where day headings are shown, and the card shows the localized Ongoing label followed by its actual local start date at every viewport width
+
 #### Scenario: A venue offers several time slots on the same day
 - **WHEN** remaining timed occurrences share a normalized title, a known venue, and a Buenos Aires start date
 - **THEN** they appear on one card listing distinct remaining times in order and linking to the next upcoming occurrence, or the first remaining one if no later slot remains
@@ -160,6 +164,20 @@ The D1 homepage feed SHALL omit out-of-scope and unjudged events before applying
 - **WHEN** a date-only event is dated today or an exhibition that started yesterday ends tomorrow
 - **THEN** the sitemap lists both events, even though their stored starts have passed
 - **AND** a date-only event from yesterday and a timed event whose cutoff has passed are not listed
+
+### Requirement: The public date agendas use the homepage's eligibility and Buenos Aires time
+The site SHALL serve `/agenda/hoy`, `/agenda/fin-de-semana`, `/agenda/esta-semana`, and `/agenda/gratis` with event cards, the date-specific text and FAQ, and a canonical URL. The pages SHALL use the Agenda's schedule, Editorial Scope, Event Image, remaining-time, grouping, and Free Admission rules. Their URLs SHALL appear in the sitemap with the latest relevant Event Listing revision, if any.
+
+#### Scenario: A visitor opens an agenda at a date boundary
+- **WHEN** a visitor requests one of the public agendas
+- **THEN** Hoy covers the current Buenos Aires calendar day, the weekend covers the current or coming Friday–Sunday, and the week ends at local midnight seven days after today
+- **AND** an eligible event still in progress may appear if its interval overlaps the selected dates; it appears under today, contributes once to the today count, and stops appearing when its occurrence ends
+- **AND** Gratis excludes pay-what-you-can events and orders the remaining free events by date
+- **AND** the page describes its empty state when there are no matches and includes structured data only for the event cards it shows
+
+#### Scenario: A visitor with an English preference requests a Spanish agenda
+- **WHEN** the visitor opens a Spanish agenda URL with an English preference cookie or English `Accept-Language`
+- **THEN** the initial document and event-card labels are Spanish, and the site does not change the saved language preference
 
 ### Requirement: Card artwork preserves complete posters with a subtle background
 Event artwork SHALL preserve the full image without cropping inside a softly tinted container. The container SHALL remain visually quieter than the card content when artwork dimensions leave unused space.

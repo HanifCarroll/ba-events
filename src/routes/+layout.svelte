@@ -8,6 +8,7 @@
 	import { getLocale } from '#paraglide/runtime.js'
 	import * as m from '#paraglide/messages.js'
 	import { getSiteUrl } from '#shared/lib/utils/url.ts'
+	import { discoveryLocale } from '#features/discovery/lib/discovery-locale.ts'
 	import { parseHomeFilter } from '#features/events/lib/home-feed.ts'
 	import { initializeGoogleAnalytics, isAnalyticsEnabled } from '#shared/lib/analytics.ts'
 	import { redactReplayNetworkRequest } from '#shared/lib/replay-network.ts'
@@ -207,6 +208,9 @@
 	)
 	const isEventPage = $derived(page.url.pathname.startsWith('/events/'))
 	const isMcpPage = $derived(page.url.pathname === '/mcp')
+	const pinnedLocale = $derived(discoveryLocale(page.url.pathname))
+	const isDiscoveryPage = $derived(Boolean(pinnedLocale))
+	$effect(() => { document.documentElement.lang = pinnedLocale ?? getLocale() })
 	const eventId = $derived(page.url.searchParams.get('event'))
 	const selectedEvent = $derived(
 		page.state.selectedEvent ??
@@ -226,7 +230,7 @@
 	<meta name="theme-color" content={isLandingPage ? '#101012' : '#fafaf8'} />
 	<link rel="manifest" href="/manifest.json?v=2" />
 
-	{#if !isEventPage && !isMcpPage}
+	{#if !isEventPage && !isMcpPage && !isDiscoveryPage}
 		<title>{seo.title}</title>
 		<meta name="description" content={seo.description} />
 
