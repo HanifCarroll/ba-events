@@ -2,16 +2,17 @@
 	import type { Snippet } from 'svelte'
 	import * as m from '#paraglide/messages.js'
 	import { getLocale } from '#paraglide/runtime.js'
-	import { HOME_FILTERS, HOME_PAGE_SIZE, homeDay, type HomeAgendaCardEvent, type HomeAgendaEvent, type HomeFilter, type HomeViewPage } from '../lib/home-feed.ts'
+	import { HOME_FILTERS, HOME_PAGE_SIZE, agendaDisplayDay, type HomeAgendaCardEvent, type HomeAgendaEvent, type HomeFilter, type HomeViewPage } from '../lib/home-feed.ts'
 	import HomeAgendaCard from './HomeAgendaCard.svelte'
 	import InstallApp from '#shared/ui/InstallApp.svelte'
 
-	let { view, filter, url, onAsk, onMore, day, composer }: {
+	let { view, filter, url, onAsk, onMore, day, composer, listingOnly = false }:  {
 		view: HomeViewPage
 		filter: HomeFilter | null
-		url: URL
+		url: Pick<URL, 'href'>
 		onAsk?: (event: HomeAgendaEvent) => void
-		onMore: (href: string) => Promise<void>
+		onMore?: (href: string) => Promise<void>
+		listingOnly?: boolean
 		day: string | undefined
 		composer?: Snippet
 	} = $props()
@@ -21,7 +22,7 @@
 	const chatAfter = 6
 	const beforeChat = $derived(view.events.slice(0, chatAfter))
 	const afterChat = $derived(view.events.slice(chatAfter))
-	const dayKeys = $derived(view.events.map((event) => homeDay(event.starts_at)))
+	const dayKeys = $derived(view.events.map((event) => agendaDisplayDay(event, day)))
 	const tomorrow = $derived(day && new Date(Date.parse(`${day}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10))
 	const weekday = new Intl.DateTimeFormat(getLocale() === 'es' ? 'es-AR' : 'en-US', { timeZone: 'UTC', weekday: 'long' })
 
@@ -31,7 +32,7 @@
 		return `${weekday.format(new Date(`${key}T00:00:00Z`))} ${Number(key.slice(-2))}`
 	}
 	const nextHref = $derived.by(() => {
-		const target = new URL(url)
+		const target = new URL(url.href)
 		target.searchParams.set('n', String(view.events.length + HOME_PAGE_SIZE))
 		return target.pathname + target.search
 	})
@@ -40,7 +41,7 @@
 	const emptyCopy = { feed: m.home_empty_feed, hoy: m.home_empty_today, finde: m.home_empty_weekend, gratis: m.home_empty_free, musica: m.home_empty_category }
 
 	function filterLink(key: (typeof HOME_FILTERS)[number]) {
-		const target = new URL(url)
+		const target = new URL(url.href)
 		target.searchParams.delete('n')
 		if (filter === key) target.searchParams.delete('f')
 		else target.searchParams.set('f', key)
@@ -48,7 +49,7 @@
 	}
 
 	async function showMore(event: MouseEvent) {
-		if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+		if (!onMore || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
 		event.preventDefault()
 		if (loadingMore) return
 		loadingMore = true
@@ -67,10 +68,11 @@
 	{#if key !== dayKeys[index - 1]}
 		<h2 data-section="day" class="col-span-full border-b border-[#3b3b42] pb-1.5 text-sm font-semibold text-[#d5d5db] first-letter:uppercase md:hidden">{dayHeading(key)}</h2>
 	{/if}
-	<HomeAgendaCard {event} {index} {onAsk} />
+	<HomeAgendaCard {event} {index} displayDay={key} {onAsk} />
 {/snippet}
 
 <section data-section="agenda" class="mx-auto w-full max-w-[90rem] px-4 pb-12 sm:px-8 lg:px-12">
+	{#if !listingOnly}
 	<nav data-section="filters" aria-label={m.home_filter_nav()} data-sveltekit-reset="false" data-sveltekit-preload-data="false" class="mb-2 flex gap-2 overflow-x-auto pt-1 pb-2 max-[360px]:gap-1.5 sm:mb-0 sm:pb-7">
 		{#each HOME_FILTERS as key (key)}
 			{@const href = filterLink(key)}
@@ -85,6 +87,7 @@
 	<p aria-live="polite" class={view.empty ? 'mb-6 border-l-2 border-[#d0ff36] py-2 pl-4 text-[#eeeeef]' : 'sr-only'}>
 		{view.empty ? emptyCopy[view.empty]() : ''}
 	</p>
+	{/if}
 	<div bind:this={grid} class="grid grid-cols-1 gap-y-3 [reading-flow:grid-rows] sm:gap-x-5 md:grid-cols-3 md:gap-y-7 lg:grid-cols-4 lg:gap-x-8 lg:gap-y-10 min-[90rem]:grid-cols-5">
 		{#each beforeChat as event, index (event.id)}
 			{@render card(event, index)}
@@ -99,7 +102,7 @@
 			{@render card(event, chatAfter + index)}
 		{/each}
 	</div>
-	{#if !view.empty}
+	{#if !listingOnly && !view.empty}
 		<div data-section="paging" class="mt-8 flex flex-col items-center gap-2 text-center">
 			<p aria-live="polite" class="text-sm text-[#d5d5db]">{m.home_showing_count({ shown: view.events.length, total: view.total })}</p>
 			{#if view.events.length < view.total}

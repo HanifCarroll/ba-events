@@ -43,6 +43,12 @@ export function parseHomeFilter(value: string | null): HomeFilter | null {
 
 export const homeDay = (time: Date | string) => formatInTimeZone(time, BA_TIMEZONE, 'yyyy-MM-dd')
 
+/** A current listing that began on an earlier date belongs under Today, without changing its stored start. */
+export function agendaDisplayDay(event: Pick<HomeAgendaEvent, 'starts_at'>, today: string | undefined): string {
+  const startDay = homeDay(event.starts_at)
+  return today && startDay < today ? today : startDay
+}
+
 export function homeWindow(now: Date) {
   const day = homeDay(now)
   const date = new Date(`${day}T00:00:00Z`)
@@ -83,7 +89,7 @@ export function occurrenceEnd(event: OccurrenceTimes): number {
   return Number.isFinite(explicitEnd) ? explicitEnd : start + HOME_EVENT_DEFAULT_DURATION_MS
 }
 
-function overlaps(event: HomeAgendaEvent, start: number, end: string): boolean {
+export function overlaps(event: HomeAgendaEvent, start: number, end: string): boolean {
   return event.starts_at < end && occurrenceEnd(event) > start
 }
 
@@ -102,7 +108,7 @@ export function nextHomeViewChange(agenda: HomeAgenda, now: number): number {
   return next
 }
 
-function groupOccurrences(events: HomeAgendaEvent[], now: number): HomeAgendaCardEvent[] {
+export function groupOccurrences(events: HomeAgendaEvent[], now: number): HomeAgendaCardEvent[] {
   const groups = new Map<string, HomeAgendaEvent[]>()
   for (const event of events) {
     const title = normalizeText(event.name)
@@ -122,26 +128,29 @@ function groupOccurrences(events: HomeAgendaEvent[], now: number): HomeAgendaCar
     (Date.parse(a.time_tba && a.doors_at || a.starts_at) - Date.parse(b.time_tba && b.doors_at || b.starts_at)))
 }
 
-export function selectHomeView(agenda: HomeAgenda, filter: HomeFilter | null, now = agenda.asOf): HomeView {
+export const isFreeAdmission = (event: HomeAgendaEvent) => !event.payWhatYouCan && (event.is_free || event.price === 0)
+
+export function selectHomeEvents<T extends HomeAgendaEvent>(agenda: { window: HomeWindow; events: T[]; asOf: number }, filter: HomeFilter | null, now = agenda.asOf): T[] {
   const window = currentWindow(agenda, now)
-  const remaining = agenda.events.filter((event) => occurrenceEnd(event) > now)
-  const week = remaining.filter((event) => event.starts_at < window.end)
-  if (!filter) return { events: groupOccurrences(week, now), empty: week.length ? null : 'feed' }
-  if (!agenda.events.length) return { events: [], empty: 'feed' }
+  const week = agenda.events.filter(event => event.starts_at < window.end && occurrenceEnd(event) > now)
+  if (filter === 'hoy') return week.filter(event => overlaps(event, Date.parse(window.start), window.tomorrow))
+  if (filter === 'finde') return week.filter(event => overlaps(event, Date.parse(window.weekendStart), window.weekendEnd))
+  if (filter === 'gratis') return week.filter(isFreeAdmission)
+  if (filter === 'musica') return week.filter(event => event.music)
+  return week
+}
 
+export function selectHomeView(agenda: HomeAgenda, filter: HomeFilter | null, now = agenda.asOf): HomeView {
+  const matches = selectHomeEvents(agenda, filter, now)
+  if (matches.length) return { events: groupOccurrences(matches, now), empty: null }
+  if (!filter || !agenda.events.length) return { events: [], empty: 'feed' }
   if (filter === 'hoy' || filter === 'finde') {
-    const start = Date.parse(filter === 'hoy' ? window.start : window.weekendStart)
+    const window = currentWindow(agenda, now)
     const end = filter === 'hoy' ? window.tomorrow : window.weekendEnd
-    const matches = week.filter((event) => overlaps(event, start, end))
-    return matches.length
-      ? { events: groupOccurrences(matches, now), empty: null }
-      : { events: groupOccurrences(remaining.filter((event) => event.starts_at >= end), now).slice(0, HOME_FALLBACK_LIMIT), empty: filter }
+    const later = agenda.events.filter(event => event.starts_at >= end && occurrenceEnd(event) > now)
+    return { events: groupOccurrences(later, now).slice(0, HOME_FALLBACK_LIMIT), empty: filter }
   }
-
-  const matches = week.filter((event) => filter === 'gratis'
-    ? !event.payWhatYouCan && (event.is_free || event.price === 0)
-    : event.music)
-  return { events: groupOccurrences(matches, now), empty: matches.length ? null : filter }
+  return { events: [], empty: filter }
 }
 
 function flyerRank(day: string, id: string): number {

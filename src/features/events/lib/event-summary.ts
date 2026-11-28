@@ -18,8 +18,10 @@ export function formatCategoryLabel(category: string): string {
  * Locale-aware summary + fallback for meta descriptions and native-share text.
  * Defaults to English to match the legacy `head` (which used no locale).
  */
+type SummaryFields = Pick<EventWithVenue, 'venue_neighborhood'> & Parameters<typeof pickDescriptionSummary>[0];
+
 export function buildEventSummary(
-	event: EventWithVenue,
+	event: SummaryFields,
 	locale: 'en' | 'es' = 'en'
 ): string {
 	const summary = pickDescriptionSummary(event, locale);
@@ -37,7 +39,9 @@ export function buildEventSummary(
  * JSON-LD structured data for the event detail page (SEO).
  */
 export function buildEventJsonLd(
-	event: EventWithVenue,
+	event: SummaryFields & Pick<EventWithVenue, 'name' | 'starts_at' | 'ends_at' | 'is_all_day' | 'time_tba' | 'location_hidden' |
+		'location_tba' | 'venue_name' | 'source' | 'status' | 'ticket_url' | 'price' | 'is_free'> &
+		Partial<Pick<EventWithVenue, 'payWhatYouCan' | 'doors_at' | 'organizer_name' | 'organizer_url' | 'performers' | 'offers_valid_from' | 'venue_address'>>,
 	eventUrl: string,
 	imageUrl: string
 ) {

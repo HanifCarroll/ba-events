@@ -23,8 +23,8 @@ beforeAll(async () => {
     ['in-review', later, 'pending_review', 'in'],
   ] as const
   await fixture.db.batch(rows.map(([id, start, status, scope]) => fixture.db.prepare(`
-    INSERT INTO events (id, name, source, starts_at, status, scope, updated_at)
-    VALUES (?, 'Synthetic event', 'luma', ?, ?, ?, ?)
+    INSERT INTO events (id, name, source, starts_at, status, scope, updated_at, image_url)
+    VALUES (?, 'Synthetic event', 'luma', ?, ?, ?, ?, 'https://example.test/flyer.png')
   `).bind(id, start, status, scope, modified)))
 }, 60_000)
 
@@ -55,8 +55,14 @@ describe('GET /sitemap.xml', () => {
       'https://baeventos.com/mcp',
       'https://baeventos.com/events/starts-now',
       'https://baeventos.com/events/future&amp;live',
+      'https://baeventos.com/agenda/hoy',
+      'https://baeventos.com/agenda/fin-de-semana',
+      'https://baeventos.com/agenda/esta-semana',
+      'https://baeventos.com/agenda/gratis',
     ])
-    expect(Array.from(xml.matchAll(/<lastmod>(.*?)<\/lastmod>/g), match => match[1])).toEqual([modified, modified])
+    expect(Array.from(xml.matchAll(/<lastmod>(.*?)<\/lastmod>/g), match => match[1])).toEqual([
+      modified, modified, modified, modified, modified,
+    ])
   })
 
   it('uses the Agenda cutoffs for date-only, doors-only, and timed events', async () => {

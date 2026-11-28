@@ -1,0 +1,102 @@
+{
+  "/agenda/hoy": {
+    "title": "Qué hacer hoy en Buenos Aires | BA Eventos",
+    "description": "Teatro, música en vivo, ferias y poesía para hoy en Buenos Aires. Cada evento tiene horario, lugar y un enlace a la fuente. Gratis y sin cuenta.",
+    "heading": "Qué hacer hoy en Buenos Aires",
+    "updated": "Actualizado el {{fecha_actualizacion}}",
+    "intro": "Hoy, {{hoy}}, la agenda de BA Eventos tiene {{n_eventos}} en {{n_lugares}} de Buenos Aires. Son obras de teatro, recitales, ferias, lecturas y otras actividades que publican salas, centros culturales y organizadores. {{frase_gratis}} Cada ficha muestra horario, lugar y barrio, y enlaza a la publicación o la página de entradas.",
+    "empty": "Todavía no encontramos eventos para hoy. La próxima fecha con eventos es el {{proxima_fecha}}. Mirá la [agenda de esta semana](/agenda/esta-semana) o preguntale al chat.",
+    "faq": [
+      {
+        "question": "¿Qué puedo hacer hoy en Buenos Aires?",
+        "answer": "BA Eventos lista los eventos culturales de hoy en Buenos Aires: teatro, música en vivo, ferias, poesía y actividades en centros culturales. La lista saca los eventos que ya terminaron, así que muestra lo que todavía podés ver hoy."
+      },
+      {
+        "question": "¿Hay planes gratis hoy?",
+        "answer": "Los eventos sin entrada llevan la etiqueta «Gratis». La página de [eventos gratis](/agenda/gratis) junta los de toda la semana. BA Eventos no cuenta como gratis los eventos «a la gorra», donde dejás lo que puedas al final."
+      },
+      {
+        "question": "¿Puedo buscar por barrio?",
+        "answer": "Sí. Cada barrio tiene su página, por ejemplo [Palermo](/agenda/barrio/palermo) o [Villa Crespo](/agenda/barrio/villa-crespo). También podés escribirle al chat algo como «¿Qué hay esta noche en Almagro?»."
+      },
+      {
+        "question": "¿Los horarios son seguros?",
+        "answer": "Los horarios salen de lo que publica cada sala u organizador, y pueden cambiar. Si una ficha dice «Horario a confirmar», la fuente todavía no lo publicó. Antes de salir, abrí el enlace de la ficha y confirmá."
+      }
+    ]
+  },
+  "/agenda/fin-de-semana": {
+    "title": "Qué hacer en Buenos Aires este fin de semana | BA Eventos",
+    "description": "Agenda del fin de semana en Buenos Aires: teatro, música en vivo, ferias y poesía de viernes a domingo, con horario, barrio y precio cuando lo hay.",
+    "heading": "Qué hacer en Buenos Aires este fin de semana",
+    "updated": "Actualizado el {{fecha_actualizacion}}",
+    "intro": "Del {{viernes}} al {{domingo}}, BA Eventos tiene {{n_eventos}} en {{n_lugares}} de Buenos Aires. La lista junta teatro, recitales, ferias, lecturas y actividades en centros culturales, según lo que publican las salas y los organizadores. {{frase_gratis}} Los barrios con más eventos son {{barrios_top}}.",
+    "empty": "Todavía no encontramos nada para este finde. La próxima fecha con eventos es el {{proxima_fecha}}. Mirá la [agenda de esta semana](/agenda/esta-semana).",
+    "faq": [
+      {
+        "question": "¿Qué días cuenta BA Eventos como fin de semana?",
+        "answer": "BA Eventos cuenta el fin de semana de viernes a domingo, en horario de Buenos Aires. Un evento entra si pasa en algún momento entre el viernes a las 00:00 y el lunes a las 00:00."
+      },
+      {
+        "question": "¿Qué hay gratis este fin de semana?",
+        "answer": "Mirá la página de [eventos gratis](/agenda/gratis). También podés preguntarle al chat: «¿Qué hay gratis este finde?». Los eventos «a la gorra» no aparecen como gratis."
+      },
+      {
+        "question": "¿Hay ferias este fin de semana?",
+        "answer": "Cuando una sala o un organizador publica una feria, aparece en esta lista y en la página de [ferias](/agenda/ferias). BA Eventos no lista todas las ferias de la ciudad; muestra las que publican las fuentes que sigue."
+      },
+      {
+        "question": "¿Puedo ver el fin de semana en otro idioma?",
+        "answer": "Sí. La [versión en inglés](/en/things-to-do-this-weekend) muestra la misma agenda, y el chat responde en castellano o en inglés."
+      }
+    ]
+  },
+  "/agenda/esta-semana": {
+    "title": "Agenda cultural de Buenos Aires esta semana | BA Eventos",
+    "description": "La agenda cultural de Buenos Aires para los próximos 7 días: teatro, música en vivo, ferias y poesía en un solo lugar, con horario y barrio.",
+    "heading": "Agenda cultural de Buenos Aires de esta semana",
+    "updated": "Actualizado el {{fecha_actualizacion}}",
+    "intro": "Entre hoy, {{hoy}}, y el {{ultimo_dia}}, BA Eventos tiene {{n_eventos}} en {{n_lugares}} de Buenos Aires. Hay {{n_gratis}}. La agenda junta teatro, música en vivo, ferias, poesía y actividades en centros culturales, a partir de lo que publican {{n_cuentas}} de salas y organizadores en Instagram y de otras agendas públicas. Para un día o un barrio puntual, usá las páginas de [hoy](/agenda/hoy), del [fin de semana](/agenda/fin-de-semana) o de cada barrio, o preguntale al chat.",
+    "empty": "Todavía no encontramos eventos para los próximos 7 días. La próxima fecha con eventos es el {{proxima_fecha}}. Si esperabas ver eventos, probá de nuevo en un rato.",
+    "faq": [
+      {
+        "question": "¿Hay una página que junte todos los eventos de Buenos Aires?",
+        "answer": "Ninguna página junta todos. BA Eventos junta esta semana {{n_eventos}} de {{n_lugares}}, con foco en cultura independiente. Para festivales y actividades de la Ciudad, la [agenda de Turismo de Buenos Aires](https://turismo.buenosaires.gob.ar/es/eventos) es la fuente oficial. Para la cartelera de teatro, [Alternativa Teatral](https://www.alternativateatral.com/) publica funciones y vende entradas."
+      },
+      {
+        "question": "¿Cuál es la mejor página para saber qué hacer en Buenos Aires?",
+        "answer": "Depende de lo que busques. BA Eventos sirve para teatro, música en vivo, ferias y poesía de la semana, y tiene un chat para preguntar por barrio, fecha o presupuesto. Es gratis y no hace falta crear una cuenta. No cubre todo: solo muestra lo que publican las fuentes que sigue."
+      },
+      {
+        "question": "¿De dónde salen los eventos?",
+        "answer": "La mayoría sale de las publicaciones de Instagram de {{n_cuentas}} de salas, centros culturales y organizadores. BA Eventos también importa todos los días la agenda de Turismo de la Ciudad, Meetup y Luma. Cada ficha enlaza a su fuente. [Cómo funciona BA Eventos](/que-es-ba-eventos)."
+      },
+      {
+        "question": "¿Cada cuánto se actualiza?",
+        "answer": "BA Eventos revisa sus fuentes una vez por día y saca de la lista los eventos que ya terminaron. Si una sala cambia un horario, la ficha cambia cuando la sala lo publica."
+      }
+    ]
+  },
+  "/agenda/gratis": {
+    "title": "Planes gratis en Buenos Aires hoy y esta semana | BA Eventos",
+    "description": "Eventos gratis en Buenos Aires esta semana: teatro, música en vivo, ferias y muestras sin entrada, con horario y barrio. Sin contar los «a la gorra».",
+    "heading": "Planes gratis en Buenos Aires",
+    "updated": "Actualizado el {{fecha_actualizacion}}",
+    "intro": "Hasta el {{ultimo_dia}}, BA Eventos tiene {{n_gratis}} en Buenos Aires, en {{n_lugares}}. {{n_gratis_hoy}} Gratis quiere decir que la fuente no pide entrada ni contribución. Los eventos «a la gorra» no están en esta lista, porque en esos eventos la sala pasa la gorra al final.",
+    "empty": "Todavía no encontramos nada gratis para esta semana. Mirá la [agenda de esta semana](/agenda/esta-semana): algunos eventos tienen precio «a confirmar» y pueden terminar siendo gratis.",
+    "faq": [
+      {
+        "question": "¿Qué planes gratis hay hoy en Buenos Aires?",
+        "answer": "Los eventos gratis de hoy aparecen primero en esta página. Cada uno tiene la etiqueta «Gratis», el horario, la sala y el barrio. Si la lista de hoy está vacía, mirá los días siguientes."
+      },
+      {
+        "question": "¿Qué significa «a la gorra»?",
+        "answer": "«A la gorra» quiere decir que no hay entrada fija. Al final pasan la gorra y dejás lo que puedas. BA Eventos los marca como «A la gorra» y no los cuenta como gratis."
+      },
+      {
+        "question": "¿Hay que reservar o sacar entrada en los eventos gratis?",
+        "answer": "Depende de cada evento. Algunos piden inscripción o entrada gratuita, y otros son de acceso libre. Abrí el enlace de la ficha para ver qué pide la fuente."
+      }
+    ]
+  }
+}

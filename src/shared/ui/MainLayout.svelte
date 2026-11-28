@@ -17,6 +17,7 @@
 	import { useAuthContext, getAuthState } from '#features/auth/hooks/auth-context.svelte.ts';
 	import { signOut } from '#features/auth/api/auth.remote.ts';
 	import { chatState } from '#features/chat/state/chat.svelte.ts';
+	import { discoveryLocale } from '#features/discovery/lib/discovery-locale.ts';
 	import LanguageSwitcher from '#shared/ui/LanguageSwitcher.svelte';
 	import FeedbackDialog from '#shared/ui/FeedbackDialog.svelte';
 	import InstallApp from '#shared/ui/InstallApp.svelte';
@@ -40,6 +41,7 @@
 
 	const auth = useAuthContext();
 	const isLanding = $derived(page.url.pathname === '/');
+	const fixedLanguage = $derived(discoveryLocale(page.url.pathname));
 	let mobileMenuOpen = $state(false);
 	let isSigningOut = $state(false);
 	let feedbackOpen = $state(false);
@@ -138,6 +140,7 @@
 <div
 	class="relative h-full flex flex-col lg:flex-row overflow-hidden"
 	inert={backgroundInert ? true : undefined}
+	data-sveltekit-reload={fixedLanguage ? '' : undefined}
 >
 	<SkipLink />
 
@@ -185,7 +188,7 @@
 					<span class="sr-only">{m.telegram_external_link()}</span>
 				</a>
 				<div class="my-2 h-px bg-border"></div>
-				<LanguageSwitcher />
+				{#if !fixedLanguage}<LanguageSwitcher />{/if}
 				<a
 					href="/privacy"
 					onclick={() => (mobileMenuOpen = false)}
@@ -276,7 +279,7 @@
 
 		<!-- Language switcher -->
 		<div class="px-5 pb-3 space-y-1">
-			<LanguageSwitcher />
+			{#if !fixedLanguage}<LanguageSwitcher />{/if}
 			<a
 				href="/privacy"
 				class="flex min-h-11 items-center px-4 text-sm text-muted-foreground hover:text-foreground"
