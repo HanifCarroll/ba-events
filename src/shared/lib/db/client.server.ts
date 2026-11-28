@@ -21,6 +21,7 @@ import {
 } from './search-d1.server.ts'
 import {
   discoveryAgendaD1,
+  discoveryVenuesD1,
   enabledInstagramSourceCountD1,
   eventArtworkD1,
   eventByIdD1,
@@ -83,6 +84,7 @@ export async function getHomeAgendaEvents(window: HomeWindow) {
 }
 
 export const getDiscoveryAgendaEvents = (window: HomeWindow) => discoveryAgendaD1(boundCatalogD1(), window)
+export const getDiscoveryVenues = () => discoveryVenuesD1(boundCatalogD1())
 export const getEnabledInstagramSourceCount = () => enabledInstagramSourceCountD1(boundCatalogD1())
 
 export function getUpcomingEventSitemapRows(asOf: Date) {

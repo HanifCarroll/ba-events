@@ -2,6 +2,7 @@
 import type { D1Database } from '@cloudflare/workers-types'
 import { catalogArtworkUrl } from '../artwork-url.ts'
 import { eventFacetsSchema, type EventFacets } from '../search-facets.ts'
+import type { DiscoveryVenue } from '#features/discovery/lib/place-pages.ts'
 import type { ChatEventPayload, EventCredit, Venue } from '../types.ts'
 import { isPayWhatYouCan } from '#features/events/lib/admission.ts'
 import { HOME_DOORS_ONLY_DURATION_MS, HOME_EVENT_DEFAULT_DURATION_MS, HOME_FALLBACK_LIMIT, homeWindow, occurrenceEnd, type HomeAgendaEvent, type HomeWindow } from '#features/events/lib/home-feed.ts'
@@ -146,6 +147,11 @@ export async function discoveryAgendaD1(db: D1Database, window: HomeWindow): Pro
     const parsed = eventFacetsSchema.safeParse(JSON.parse(facets))
     return { ...toAgendaEvent(row), details: { updated_at, source, ticket_url, description_es: row.description_es, facets: parsed.data } }
   })
+}
+
+export async function discoveryVenuesD1(db: D1Database): Promise<DiscoveryVenue[]> {
+  const { results } = await db.prepare(`SELECT id, name, created_at, address, neighborhood, website, instagram_handle FROM venues`).all<DiscoveryVenue>()
+  return results
 }
 
 export async function enabledInstagramSourceCountD1(db: D1Database): Promise<number> {

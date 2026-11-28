@@ -7,6 +7,7 @@ import { useCloudflareBindings } from '#shared/lib/db/search-bindings.server.ts'
 import { handleLocaleSync, handleParaglide } from '../../hooks.server.ts'
 import { freshD1 } from '../../../tests/support/d1.ts'
 import { loadAgendaPage } from './api/agenda-page.server.ts'
+import { loadBarrioPage, loadVenuePage } from './api/place-page.server.ts'
 import AgendaPage from './components/AgendaPage.svelte'
 
 vi.mock('$app/state', () => ({ page: { url: new URL('https://baeventos.com/agenda/gratis') } }))
@@ -93,6 +94,17 @@ describe('initial discovery HTML', () => {
     const html = await requestAgenda('/agenda/muestras', source)
     expect(html).toContain('<html lang="es"')
     expect(html).toMatch(/<article\b[^>]*>.*?>Gratis<.*?<\/article>/s)
+  })
+
+  it.each(preferenceSources)('renders barrio and venue cards in Spanish with English %s', async source => {
+    for (const [path, load] of [
+      ['/agenda/barrio/almagro', () => loadBarrioPage('almagro', () => {}, false)],
+      ['/lugares/sala-de-ejemplo', () => loadVenuePage('sala-de-ejemplo', () => {}, false)],
+    ] as const) {
+      const html = await requestPage(path, source, 'en', async () => render(AgendaPage, { props: { data: await load() } }))
+      expect(html).toContain('<html lang="es"')
+      expect(html).toMatch(/<article\b[^>]*>.*?>Gratis<.*?<\/article>/s)
+    }
   })
 
   it('puts a single ongoing free event under Today and counts it once', async () => {

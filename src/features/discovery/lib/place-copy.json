@@ -1,0 +1,47 @@
+{
+  "/agenda/barrio/{slug}": {
+    "title": "Qué hacer en {{barrio}} hoy y esta semana | BA Eventos",
+    "description": "Teatro, música en vivo, ferias y poesía en {{barrio}}, Buenos Aires: lo que hay hoy y en los próximos 7 días, con horario, lugar y precio.",
+    "heading": "Qué hacer en {{barrio}} esta semana",
+    "updated": "Actualizado el {{fecha_actualizacion}}",
+    "intro": "En los próximos 7 días, BA Eventos tiene {{n_eventos}} en {{n_lugares}} de {{barrio}}. {{frase_hoy}} La lista junta teatro, música en vivo, ferias y otras actividades que publican las salas y los organizadores del barrio. Cada ficha muestra horario, lugar y precio cuando la fuente lo publica.",
+    "empty": "Todavía no encontramos eventos en {{barrio}} para esta semana. La próxima fecha que tenemos es el {{proxima_fecha}}. Mientras tanto, mirá lo que hay en {{barrios_vecinos}}, o la [agenda de esta semana](/agenda/esta-semana).",
+    "faq": [
+      {
+        "question": "¿Qué hay esta noche en {{barrio}}?",
+        "answer": "Los eventos de hoy en {{barrio}} aparecen primero en esta página, bajo «Hoy en {{barrio}}». La lista saca los que ya terminaron. Si buscás algo puntual, preguntale al chat, por ejemplo «¿Qué hay esta noche en {{barrio}}?»."
+      },
+      {
+        "question": "¿Cómo sabe BA Eventos en qué barrio es cada evento?",
+        "answer": "BA Eventos usa el barrio de la sala donde se hace el evento. Si la fuente no publica el lugar, el evento no aparece en ninguna página de barrio."
+      },
+      {
+        "question": "¿Hay eventos en otros barrios?",
+        "answer": "Mirá {{barrios_vecinos}}. La [agenda de esta semana](/agenda/esta-semana) muestra toda la ciudad."
+      }
+    ],
+    "todayHeading": "Hoy en {{barrio}}",
+    "weekHeading": "Esta semana en {{barrio}}"
+  },
+  "/lugares/{slug}": {
+    "title": "{{venue}}: agenda y próximos eventos | BA Eventos",
+    "description": "Próximos eventos en {{venue}}, {{barrio}}, Buenos Aires: fechas, horarios, precios y enlaces a la publicación de la sala.",
+    "heading": "{{venue}}: próximos eventos",
+    "updated": "Actualizado el {{fecha_actualizacion}}",
+    "intro": "{{venue}} está en {{direccion}}, en {{barrio}}, Buenos Aires. BA Eventos tiene {{n_proximos}} en {{venue}}; el próximo es el {{proxima_fecha}}. Las fechas salen de lo que publica la sala o de las agendas que importamos.",
+    "faq": [
+      {
+        "question": "¿Qué hay esta semana en {{venue}}?",
+        "answer": "La lista de arriba muestra los próximos eventos de {{venue}} que tiene BA Eventos, con fecha, horario y precio cuando la sala los publica. Antes de ir, confirmá los datos en el enlace de cada ficha."
+      },
+      {
+        "question": "¿Cómo consigo entradas para {{venue}}?",
+        "answer": "BA Eventos no vende entradas. Cada ficha enlaza a la publicación de la sala o a la página donde se venden las entradas."
+      },
+      {
+        "question": "¿BA Eventos es la página oficial de {{venue}}?",
+        "answer": "No. BA Eventos lista los eventos públicos de {{venue}} que publica la sala o que aparecen en otras agendas públicas. Para cambios de último momento, seguí el Instagram o el sitio de la sala."
+      }
+    ]
+  }
+}

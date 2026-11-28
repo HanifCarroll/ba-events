@@ -9,6 +9,7 @@ import { fillCopy, pageCopy, type AgendaCopy, type CopyValues } from '../lib/cop
 import type { AgendaListing } from '#shared/lib/db/event-reads-d1.server.ts'
 
 type Section = { heading?: string; cards: HomeAgendaCardEvent[] }
+export type DiscoveryInfo = { label: string; value: string; href?: string }
 
 function cardsFor(events: AgendaListing[], asOf: number): HomeAgendaCardEvent[] {
   return groupOccurrences(events.map(({ details: _, ...event }) => event), asOf)
@@ -23,6 +24,7 @@ export function buildAgendaPage(input: {
   current: AgendaListing[]
   later: AgendaListing[]
   sections?: Section[]
+  info?: DiscoveryInfo[]
 }) {
   const { path, lang, snapshot, copy, values, current, later } = input
   const cards = cardsFor(current, snapshot.asOf)
@@ -44,7 +46,7 @@ export function buildAgendaPage(input: {
   if (cards.length && !laterCards.length) intro = intro?.replace(' Más abajo están las próximas fechas.', '')
   if (path === '/agenda/esta-semana' && !cards.some(isFreeAdmission)) intro = intro?.replace(' Hay {{n_gratis}}.', '')
   return {
-    day: snapshot.window.day, lang, path, canonical: getSiteUrl() + path, sections, jsonLd,
+    day: snapshot.window.day, lang, path, canonical: getSiteUrl() + path, sections, jsonLd, info: input.info ?? [],
     ...pageCopy(copy, values),
     intro: fillCopy(intro ?? '', values),
     faq: copy.faq.map(({ question, answer }) => ({ question: fillCopy(question, values), answer: fillCopy(answer, values) })),
@@ -53,13 +55,17 @@ export function buildAgendaPage(input: {
 
 export type AgendaPageData = ReturnType<typeof buildAgendaPage>
 
+export function setDiscoveryHeaders(setHeaders: (headers: Record<string, string>) => void, signedIn: boolean) {
+  setHeaders(signedIn ? { 'Cache-Control': 'private, no-store' } : HOME_FEED_HEADERS)
+}
+
 export async function loadAgendaPage(path: string, setHeaders: (headers: Record<string, string>) => void, signedIn: boolean) {
   const definition = Object.hasOwn(agendaPages, path) ? agendaPages[path] : undefined
   if (!definition) error(404, 'Agenda not found')
   const snapshot = await readDiscoveryAgenda()
   const selection = selectAgendaPage(snapshot, definition)
   const sourceCount = path === '/agenda/esta-semana' ? await getEnabledInstagramSourceCount() : 0
-  setHeaders(signedIn ? { 'Cache-Control': 'private, no-store' } : HOME_FEED_HEADERS)
+  setDiscoveryHeaders(setHeaders, signedIn)
   return buildAgendaPage({ path, snapshot, ...definition, ...selection, values: agendaCopyValues(snapshot, selection, sourceCount, definition.topic) })
 }
 

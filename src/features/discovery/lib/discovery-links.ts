@@ -14,4 +14,4 @@ export const topicLinks = [
   { label: 'Tango', href: '/agenda/tango' },
 ]
 
-export const footerGroups = [{ heading: 'Agenda', links: [...dateLinks, ...topicLinks] }]
+export const footerGroups = [{ heading: 'Agenda', links: [...dateLinks, ...topicLinks, { label: 'Por barrio', href: '/agenda/barrios' }] }]
