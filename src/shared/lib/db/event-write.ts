@@ -1,7 +1,9 @@
 import type { D1Database, D1PreparedStatement, Vectorize } from '@cloudflare/workers-types'
+import { buildSearchDocument, CURRENT_EMBEDDING_VERSION } from '../ai/embeddings.ts'
 import { batchAssert } from './d1.server.ts'
 import { eventColumnsWith, type EventColumn } from './event-columns.ts'
-import { hasPendingVector, planCorrectedVector, planPastVectors, planVectorWrite, type StoredVector, type VectorPatch } from './vector-sync.ts'
+import { publisherFields, publisherSet, searchInputs } from './publisher-field-authority.ts'
+import { hasPendingVector, planCorrectedVector, planPastVectors, planVectorWrite, sourceForEmbedding, type StoredVector, type VectorPatch } from './vector-sync.ts'
 
 type Row = Record<string, unknown>
 type Patch = Partial<Record<EventColumn, unknown>>
@@ -21,6 +23,7 @@ export type CatalogUpdateResult = EventWriteResult & { vectorFailure?: { error: 
 const facts = new Set<string>(eventColumnsWith('protection', 'facts'))
 const details = new Set<string>(eventColumnsWith('protection', 'details'))
 const derived = ['search_document', 'embedding_version'] as const
+const derivedFields = new Set<EventColumn>(derived)
 const intakeFields = eventColumnsWith('intakeWrite', 'both')
 export type IntakeEventPatch = Record<(typeof intakeFields)[number], unknown>
 const intakeDetails = eventColumnsWith('protection', 'details')
@@ -28,12 +31,12 @@ const intakeProtected = [...eventColumnsWith('protectOnCommit', true), 'embeddin
 const catalogFields = eventColumnsWith('catalog', 'write', 'read-write')
 const revisionFields = eventColumnsWith('advancesRevision', true)
 
-/** Field precedence for catalog writers; SQL protection triggers remain the manual-write backstop.
- * Import, enrichment and manual repair respect the intake ledger. A conflicting protected fact also keeps the
- * derived document/version together. Hidden locations always clear their venue. Hourly aging can expire a started
- * scheduled event. Nightly repair can replace only the derived pair, conditional on its inputs still matching.
- * Intake replaces facts with current direct evidence and records its authority. Publisher corrections can replace
- * intake facts after a guarded compare but don't acquire intake authority; a subsequent valid intake may replace them.
+/** Field precedence for catalog writers; SQL triggers backstop direct writes.
+ * A publisher correction owns its field until another publisher correction; intake's evidence and write context
+ * cannot override it. Intake may still correct other facts. Import, enrichment, and manual repair also respect intake
+ * authority. Never store a document or vector prepared from a refused search input. Hourly aging uses the stored start
+ * (including a publisher-corrected start), and can expire a scheduled event even when status is locked.
+ * Hidden locations always clear their venue. Guarded repairs can derive search data from the prevailing facts.
  */
 const sqlNow = "strftime('%Y-%m-%dT%H:%M:%fZ', 'now')"
 const aged = `status = 'scheduled' AND starts_at < ${sqlNow}`
@@ -47,6 +50,20 @@ function pairs(patch: Patch, allowed: readonly EventColumn[]) {
 }
 
 type Assignments = ReturnType<typeof pairs>
+
+/** Read the document inputs from the effective row, not from a refused proposal or a stale caller snapshot. */
+async function documentFromEffectiveFacts(db: Pick<D1Database, 'prepare'>, previous: Row, effective: Assignments) {
+  const row = { ...previous, ...Object.fromEntries(effective) }
+  const venue = row.venue_id == null ? null : await db.prepare('SELECT name, neighborhood FROM venues WHERE id = ?')
+    .bind(row.venue_id).first<{ name: string; neighborhood: string | null }>()
+  return buildSearchDocument(sourceForEmbedding({ ...row, venue_name: venue?.name ?? null,
+    venue_neighborhood: venue?.neighborhood ?? null } as Parameters<typeof sourceForEmbedding>[0]))
+}
+
+/** A mixed write can change unlocked search inputs. Queue only a changed, canonical document. */
+const rebuiltDocument = (previous: Row, document: string): Assignments => document === previous.search_document ? [] :
+  [['search_document', document], ['embedding_version', CURRENT_EMBEDDING_VERSION - 1]]
+
 function insert(db: D1Database, id: string, entries: Assignments) {
   return db.prepare(`INSERT INTO events (id, ${entries.map(([key]) => key).join(', ')}) VALUES (?, ${entries.map(() => '?').join(', ')})`)
     .bind(id, ...entries.map(([, value]) => value))
@@ -75,38 +92,58 @@ export async function writeEvent(db: D1Database, vectors: Vectorize | null, requ
 }): Promise<CatalogUpdateResult & { vectorUpdated: boolean }> {
   const { writer, id, guard, patch: { embedding, ...patch } } = request
   const repair = writer === 'maintenance'
-  const requested = pairs(patch, repair || writer === 'manual-repair' ? derived : catalogFields)
+  const requested = pairs(patch, repair ? derived : catalogFields)
   if (repair && !guard) throw new Error('Maintenance repair requires a current-input check')
   const predicate = `id = ? AND (${guard?.sql ?? '1'})`
   const params = [id, ...(guard?.values ?? [])]
-  const select = `${revisionFields.join(', ')}, ${protectionFields} AS protected_fields, (${aged}) AS can_age`
+  const select = `${revisionFields.join(', ')}, ${protectionFields} AS protected_fields, ${publisherFields} AS publisher_fields, (${aged}) AS can_age`
   const session = db.withSession('first-primary')
   for (let attempt = 0; ; attempt++) {
     const previous = await session.prepare(`SELECT ${select} FROM events WHERE ${predicate}`).bind(...params).first<Row & { protected_fields: string | null; can_age: number }>()
     if (!previous) return { applied: [], kept: [], vectorUpdated: false }
     const protectedSet = new Set<string>(JSON.parse(previous.protected_fields ?? '[]'))
+    const locked = publisherSet(previous)
     const kept: EventColumn[] = []
     const changes = requested.filter(([key, value]) => value !== previous[key])
     const hidden = (protectedSet.has('location_hidden') ? previous.location_hidden : (patch.location_hidden === undefined ? previous.location_hidden : patch.location_hidden)) === 1
     const allowed = changes.filter(([key, value]) => {
-      if (repair || !protectedSet.has(key) || !facts.has(key) && !details.has(key) ||
-        (key === 'status' && value === 'past' && previous.can_age) || (key === 'venue_id' && value === null && hidden)) return true
+      if (!locked.has(key)) {
+        if (writer === 'manual-repair' && !derived.some(column => column === key)) throw new Error(`Manual embedding repair cannot set ${key}`)
+        if (repair || !protectedSet.has(key) || !facts.has(key) && !details.has(key) ||
+          (key === 'status' && value === 'past' && previous.can_age) || (key === 'venue_id' && value === null && hidden)) return true
+      }
       kept.push(key)
       return false
     })
-    const keepDocument = kept.some(key => facts.has(key))
-    const effective = allowed.filter(([key]) => {
-      if (keepDocument && derived.some(column => column === key)) { kept.push(key); return false }
-      return !hidden || key !== 'venue_id'
-    })
+    const publisherRefusal = kept.some(key => locked.has(key))
+    const effective = allowed.filter(([key]) => !derived.some(column => column === key) && (!hidden || key !== 'venue_id'))
     if (hidden && previous.venue_id !== null) effective.push(['venue_id', null])
-    const applied = effective.map(([column]) => column)
+    const changedSearch = effective.some(([key]) => searchInputs.has(key))
+    const protectsInputs = [...searchInputs].some(key => locked.has(key))
+    const proposesDocument = Boolean(embedding?.length) || changes.some(([key]) => derivedFields.has(key))
+    const document = (publisherRefusal && changedSearch || protectsInputs && (changedSearch || proposesDocument))
+      ? await documentFromEffectiveFacts(session, previous, effective) : undefined
+    const stalePreparation = document !== undefined && proposesDocument &&
+      (patch.search_document === undefined ? previous.search_document : patch.search_document) !== document
+    const keepDocument = stalePreparation || kept.some(key => facts.has(key))
+    for (const entry of allowed) {
+      if (!derived.some(column => column === entry[0])) continue
+      if (keepDocument) kept.push(entry[0])
+      else effective.push(entry)
+    }
+    // When a mixed write discarded its proposal, only our local derivation may bypass intake's derived-field lock.
+    const rebuilt = changedSearch && document !== undefined && (keepDocument || !proposesDocument ||
+      !effective.some(([key]) => key === 'search_document')) ? rebuiltDocument(previous, document) : []
+    if (rebuilt.length) {
+      effective.push(...rebuilt.filter(([key]) => !effective.some(([existing]) => existing === key)))
+    }
+    const applied = effective.filter(([key, value]) => value !== previous[key]).map(([key]) => key)
     const next: Row = { ...previous, ...Object.fromEntries(effective) }
     const vector = planVectorWrite(db, id, { source: 'catalog', patch: {
       // Match the full stored pair before using a prepared vector, including fields omitted by the caller.
       search_document: next.search_document as string | null,
       embedding_version: next.embedding_version as number,
-      embedding: keepDocument ? undefined : embedding,
+      embedding: keepDocument || rebuilt.length ? undefined : embedding,
       status: applied.includes('status') ? patch.status : undefined,
       starts_at: applied.includes('starts_at') ? patch.starts_at : undefined,
     }, documentChanged: applied.some(key => derived.some(column => column === key)) })
@@ -114,12 +151,14 @@ export async function writeEvent(db: D1Database, vectors: Vectorize | null, requ
     // Comparing revision columns as well as the timestamp catches independent writes in the same millisecond.
     const same = `(${revisionFields.join(', ')}) IS (${revisionFields.map(key => `json_extract(snapshot.row, '$.${key}')`).join(', ')})`
     const check = batchAssert(db, staleWrite, `EXISTS (SELECT 1 FROM events, (SELECT ? AS row) snapshot WHERE ${predicate}
-      AND ${same} AND ${protectionFields} IS ? AND (${aged}) IS ?)`, JSON.stringify(previous), ...params, previous.protected_fields, previous.can_age)
+      AND ${same} AND ${protectionFields} IS ? AND ${publisherFields} IS ? AND (${aged}) IS ?)`,
+      JSON.stringify(previous), ...params, previous.protected_fields, previous.publisher_fields, previous.can_age)
     const writes = [...(effective.length ? [update(db, id, effective)] : []), ...(vector.queue ? [vector.queue] : [])]
     let queued = false
     try {
-      const result = await session.batch(repair ? withProtectionOverride(db, [check], writes) : [check, ...writes])
-      queued = !!vector.queue && !!result[repair ? result.length - 2 : result.length - 1]?.results.length
+      const override = repair || rebuilt.length > 0
+      const result = await session.batch(override ? withProtectionOverride(db, [check], writes) : [check, ...writes])
+      queued = !!vector.queue && !!result[result.length - (override ? 2 : 1)]?.results.length
     } catch (error) {
       if (attempt === 2 || !(error instanceof Error && error.message.includes(`${staleWrite}: SQLITE_CONSTRAINT`))) throw error
       continue
@@ -149,8 +188,10 @@ export async function setEventVenues(db: D1Database, ids: readonly string[], ven
 }
 
 export async function expireEvents(db: D1Database, vectors: Vectorize, { sql, values }: Guard) {
-  const eligible = `(${sql}) AND ((status = 'scheduled' AND starts_at < ?) OR NOT EXISTS (
-    SELECT 1 FROM json_each(${protectionFields}) WHERE value = 'status'))`
+  const eligible = `(${sql}) AND (status = 'scheduled' OR NOT EXISTS (
+    SELECT 1 FROM publisher_field_lock WHERE event_id = events.id AND field = 'status'))
+    AND ((status = 'scheduled' AND starts_at < ?) OR NOT EXISTS (
+      SELECT 1 FROM json_each(${protectionFields}) WHERE value = 'status'))`
   const params = [...values, new Date().toISOString()]
   const vector = planPastVectors(db, eligible, params)
   const [queued, expired] = await db.batch<StoredVector>([
@@ -187,17 +228,31 @@ export async function commitIntakeEvent(db: D1Database, vectors: Vectorize, requ
   id: string; planId: string; action: 'create' | 'update' | 'link'; patch: IntakeEventPatch
   create: { link: string | null; external_id: string }; previous: Row | null; vectorPatch: VectorPatch
   evidence: { authority: number; observedAt: string; details: readonly EventColumn[] }
-  checks: D1PreparedStatement[]; recordEvidence: D1PreparedStatement; recordReceipt: D1PreparedStatement
+  checks: D1PreparedStatement[]; recordEvidence: D1PreparedStatement; recordReceipt: (result: EventWriteResult) => D1PreparedStatement
 }): Promise<{ result: EventWriteResult; settle: () => Promise<boolean | undefined> }> {
   const { id, action, previous, evidence, planId } = request
   const linked = action === 'link'
   const { patch } = request
   const fields = linked ? [] : pairs(action === 'create' ? { ...patch, ...request.create, source: 'instagram' } : patch,
     action === 'create' ? eventColumnsWith('intakeWrite', 'create', 'both') : intakeFields)
-  const applied = fields.filter(([key, value]) => !previous || previous[key] !== value).map(([key]) => key)
-  const vector = linked ? null : planVectorWrite(db, id, { source: 'intake', patch: request.vectorPatch, previous })
+  const locked = publisherSet(previous)
+  const kept = fields.filter(([key, value]) => locked.has(key) && value !== previous?.[key]).map(([key]) => key)
+  const refusedSearch = kept.some(key => searchInputs.has(key))
+  const effective = fields.filter(([key]) => !locked.has(key) && (!refusedSearch || !derived.some(column => column === key)))
+  if (refusedSearch && previous && effective.some(([key, value]) => searchInputs.has(key) && previous[key] !== value)) {
+    effective.push(...rebuiltDocument(previous, await documentFromEffectiveFacts(db, previous, effective)))
+  }
+  const applied = effective.filter(([key, value]) => !previous || previous[key] !== value).map(([key]) => key)
+  const next = Object.fromEntries(effective)
+  const vector = linked ? null : refusedSearch ? planVectorWrite(db, id, { source: 'catalog', patch: {
+    status: applied.includes('status') ? patch.status as string : undefined,
+    starts_at: applied.includes('starts_at') ? patch.starts_at as string : undefined,
+  }, documentChanged: applied.some(key => derived.some(column => column === key)) }) : planVectorWrite(db, id, {
+    source: 'intake', previous, patch: { ...request.vectorPatch, status: (next.status ?? previous?.status) as string,
+      starts_at: (next.starts_at ?? previous?.starts_at) as string },
+  })
   const writes = []
-  if (!linked) writes.push(action === 'create' ? insert(db, id, fields) : update(db, id, fields))
+  if (!linked && effective.length) writes.push(action === 'create' ? insert(db, id, effective) : update(db, id, effective))
   writes.push(request.recordEvidence)
   if (!linked) {
     if (vector?.queue) writes.push(vector.queue)
@@ -208,16 +263,26 @@ export async function commitIntakeEvent(db: D1Database, vectors: Vectorize, requ
       )), plan_id = excluded.plan_id, authority = excluded.authority, observed_at = excluded.observed_at`)
       .bind(id, JSON.stringify(protects), planId, evidence.authority, evidence.observedAt))
   }
-  writes.push(request.recordReceipt)
-  const checks = [...request.checks, ...(action === 'update' ? intakeVenueChecks(db, id, patch.venue_id) : [])]
+  const result = { applied, kept }
+  writes.push(request.recordReceipt(result))
+  const checks = [...request.checks, ...(action === 'update' ? [...intakeVenueChecks(db, id, patch.venue_id),
+    batchAssert(db, 'Catalog changed after preview', `EXISTS (SELECT 1 FROM events WHERE id = ? AND ${publisherFields} IS ?)`,
+      id, previous?.publisher_fields)] : [])]
   await db.batch(withProtectionOverride(db, checks, writes))
   // The caller must settle outside the catch that handles a concurrent receipt.
-  return { result: { applied, kept: [] }, settle: async () => vector?.settle(vectors) }
+  return { result, settle: async () => vector?.settle(vectors) }
 }
 
-export async function replayIntakeVector(db: D1Database, vectors: Vectorize, id: string, planId: string, patch: VectorPatch, previous: Row | null) {
+export async function replayIntakeVector(db: D1Database, vectors: Vectorize, id: string, planId: string, patch: VectorPatch, previous: Row | null,
+  kept: unknown) {
+  const refused = new Set(Array.isArray(kept) ? kept : [])
+  // Mixed writes queued a rebuild from the effective row. The plan may still carry an older, refused preparation.
+  if ([...searchInputs].some(key => refused.has(key))) return
   if (!await hasPendingVector(db, id, 'EXISTS (SELECT 1 FROM event_intake_protection WHERE event_id = ? AND plan_id = ?)', id, planId)) return
-  await planVectorWrite(db, id, { source: 'intake', patch, previous }).settle(vectors)
+  await planVectorWrite(db, id, { source: 'intake', previous, patch: { ...patch,
+    status: refused.has('status') ? previous?.status as string : patch.status,
+    starts_at: refused.has('starts_at') ? previous?.starts_at as string : patch.starts_at,
+  } }).settle(vectors)
 }
 
 /** D1 HTTP's one-statement transport uses the existing guarded publisher-fix trigger as its atomic write envelope. */

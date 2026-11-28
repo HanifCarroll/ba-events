@@ -159,7 +159,7 @@ export function planPastVectors(db: D1Database, eligibility: string, values: rea
   }
 }
 
-function sourceForEmbedding(row: SearchInputRow) {
+export function sourceForEmbedding(row: SearchInputRow) {
   return {
     name: row.name, description_es: row.description_es, description_en: row.description_en,
     categories: JSON.parse(row.categories) as string[], facets: JSON.parse(row.facets) as EventFacets,

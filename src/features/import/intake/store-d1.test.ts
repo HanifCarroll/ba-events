@@ -11,6 +11,7 @@ import { fakeVectorize } from '../../../../tests/support/vectorize.ts'
 import { fakeR2 } from '../../../../tests/support/r2.ts'
 import { buildSearchDocument, CURRENT_EMBEDDING_VERSION } from '#shared/lib/ai/embeddings.ts'
 import { reconcileCatalog } from '#shared/lib/db/vector-sync.ts'
+import { d1Catalog } from '../core/catalog-store-d1.ts'
 import { applyCatalogFix } from '#features/instagram-publisher/catalog-fix.ts'
 import { describeImage } from './collection.ts'
 import { readOfficialPage } from './official-page.ts'
@@ -258,7 +259,7 @@ describe.skipIf(bun)('commit_intake_plan on D1', () => {
     expect(await db.prepare('SELECT event_id FROM vector_sync WHERE event_id = ?').bind(event).first()).toBeNull()
   }, 15_000)
 
-  it('rejects a stale intake plan after a publisher correction; fresh direct intake evidence can supersede it', async () => {
+  it('keeps a publisher correction against fresh direct intake evidence and an importer update', async () => {
     await source()
     const venueId = await venue()
     const post = await observation((await run(store.reserveCollection)).id)
@@ -282,11 +283,34 @@ describe.skipIf(bun)('commit_intake_plan on D1', () => {
     expect(await run(commitPlanEffect(store, created))).toEqual(original)
     expect(await db.prepare('SELECT event_id FROM vector_sync WHERE event_id = ?').bind(event).first('event_id')).toBe(event)
 
-    const fresh = await plan(candidate, 2, 'update', event, payload, cited)
-    expect(await run(store.commitPlan(fresh))).toMatchObject({ previous_event: { name: 'Publisher correction' } })
-    expect(await db.prepare('SELECT name FROM events WHERE id = ?').bind(event).first('name')).toBe('Confirmed by venue')
+    const readback = () => db.prepare('SELECT name, image_url, min_age, search_document, embedding_version FROM events WHERE id = ?').bind(event).first()
+    const before = await readback()
+    const newer = await observation((await run(store.reserveCollection)).id, 'Confirmed by venue', 'newer-post')
+    const fresh = await plan(candidate, 2, 'update', event, { ...payload, embedding: undefined, image_url: 'https://example.test/artwork.jpg' },
+      [{ observation_id: newer, fields: ['name'] }])
+    const embed = vi.fn(async () => { throw new Error('A refused name must not reach the embedding provider') })
+    const presentation = async () => { throw new Error('A name-only correction does not change descriptions') }
+    const receipt = await run(commitPlanEffect(store, fresh, { embed, presentation }))
+    expect(embed).not.toHaveBeenCalled()
+    expect(receipt).toMatchObject({ previous_event: { name: 'Publisher correction' }, kept: ['name'] })
+    const afterIntake = await readback()
+    expect(afterIntake).toEqual({ ...before, image_url: 'https://example.test/artwork.jpg' })
     expect(await db.prepare('SELECT plan_id FROM event_intake_protection WHERE event_id = ?').bind(event).first('plan_id')).toBe(fresh)
-  })
+
+    const catalog = d1Catalog(db, vectors.index)
+    const importer = await catalog.updateEvent(event, { name: 'Importer conflict', search_document: 'Importer conflict', embedding: [0.9], min_age: 18 })
+    expect(importer).toEqual({ applied: ['min_age'], kept: ['name', 'search_document'], vectorUpdated: false })
+    const afterImporter = await readback()
+    expect(afterImporter).toEqual({ ...afterIntake, min_age: 18 })
+    expect(vectors.vectors.get(event)?.values[0]).toBeCloseTo(0.1)
+    if (process.env.SHOW_PUBLISHER_PRECEDENCE_PROOF === '1') {
+      console.log(JSON.stringify({ before, intake: { kept: receipt.kept, after: afterIntake }, importer: { ...importer, after: afterImporter } }, null, 2))
+    }
+
+    await applyCatalogFix(query, { id: event, field: 'name', from: 'Publisher correction', to: 'Second publisher correction',
+      allOccurrences: false, evidence: 'Updated synthetic program' }, id)
+    expect(await readback()).toMatchObject({ name: 'Second publisher correction' })
+  }, 15_000)
 
   it('refuses held, expired and superseded plans, curator corrections, and a duplicate that appeared after preview', async () => {
     await source(); await source('synthetic_curator', 'curator')
@@ -419,6 +443,58 @@ describe.skipIf(bun)('the operator flow on D1', () => {
     embed: async () => ({ embedding: Array(1536).fill(0.2), searchDocument: 'Synthetic Jazz | Synthetic Venue' }),
     presentation: async () => ({ description_display_es: null, description_display_en: null, description_summary_es: null, description_summary_en: null }),
   }
+
+  it('keeps the end and original doors when a locked start refuses the proposed schedule', async () => {
+    await source()
+    const venueId = await venue(), event = id(), day = shiftDay(baToday(), 4), proposedDay = shiftDay(day, 2)
+    const at = (date: string, time: string) => new Date(`${date}T${time}:00-03:00`).toISOString()
+    const startsAt = at(day, '21:00'), endsAt = at(day, '23:00'), doorsAt = at(day, '19:00')
+    await db.prepare(`INSERT INTO events (id,name,starts_at,ends_at,doors_at,venue_id,categories,source,search_document)
+      VALUES (?, 'Synthetic Jazz', ?, ?, ?, ?, '["music"]', 'luma', 'Original search')`)
+      .bind(event, at(day, '20:00'), endsAt, doorsAt, venueId).run()
+    await db.prepare("INSERT INTO publisher_catalog_fixes (operation, field, changes) VALUES ('start', 'starts_at', ?)")
+      .bind(JSON.stringify([{ id: event, to: startsAt, document: 'Original search', version: 2 }])).run()
+    const excerpt = 'Synthetic Jazz at Synthetic Venue'
+    const post = await observation((await run(store.reserveCollection)).id, excerpt)
+    const candidate = id()
+    await run(submitCandidateEffect(store, candidateInput(candidate, post, venueId, { intent: 'update', target_event_id: event,
+      date: proposedDay, time: null, doors_time: '20:00', evidence: [{ observation_id: post, fields: ['name', 'venue'], excerpt, media_id: null }] })))
+    const preview = await run(previewCandidateEffect(store, candidate))
+    expect(preview).toMatchObject({ action: 'update', reasons: [], payload: { starts_at: at(proposedDay, '00:00'), ends_at: endsAt } })
+    expect(await run(commitPlanEffect(store, preview.id, publishers))).toMatchObject({ kept: ['starts_at'] })
+    expect(await db.prepare('SELECT starts_at, ends_at, time_tba, doors_at FROM events WHERE id = ?').bind(event).first())
+      .toEqual({ starts_at: startsAt, ends_at: endsAt, time_tba: 0, doors_at: doorsAt })
+  }, 15_000)
+
+  it('skips evidence for kept admission and status so independently sourced credits can commit', async () => {
+    await source()
+    const venueId = await venue(), event = id(), date = shiftDay(baToday(), 5)
+    const startsAt = new Date(`${date}T21:00:00-03:00`).toISOString()
+    await db.prepare(`INSERT INTO events (id,name,starts_at,venue_id,categories,source,search_document)
+      VALUES (?, 'Synthetic Jazz', ?, ?, '["music"]', 'luma', 'Original search')`).bind(event, startsAt, venueId).run()
+    for (const [field, to] of [['price', 1500], ['status', 'scheduled']] as const) {
+      await db.prepare('INSERT INTO publisher_catalog_fixes (operation, field, changes) VALUES (?, ?, ?)')
+        .bind(field, field, JSON.stringify([{ id: event, to, document: 'Original search', version: 2 }])).run()
+    }
+    const excerpt = 'Synthetic Jazz 21:00 en Synthetic Venue, organiza Nube'
+    const post = await observation((await run(store.reserveCollection)).id, excerpt)
+    const candidate = id()
+    await run(submitCandidateEffect(store, candidateInput(candidate, post, venueId, { intent: 'update', target_event_id: event, date,
+      status: 'canceled', price_kind: 'free', organizer: { name: 'Nube' }, evidence: [
+        { observation_id: post, fields: ['name', 'date', 'time', 'venue', 'organizer'], excerpt, media_id: null },
+        { kind: 'official_page', fields: ['price'], excerpt: 'Entrada libre', url: 'https://example.test/admission' },
+      ] })))
+    const readPage = vi.fn(async () => { throw new Error('A page cited only for a refused price must not be read') })
+    const preview = await run(previewCandidateEffect(store, candidate, new Date(), readPage))
+    expect(preview).toMatchObject({ action: 'update', reasons: [] })
+    const embed = vi.fn(async () => { throw new Error('Refused admission must not be embedded') })
+    const receipt = await run(commitPlanEffect(store, preview.id, { ...publishers, readPage, embed }))
+    expect(readPage).not.toHaveBeenCalled()
+    expect(embed).not.toHaveBeenCalled()
+    expect(receipt).toMatchObject({ kept: ['price', 'is_free', 'status'] })
+    expect(await db.prepare('SELECT price, is_free, status, organizer_name, search_document FROM events WHERE id = ?').bind(event).first())
+      .toEqual({ price: 1500, is_free: 0, status: 'scheduled', organizer_name: 'Nube', search_document: 'Original search' })
+  }, 15_000)
 
   it.each(['current', 'legacy'])('commits selected artwork as a reference from a %s preview and lists the held backlog', async (format) => {
     await source()
@@ -598,7 +674,7 @@ describe.skipIf(bun)('the operator flow on D1', () => {
     await run(commitPlanEffect(store, reschedule.id, publishers))
     expect(await db.prepare('SELECT starts_at, ticket_url, offers_valid_from, doors_at, organizer_name FROM events WHERE id = ?').bind(create.event_id).first())
       .toEqual({ starts_at: `${newDate}T03:00:00.000Z`, ticket_url: newTicket, offers_valid_from: null, doors_at: null, organizer_name: 'Nube' })
-  })
+  }, 15_000) // Three real D1 preview/commit cycles share this budget.
 
   it.each(['20:00', '21:00', '22:00'])('checks doors at %s against a kept verified start and end', async doors_time => {
     await source()

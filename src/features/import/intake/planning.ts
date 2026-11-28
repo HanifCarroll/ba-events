@@ -1,6 +1,7 @@
 import type { EventInsert } from '#shared/lib/types.ts'
 import type { Candidate } from './schema.ts'
 import { isOfficialPage, validPublicUrl } from './schema.ts'
+import { publisherSet } from '#shared/lib/db/publisher-field-authority.ts'
 import { citesCreditName, isExcludedCreditName } from '#shared/lib/event-credit-evidence.ts'
 import { TICKET_SELLERS } from '#shared/lib/ticket-sellers.ts'
 import { citesClock, citesDateAndClock, normalizeEvidenceText } from './clock-evidence.ts'
@@ -115,6 +116,40 @@ export function retainedIntakeDoors(doors: unknown, sameDay: boolean, startsAt: 
   return sameDay && typeof doors === 'string' && (timeTba || Date.parse(doors) <= Date.parse(startsAt)) ? doors : null
 }
 
+/** A same-day unknown time or the same advertised minute is not a proposal to move the event. */
+export function intakeStartProposal(candidate: Candidate, previous: Record<string, unknown> | undefined, starts_at: string) {
+  const time_tba = candidate.time === null
+  const oldStart = previous?.starts_at
+  if (typeof oldStart === 'string' && (time_tba && baDate(oldStart) === candidate.date ||
+    Boolean(previous?.time_tba) === time_tba && Math.floor(Date.parse(oldStart) / 60_000) === Math.floor(Date.parse(starts_at) / 60_000))) {
+    return { starts_at: oldStart, time_tba: Boolean(previous?.time_tba) }
+  }
+  return { starts_at, time_tba }
+}
+
+/** Keep the proposal for the receipt, but derive schedule side effects and evidence needs from what can apply. */
+export function intakePublisherPolicy(previous: Record<string, unknown> | null | undefined, proposedStart: string, proposedTba: boolean | undefined) {
+  const locked = publisherSet(previous)
+  const oldStart = previous?.starts_at
+  const startLocked = typeof oldStart === 'string' && locked.has('starts_at')
+  const discardDoors = startLocked && Date.parse(proposedStart) !== Date.parse(oldStart)
+  const keptFacts = new Set<string>()
+  for (const field of ['name', 'price', 'status']) if (locked.has(field)) keptFacts.add(field)
+  if (startLocked) { keptFacts.add('date'); keptFacts.add('time') }
+  if (discardDoors) keptFacts.add('doors_time')
+  return { keptFacts, discardDoors, startsAt: startLocked ? oldStart : proposedStart,
+    timeTba: startLocked ? Boolean(previous?.time_tba) : proposedTba }
+}
+
+/** Ignore official citations that support only refused facts; keep mixed citations for their remaining fields. */
+export function intakePageEvidence(evidence: Candidate['evidence'], keptFacts: ReadonlySet<string>): Candidate['evidence'] {
+  return evidence.flatMap<Candidate['evidence'][number]>(item => {
+    if (!isOfficialPage(item)) return [item]
+    const fields = item.fields.filter(field => !keptFacts.has(field))
+    return fields.length ? [{ ...item, fields }] : []
+  })
+}
+
 export function suppliedDetailFacts(candidate: Candidate): string[] {
   return Object.entries({ organizer: candidate.organizer, performers: candidate.performers,
     offers_valid_from: candidate.offers_valid_from, doors_time: candidate.doors_time })
@@ -150,7 +185,8 @@ export function separatelyCitedDoors(evidence: Candidate['evidence'], time: stri
   })
 }
 
-export function validateEvidence(candidate: Candidate, observations: Observation[], media: Media[], now: Date, venueName = candidate.venue_name): string[] {
+export function validateEvidence(candidate: Candidate, observations: Observation[], media: Media[], now: Date, venueName = candidate.venue_name,
+  keptFacts: ReadonlySet<string> = new Set()): string[] {
   const reasons = [...candidate.issues]
   try {
     const start = candidateStart(candidate)
@@ -189,7 +225,7 @@ export function validateEvidence(candidate: Candidate, observations: Observation
       if (!isWholeCaptionExcerpt(post.caption, evidence.excerpt)) reasons.push('Credit and sale-opening caption evidence must quote complete lines')
     } else if (!post.caption.includes(evidence.excerpt)) reasons.push('Caption evidence must be an exact excerpt')
     const caption = evidence.media_id ? undefined : post.caption
-    if (candidate.time && evidence.fields.includes('time')) {
+    if (candidate.time && !keptFacts.has('time') && evidence.fields.includes('time')) {
       if (!citesIntakeClock(evidence.excerpt, candidate.time, caption, wholeLines)) reasons.push('Start time must appear in the cited excerpt')
     }
     if (doorTime && evidence.fields.includes('doors_time') && !citesIntakeClock(evidence.excerpt, doorTime, caption, wholeLines)) {
@@ -227,7 +263,7 @@ export function validateEvidence(candidate: Candidate, observations: Observation
   const required = ['name', 'date', 'venue', ...(candidate.time ? ['time'] : []),
     ...(candidate.status !== 'scheduled' ? ['status'] : []), ...(candidate.price_kind !== 'unknown' ? ['price'] : []),
     ...(candidate.ticket_url ? ['ticket'] : []), ...(candidate.description_es || candidate.description_en ? ['description'] : [])]
-  for (const field of required) if (!supported.has(field)) reasons.push(`Missing evidence for ${field}`)
+  for (const field of required) if (!keptFacts.has(field) && !supported.has(field)) reasons.push(`Missing evidence for ${field}`)
   if (candidate.artwork_media_id && !media.some(item => item.id === candidate.artwork_media_id && observations.some(post => post.id === item.observation_id))) reasons.push('Artwork must come from the retained evidence')
   if (candidate.intent === 'create' && candidate.status !== 'scheduled') reasons.push('A cancellation or postponement needs an existing event')
   if (candidate.intent !== 'create' && !candidate.target_event_id) reasons.push('An update or link needs an existing event identity')

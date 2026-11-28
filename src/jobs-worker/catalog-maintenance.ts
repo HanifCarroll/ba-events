@@ -10,7 +10,9 @@ import type { CRON_TASKS } from './schedule.ts'
 const HOUR = 3_600_000
 const DATE_ONLY = '(time_tba = 1 OR coalesce(is_all_day, 0) = 1)'
 
-/** Hourly expiration: date-only events stay through their Buenos Aires start day. */
+/** Hourly expiration: date-only events stay through their Buenos Aires start day.
+ * The publisher-lock SQL backstop mirrors this rule; publisher-field-lock.test.ts checks parity.
+ */
 export async function markPastEvents(db: D1Database, vectors: Vectorize, now = new Date()): Promise<{ marked: number; vectorsUpdated: number }> {
   const iso = (ms: number) => new Date(ms).toISOString()
   const today = formatInTimeZone(now, BA_TIMEZONE, 'yyyy-MM-dd')

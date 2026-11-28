@@ -27,6 +27,7 @@ import { settleVenuesEffect, getVenueIdFromResults, type VenueSettlementInput } 
 import { delayEffect } from './nominatim.ts'
 import type { CatalogStore } from './catalog-store.ts'
 import { importTry, ImportOperationError } from './effect-utils.ts'
+import { hasRefusedPublisherSearchInput } from '#shared/lib/db/publisher-field-authority.ts'
 import type { EventInsert, ImportBlocklistEntry } from '#shared/lib/types.ts'
 import { catalogImportProvenance, type CatalogImportProvenance } from './enrichment-provenance.ts'
 
@@ -237,7 +238,7 @@ export function processLumaImportEffect(
               description_en: transformed.description_en,
             }))
             : Effect.succeed({}),
-          lumaTry('luma.embed', () => embedEventWithDocument({
+          hasRefusedPublisherSearchInput(existing && { ...existing }, transformed) ? Effect.succeed(null) : lumaTry('luma.embed', () => embedEventWithDocument({
             name: transformed.name,
             description_es: transformed.description_es,
             description_en: transformed.description_en,
@@ -250,13 +251,12 @@ export function processLumaImportEffect(
           })),
         ], { concurrency: 2, mode: 'result' })
         const presentationFields = yield* Effect.fromResult(presentationResult)
-        const { embedding, searchDocument } = yield* Effect.fromResult(embeddingResult)
+        const indexed = yield* Effect.fromResult(embeddingResult)
+        const indexFields = indexed ? { embedding: indexed.embedding, search_document: indexed.searchDocument, embedding_version: CURRENT_EMBEDDING_VERSION } : {}
         const eventWithEmbedding = {
           ...transformed,
           ...presentationFields,
-          embedding,
-          search_document: searchDocument,
-          embedding_version: CURRENT_EMBEDDING_VERSION,
+          ...indexFields,
           enrichment_status: 'pending' as const,
         }
 
@@ -269,9 +269,7 @@ export function processLumaImportEffect(
               categories: eventWithEmbedding.categories,
               price: eventWithEmbedding.price,
               is_free: eventWithEmbedding.is_free,
-              embedding: eventWithEmbedding.embedding,
-              search_document: eventWithEmbedding.search_document,
-              embedding_version: eventWithEmbedding.embedding_version,
+              ...indexFields,
               ...getChangedMutableFields(eventWithEmbedding, existing),
             }).catch((error: Error) => error)
           )

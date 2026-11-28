@@ -42,6 +42,8 @@ export interface DuplicateInfo {
 
 // Data fetched from existing events for comparison
 export interface ExistingEventData {
+  /** Publisher-corrected fields and the receipt operation that owns each one. */
+  publisher_fields?: string
   organizer_name?: string | null
   organizer_url?: string | null
   id: string

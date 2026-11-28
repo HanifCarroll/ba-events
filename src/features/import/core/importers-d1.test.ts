@@ -9,7 +9,8 @@ import type { CatalogStore } from './catalog-store.ts'
 
 const day = (offset: number, hour = 20) => new Date(Date.UTC(2030, 0, 10 + offset, hour + 3)).toISOString()
 let embeds = 0
-vi.mock('#shared/lib/ai/embeddings.ts', () => ({
+vi.mock('#shared/lib/ai/embeddings.ts', async (importOriginal) => ({
+  ...await importOriginal<typeof import('#shared/lib/ai/embeddings.ts')>(),
   CURRENT_EMBEDDING_VERSION: 2,
   generateEmbedding: async () => { throw new Error('not in this fixture') },
   embedEventWithDocument: async (event: { name: string }) => { embeds++; return { embedding: [embeds, 0.5], searchDocument: `doc ${event.name}` } },
@@ -166,6 +167,26 @@ it('counts a committed Luma update even when its Vectorize write fails', async (
     .toEqual({ name: 'Noche Sintética', search_document: 'doc Noche Sintética' })
   expect(vectors.get(id)).toEqual(original)
   expect(await db.prepare('SELECT event_id FROM vector_sync WHERE event_id = ?').bind(id).first('event_id')).toBe(id)
+}, 30_000)
+
+it('does not embed or count a Luma update refused by a publisher lock', async () => {
+  const { db } = fixture
+  hiddenNow = false
+  await db.batch(['venue_review_queue', 'events', 'venues', 'import_blocklist'].map(table => db.prepare(`DELETE FROM ${table}`)))
+  const { index, vectors } = fakeVectorize()
+  const run = () => coordinators.luma(d1Catalog(db, index))
+  await run()
+  const id = await db.prepare("SELECT id FROM events WHERE external_id = 'evt-public'").first<string>('id')
+  assert(id)
+  const original = vectors.get(id)
+  await db.prepare("INSERT INTO publisher_catalog_fixes (operation, field, changes) VALUES ('luma-fixture', 'name', ?)")
+    .bind(JSON.stringify([{ id, to: 'Nombre corregido', document: 'doc Nombre corregido', version: 2 }])).run()
+  const before = embeds
+  expect(await run()).toMatchObject({ eventsUpdated: 0, eventsInserted: 0, eventsSkipped: 0 })
+  expect(embeds).toBe(before)
+  expect(await db.prepare('SELECT name, search_document FROM events WHERE id = ?').bind(id).first())
+    .toEqual({ name: 'Nombre corregido', search_document: 'doc Nombre corregido' })
+  expect(vectors.get(id)).toEqual(original)
 }, 30_000)
 
 it('does not count a protected-only Luma update in eventsUpdated', async () => {
