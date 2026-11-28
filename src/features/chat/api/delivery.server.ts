@@ -3,16 +3,11 @@ import type { RequestEvent } from '@sveltejs/kit'
 import { getUserToolContextEffect } from './user-tools.server.ts'
 import { failChatTurnEffect } from './turns.server.ts'
 import {
-	DELIVERY_AUTH_HEADER, DELIVERY_OWNER_HEADER, DELIVERY_TURN_HEADER,
-	deliveryObjectName, parseDeliveryIdentity, type DeliveryIdentity,
+	DELIVERY_AUTH_HEADER, DELIVERY_CLIENT_IP_HEADER, DELIVERY_OWNER_HEADER, DELIVERY_PATH, DELIVERY_TURN_HEADER,
+	EXECUTION_FENCE_HEADER, EXECUTION_STAGE_HEADER, deliveryBindingUrl, deliveryObjectName, encodeCheckpoint,
+	parseCheckpoint, parseDeliveryIdentity, type ChatDeliveryNamespace, type DeliveryIdentity, type RecoveryCheckpoint,
 } from '#features/chat/lib/delivery-protocol.ts'
-import { EXECUTION_FENCE_HEADER, EXECUTION_STAGE_HEADER, parseCheckpoint, type RecoveryCheckpoint } from '../../../chat-delivery-worker/recovery.ts'
 import { requestChatTiming } from '#features/chat/lib/timing.ts'
-
-export interface ChatDeliveryNamespace {
-	idFromName(name: string): unknown
-	get(id: unknown): { fetch(request: Request): Promise<Response> }
-}
 
 export function chatDeliveryBinding(event: RequestEvent): ChatDeliveryNamespace | undefined {
 	return (event.platform as { env?: { CHAT_DELIVERY?: ChatDeliveryNamespace } } | undefined)?.env?.CHAT_DELIVERY
@@ -35,9 +30,9 @@ export const forwardChatDeliveryEffect = Effect.fn('forwardChatDeliveryEffect')(
 	headers.delete(EXECUTION_STAGE_HEADER)
 	headers.set(DELIVERY_OWNER_HEADER, context.userId ?? 'guest')
 	headers.set(DELIVERY_TURN_HEADER, identity.turnId)
-	headers.set('x-chat-client-ip', event.getClientAddress())
+	headers.set(DELIVERY_CLIENT_IP_HEADER, event.getClientAddress())
 	const url = new URL(event.request.url)
-	url.pathname = `/${action}`
+	url.pathname = DELIVERY_PATH[action]
 	timing.mark('delivery_forward_start')
 	const response = yield* Effect.tryPromise({
 		try: () => binding.get(binding.idFromName(deliveryObjectName(identity))).fetch(new Request(url, {
@@ -63,7 +58,7 @@ export async function beginChatDeliveryCommit(event: RequestEvent): Promise<void
 	const identity = parseDeliveryIdentity(event.request.headers.get(DELIVERY_TURN_HEADER), event.request.headers)
 	const binding = chatDeliveryBinding(event)
 	if (!identity || !binding) throw new Error('Chat delivery is unavailable')
-	const response = await binding.get(binding.idFromName(deliveryObjectName(identity))).fetch(new Request('https://chat-delivery/commit', {
+	const response = await binding.get(binding.idFromName(deliveryObjectName(identity))).fetch(new Request(deliveryBindingUrl('commit'), {
 		method: 'POST', headers: event.request.headers,
 	}))
 	if (!response.ok) throw new Error('Chat turn stopped or superseded')
@@ -73,9 +68,9 @@ async function checkpointRequest(event: RequestEvent, checkpoint?: RecoveryCheck
 	const identity = parseDeliveryIdentity(event.request.headers.get(DELIVERY_TURN_HEADER), event.request.headers)
 	const binding = chatDeliveryBinding(event)
 	if (!identity || !binding) throw new Error('Chat delivery is unavailable')
-	return binding.get(binding.idFromName(deliveryObjectName(identity))).fetch(new Request('https://chat-delivery/checkpoint', {
+	return binding.get(binding.idFromName(deliveryObjectName(identity))).fetch(new Request(deliveryBindingUrl('checkpoint'), {
 		method: checkpoint ? 'POST' : 'GET', headers: event.request.headers,
-		...(checkpoint ? { body: JSON.stringify(checkpoint) } : {}),
+		...(checkpoint ? { body: encodeCheckpoint(checkpoint) } : {}),
 	}))
 }
 

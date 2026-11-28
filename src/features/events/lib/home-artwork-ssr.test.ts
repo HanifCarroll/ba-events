@@ -1,4 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest'
+import { load } from 'cheerio'
 import { createRawSnippet } from 'svelte'
 import { render } from 'svelte/server'
 import * as m from '#paraglide/messages.js'
@@ -134,6 +135,27 @@ describe('homepage server-rendered agenda', () => {
     const body = renderAgenda('/', [agendaEvent('timed', starts), agendaEvent('tba', starts, { time_tba: true })])
     expect(body).toMatch(/<span class="hidden md:inline"><time[^>]*>[^<]+<\/time> · <\/span>\s*<time[^>]*>20:30<\/time>/)
     expect(body).toContain(m.concierge_time_tba())
+  })
+
+  it.each([
+    ['es', 'Hoy', 'En curso', 'mié, 18 nov', '23:30'],
+    ['en', 'Today', 'Ongoing', 'Wed, Nov 18', '11:30 PM'],
+  ])('labels earlier-day ongoing cards in %s without labelling same-day cards', async (locale, today, label, date, time) => {
+    const starts = '2026-11-19T02:30:00.000Z'
+    const earlier = agendaEvent('earlier-ongoing', starts, { ends_at: '2026-11-20T22:00:00.000Z' })
+    const sameDay = agendaEvent('same-day', '2026-11-19T18:00:00.000Z')
+    const request = new Request('https://example.test/', { headers: { cookie: `PARAGLIDE_LOCALE=${locale}` } })
+    await paraglideMiddleware(request, () => {
+      const $ = load(renderAgenda('/', [earlier, sameDay]))
+      const cards = $('[data-section="event-card"]')
+      expect(cards.length).toBe(2)
+      expect(cards.eq(0).prev('[data-section="day"]').text()).toBe(today)
+      const timing = cards.eq(0).find('.card-copy > div').first()
+      expect(timing.text().replace(/\s+/g, ' ').trim()).toBe(`${label} · ${date} · ${time}`)
+      expect(timing.find('time').first().attr('datetime')).toBe(starts)
+      expect(cards.eq(1).text()).not.toContain(label)
+      return new Response()
+    })
   })
 
   it.each([

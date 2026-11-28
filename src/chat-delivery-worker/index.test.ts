@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { ChatDelivery, type ChatDeliveryEnv } from './index.ts'
-import { deliveryHeaders, DELIVERY_OWNER_HEADER, DELIVERY_TURN_HEADER } from '#features/chat/lib/delivery-protocol.ts'
-import { verifyChatExecution } from '#features/chat/api/delivery-auth.server.ts'
+import {
+ DELIVERY_OWNER_HEADER, DELIVERY_TURN_HEADER, EXECUTION_FENCE_HEADER, EXECUTION_STAGE_HEADER,
+ deliveryHeaders, verifyChatExecution, workflowRequest, type RecoveryCheckpoint,
+} from '#features/chat/lib/delivery-protocol.ts'
 import { adaptStoredMessageToCanonical } from '#features/chat/lib/canonical.ts'
-import { EXECUTION_FENCE_HEADER, EXECUTION_STAGE_HEADER, workflowRequest, type RecoveryCheckpoint } from './recovery.ts'
 
 const encoder = new TextEncoder()
 const frame = (chunk: unknown) => encoder.encode(`data: ${JSON.stringify(chunk)}\n\n`)

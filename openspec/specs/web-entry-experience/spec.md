@@ -99,6 +99,10 @@ The homepage SHALL lead with the current agenda and render exactly one centered 
 - **THEN** the agenda omits timed occurrences at their explicit end, or three hours after their start if no end is known
 - **AND** all-day and time-TBA events remain through their Buenos Aires start day, and ongoing multi-day events with a later explicit end remain eligible
 
+#### Scenario: An ongoing event started on a previous Buenos Aires day
+- **WHEN** the homepage or a public agenda shows an ongoing Event Listing that started before today's Buenos Aires midnight
+- **THEN** the agenda groups that card under Today where day headings are shown, and the card shows the localized Ongoing label followed by its actual local start date at every viewport width
+
 #### Scenario: A venue offers several time slots on the same day
 - **WHEN** remaining timed occurrences share a normalized title, a known venue, and a Buenos Aires start date
 - **THEN** they appear on one card listing distinct remaining times in order and linking to the next upcoming occurrence, or the first remaining one if no later slot remains

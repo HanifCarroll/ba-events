@@ -68,7 +68,7 @@
 	{#if key !== dayKeys[index - 1]}
 		<h2 data-section="day" class="col-span-full border-b border-[#3b3b42] pb-1.5 text-sm font-semibold text-[#d5d5db] first-letter:uppercase md:hidden">{dayHeading(key)}</h2>
 	{/if}
-	<HomeAgendaCard {event} {index} {onAsk} />
+	<HomeAgendaCard {event} {index} displayDay={key} {onAsk} />
 {/snippet}
 
 <section data-section="agenda" class="mx-auto w-full max-w-[90rem] px-4 pb-12 sm:px-8 lg:px-12">

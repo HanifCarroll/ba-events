@@ -2477,6 +2477,7 @@ describe.each(['Slack', 'Hermes'] as const)('publisher decision matrix: %s', cha
       return votes.get(ts) ?? []
     }
     await job.tick()
+    w.reviewer = review // Do not disable Threads when a later tick builds another format.
     const saved = w.draft()
     const first = saved.slack.ts!
     const approve = async (ts?: string, instruction = reason) => {
@@ -2516,6 +2517,31 @@ describe.each(['Slack', 'Hermes'] as const)('publisher decision matrix: %s', cha
     return { ...world, second: second!, receipt }
   }
 
+  async function publishedSplitWorld() {
+    const world = await approvedSplitWorld()
+    const { w, job, writes } = world
+    w.at('2026-11-19', 12, 10)
+    await job.tick()
+    const before = w.draft()
+    const sent = writes()
+    const uploads = [...w.r2]
+    expect(before).toMatchObject({ revision: 1, state: 'published', publish: { permalink: expect.any(String) },
+      threads: { revision: 1, state: 'waiting', attemptedAt: null } })
+    expect(w.ig.published).toHaveLength(1)
+    expect(sent.threads).toEqual([])
+    function preservesInstagram() {
+      const draft = w.draft()
+      expect(draft).toMatchObject({ revision: before.revision, state: before.state, approvedSeenAt: before.approvedSeenAt })
+      expect(draft.publish).toEqual(before.publish)
+      expect(writes().instagram).toEqual(sent.instagram)
+      expect(w.r2).toEqual(uploads)
+    }
+    return { ...world, before, sent, preservesInstagram }
+  }
+
+  const threadsReason = 'Synthetic instruction for Threads'
+  const acknowledgment = 'Aprobado por Hermes a pedido de Hanif.'
+
   it.each([
     { name: 'replaying Instagram approval after a split still publishes only Instagram', run: async () => {
       const { w, job, approve, writes, receipt } = await approvedSplitWorld()
@@ -2542,6 +2568,119 @@ describe.each(['Slack', 'Hermes'] as const)('publisher decision matrix: %s', cha
       expect(w.ig.published).toHaveLength(1)
       expect(writes().threads).toEqual(['create', 'publish c1'])
     } },
+    ...([false, true] as const).map(unclear => ({
+      name: `approval after Instagram publishes ${unclear ? 'recovers an unclear Threads send' : 'releases Threads on its next eligible tick'}`,
+      run: async () => {
+        const { w, job, approve, writes, second, before, sent, receipt, preservesInstagram } = await publishedSplitWorld()
+        const approvedAt = w.clock.toISOString()
+        await approve(second.ts, threadsReason)
+        expect(w.draft().delegatedApprovals).toEqual(channel === 'Hermes' ? [...receipt!, {
+          actor: 'hermes', at: approvedAt, reason: threadsReason, preview: second,
+        }] : before.delegatedApprovals)
+        if (channel === 'Hermes') expect(w.slackPosts.at(-1)).toEqual({ text: acknowledgment, threadTs: second.ts })
+        expect(writes()).toEqual(sent)
+        preservesInstagram()
+        if (unclear) w.threads.publishFault = 'after'
+        w.at('2026-11-19', 12, 20)
+        await job.tick()
+        expect(writes().threads).toEqual(['create', 'publish c1'])
+        if (unclear) expect(w.draft().threads).toMatchObject({ state: 'publishing', mediaId: null, attemptedAt: w.clock.toISOString() })
+        expect(w.threads.posts).toHaveLength(1)
+        const [post] = w.threads.posts
+        const published = { revision: 1, state: 'published', mediaId: post!.id, permalink: post!.permalink }
+        if (!unclear) expect(w.draft().threads).toMatchObject(published)
+        w.at('2026-11-19', 12, 30)
+        await job.tick()
+        expect(w.draft().threads).toMatchObject(published)
+        expect(writes().threads).toEqual(['create', 'publish c1'])
+        preservesInstagram()
+      },
+    })),
+    ...(channel === 'Hermes' ? [
+      { name: 'approval after Instagram publishes is idempotent', run: async () => {
+        const { w, job, approve, writes, second, sent, preservesInstagram } = await publishedSplitWorld()
+        await expect(approve(second.ts, threadsReason)).resolves.toBe(true)
+        const approved = w.draft()
+        expect(approved.delegatedApprovals?.at(-1)?.preview).toEqual(second)
+        const replies = [...w.slackPosts]
+        w.at('2026-11-19', 12, 11)
+        await expect(approve(second.ts, threadsReason)).resolves.toBe(false)
+        expect(w.draft()).toEqual(approved)
+        expect(w.slackPosts).toEqual(replies)
+        expect(writes()).toEqual(sent)
+        w.at('2026-11-19', 12, 20)
+        await job.tick()
+        expect(w.draft().threads).toMatchObject({ revision: 1, state: 'published' })
+        expect(writes().threads).toEqual(['create', 'publish c1'])
+        preservesInstagram()
+      } },
+      ...(['after Threads cutoff', 'at cutoff during reaction read', 'without --preview-ts', 'naming the Instagram preview',
+        'reusing the Instagram instruction', 'after a Slack ❌', 'after a Hermes veto'] as const).map(scenario => ({
+        name: `refuses ${scenario} after Instagram publishes`,
+        run: async () => {
+          const { w, job, saved, first, second, approve, veto, writes, sent, preservesInstagram } = await publishedSplitWorld()
+          let ts: string | undefined = second.ts
+          let instruction = threadsReason
+          let error = 'Hanif already vetoed the draft'
+          switch (scenario) {
+            case 'after Threads cutoff':
+              w.at('2026-11-20', 12, 1) // Threads is closed; the Instagram approval window would still be open.
+              error = 'Threads approval window is closed'
+              break
+            case 'at cutoff during reaction read': {
+              w.at('2026-11-20', 11, 59)
+              const read = job.s.slackReactions
+              job.s.slackReactions = async (...args) => {
+                w.at('2026-11-20', 12)
+                return read(...args)
+              }
+              error = 'Threads approval window is closed'
+              break
+            }
+            case 'without --preview-ts':
+              ts = undefined
+              error = 'use --preview-ts to identify the Threads-only preview'
+              break
+            case 'naming the Instagram preview':
+              ts = first
+              error = 'no confirmed Threads-only preview for r1'
+              break
+            case 'reusing the Instagram instruction':
+              instruction = reason
+              error = 'that instruction already approved a different preview'
+              break
+            case 'after a Slack ❌':
+              // A vote on the other preview still vetoes Threads.
+              job.s.slackReactions = async ts => ts === first ? [{ name: 'x', users: [HANIF] }] : []
+              break
+            case 'after a Hermes veto':
+              await veto()
+              expect(JSON.parse(readFileSync(join(w.dir, 'vetoes', `${saved.id}.json`), 'utf8'))).toMatchObject({
+                actor: 'hermes', preview: { ...second, revision: 1, instagram: false, threads: true },
+              })
+              break
+          }
+          const before = w.draft()
+          const replies = [...w.slackPosts]
+          await expect(approve(ts, instruction)).rejects.toThrow(error)
+          expect(w.draft()).toEqual(before)
+          expect(w.slackPosts).toEqual(replies)
+          expect(writes()).toEqual(sent)
+          await job.tick()
+          expect(writes()).toEqual(sent)
+          preservesInstagram()
+          const shouldWait = scenario === 'without --preview-ts' || scenario === 'naming the Instagram preview' || scenario === 'reusing the Instagram instruction'
+          expect(w.draft().threads).toMatchObject({ revision: 1, state: shouldWait ? 'waiting' : 'skipped', mediaId: null })
+          if (shouldWait) {
+            await expect(approve(second.ts, threadsReason)).resolves.toBe(true)
+            await job.tick()
+            expect(w.draft().threads).toMatchObject({ revision: 1, state: 'published' })
+            expect(writes().threads).toEqual(['create', 'publish c1'])
+            preservesInstagram()
+          }
+        },
+      })),
+    ] : []),
     { name: 'an unreadable reaction pauses both destinations despite approval', run: async () => {
       const { w, job, first, approve, writes, unreadable } = await checkWorld()
       await approve()
