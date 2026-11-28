@@ -2,9 +2,10 @@
 /** Controlled dispatch simulation through the real delivery owner; no external I/O. */
 import { ChatDelivery, type ChatDeliveryEnv } from '../src/chat-delivery-worker/index.ts'
 import { adaptStoredMessageToCanonical } from '../src/features/chat/lib/canonical.ts'
-import { deliveryHeaders, DELIVERY_OWNER_HEADER, DELIVERY_TURN_HEADER } from '../src/features/chat/lib/delivery-protocol.ts'
-import { EXECUTION_STAGE_HEADER, workflowRequest } from '../src/chat-delivery-worker/recovery.ts'
-import { verifyChatExecution } from '../src/features/chat/api/delivery-auth.server.ts'
+import {
+  DELIVERY_OWNER_HEADER, DELIVERY_TURN_HEADER, EXECUTION_STAGE_HEADER,
+  deliveryHeaders, verifyChatExecution, workflowRequest,
+} from '../src/features/chat/lib/delivery-protocol.ts'
 import { mkdir, writeFile } from 'node:fs/promises'
 
 const injected = { admissionMs: 10, workflowDispatchMs: 60, generationMs: 120 }

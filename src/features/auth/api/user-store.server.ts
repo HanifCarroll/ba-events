@@ -1,6 +1,7 @@
 /** Profile, saved events, and account deletion scoped to the user ID from the server session. */
 import type { D1Database } from '@cloudflare/workers-types'
 import { Schema } from 'effect'
+import { prepareUserHistoryErasure } from '#features/chat/api/chat-d1.server.ts'
 import type { Locale, Profile, SavedEventWithDetails } from '#shared/lib/types.ts'
 import { EVENT_COLUMNS, toPayload } from '#shared/lib/db/search-d1.server.ts'
 
@@ -65,8 +66,11 @@ export function d1UserStore(db: D1Database): UserStore {
 			await db.prepare('DELETE FROM saved_events WHERE user_id = ? AND event_id = ?').bind(userId, eventId).run()
 		},
 		async deleteAccount(userId) {
-			// users_delete_profile deletes the profile, which cascades to saved events, preferences and conversations.
-			await db.prepare('DELETE FROM users WHERE id = ?').bind(userId).run()
+			await db.batch([
+				...prepareUserHistoryErasure(db, userId).map(({ statement }) => statement),
+				// users_delete_profile still handles the profile and its non-chat dependencies.
+				db.prepare('DELETE FROM users WHERE id = ?').bind(userId),
+			])
 		},
 	}
 }

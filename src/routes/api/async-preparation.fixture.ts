@@ -1,14 +1,15 @@
 import assert from 'node:assert/strict'
+import { createHmac } from 'node:crypto'
 import { writeFileSync } from 'node:fs'
 // @ts-expect-error Bun-only fixture; application type checking has no Bun test declarations.
 import { mock } from 'bun:test'
 import { Effect } from 'effect'
 import type { RequestEvent } from '@sveltejs/kit'
 import type { CanonicalChatResponse } from '#shared/lib/types.ts'
-import { EXECUTION_FENCE_HEADER, EXECUTION_STAGE_HEADER, type ExecutionStage } from '../../chat-delivery-worker/recovery.ts'
 
 const [, , output, mode] = process.argv
-const replay = mode === 'replay'
+const wire = mode === 'wire'
+const replay = mode === 'replay' || wire
 const saved: CanonicalChatResponse = {
   contractVersion: 5, requestId: 'saved-request', kind: 'no_results', messageKey: 'no_results',
   text: 'No matching events this week.', events: [], directions: null, venue: null, operations: [], suggestions: [],
@@ -77,11 +78,11 @@ if (mode === 'events') {
   }))
   const { POST } = await import('#features/chat/api/execute.server.ts')
   let checkpoint: unknown = null
-  const execute = (stage?: ExecutionStage) => POST({
+  const execute = (stage?: 'generate' | 'commit') => POST({
     request: new Request('https://example.com/api/chat/execute', { method: 'POST', headers: {
       'Content-Type': 'application/json', 'x-chat-owner': 'synthetic-user', 'x-chat-turn': turnId,
       'x-chat-attempt': attemptId, 'x-chat-token': 'a'.repeat(64),
-      ...(stage ? { [EXECUTION_STAGE_HEADER]: stage, [EXECUTION_FENCE_HEADER]: '1' } : {}),
+      ...(stage ? { 'x-chat-execution-stage': stage, 'x-chat-execution-fence': '1' } : {}),
     }, body: JSON.stringify({
       messages: replay ? [{ role: 'user', parts: [null] }] : [],
       turnId,
@@ -101,13 +102,115 @@ if (mode === 'events') {
       } }),
     } } },
   } as unknown as RequestEvent)
-  running = replay ? execute('generate').then(async response => {
+  running = wire ? runDeliveryWireContract() : replay ? execute('generate').then(async response => {
     assert.equal(response.status, 200)
     assert.deepEqual(await readReplayFrames(response), [])
     assert.deepEqual(checkpoint, { canonical: saved, executionTrace: [] })
     return execute('commit')
   }) : execute()
 }
+// Use the pre-refactor wire values directly, not the production codec, so this
+// fixture also runs unchanged on the previous version of both services.
+async function runDeliveryWireContract(): Promise<Response> {
+  const { ChatDelivery } = await import('../../chat-delivery-worker/index.ts')
+  const { POST: start } = await import('./chat/+server.ts')
+  const { POST: acceptExecution } = await import('./chat/execute/+server.ts')
+  const name = `${turnId}:${attemptId}`
+  const secret = 'synthetic-contract-key'
+  const token = 'a'.repeat(64)
+  const owner = 'synthetic-user'
+  const clientIp = '203.0.113.1'
+  const body = JSON.stringify({ messages: [], turnId, conversationId: turnId, userClientMessageId: turnId, assistantClientMessageId: turnId })
+  const checkpointJson = JSON.stringify({ canonical: saved, executionTrace: [] })
+  const hmac = (value: string) => createHmac('sha256', secret).update(value).digest('hex')
+  const rows = new Map<string, unknown>()
+  const tasks: Promise<unknown>[] = []
+  const stages: string[] = []
+  const storage = {
+    async get<T>(key: string) { return structuredClone(rows.get(key)) as T | undefined },
+    async put(entries: Record<string, unknown>) { for (const [key, value] of Object.entries(entries)) rows.set(key, structuredClone(value)) },
+    async list<T>({ prefix }: { prefix: string }) { return new Map([...rows].filter(([key]) => key.startsWith(prefix)).sort().map(([key, value]) => [key, value as T])) },
+    async setAlarm() {},
+    async deleteAll() { rows.clear() },
+    async delete(keys: string[]) { for (const key of keys) rows.delete(key) },
+  }
+  const namespace = {
+    idFromName(objectName: string) { assert.equal(objectName, name); return objectName },
+    get() { return { fetch: forward } },
+  }
+  const asWebEvent = (request: Request) => ({ request, locals: {}, getClientAddress: () => clientIp,
+    platform: { env: { CHAT_DELIVERY: namespace, CHAT_DELIVERY_SECRET: secret } },
+  }) as unknown as RequestEvent
+  const object = new ChatDelivery({ storage, waitUntil: task => { tasks.push(task) } }, {
+    CHAT_DELIVERY_SECRET: secret, CHAT_DELIVERY: namespace,
+    CHAT_RESPONSE_WORKFLOW: {
+      async create(input) { assert.deepEqual(input, { id: `${turnId}-${attemptId}`, params: { name } }); return {} },
+      async get() { throw new Error('Workflow admission should not need a retry') },
+    },
+    CHAT_EXECUTION: { async fetch(request) {
+      const stage = request.headers.get('x-chat-execution-stage')
+      const fence = request.headers.get('x-chat-execution-fence')
+      const time = request.headers.get('x-chat-execution-time')
+      assert(stage === 'generate' || stage === 'commit')
+      assert.equal(fence, stage === 'generate' ? '1' : '2')
+      stages.push(stage)
+      assert.equal(request.url, 'https://example.com/api/chat/execute')
+      assert.equal(request.method, 'POST')
+      assert.equal(await request.clone().text(), body)
+      assert.equal(request.headers.get('x-chat-client-ip'), clientIp)
+      assert.match(time ?? '', /^\d+$/)
+      const signature = hmac(JSON.stringify([turnId, attemptId, token, owner, time, fence, stage]))
+      assert.equal(request.headers.get('x-chat-execution-auth'), signature)
+      const rejected = request.clone()
+      rejected.headers.set('x-chat-execution-fence', '0')
+      assert.equal((await acceptExecution(asWebEvent(rejected))).status, 404)
+      return acceptExecution(asWebEvent(request))
+    } },
+  })
+  async function forward(request: Request): Promise<Response> {
+    const path = new URL(request.url).pathname
+    if (path === '/checkpoint' || path === '/commit') {
+      deliveryCalls.push(`${request.method} ${path}`)
+      assert.equal(request.url, `https://chat-delivery${path}`)
+      if (request.method === 'POST' && path === '/checkpoint') assert.equal(await request.clone().text(), checkpointJson)
+    }
+    const response = await object.fetch(request)
+    if (path === '/checkpoint' && request.method === 'GET') {
+      assert.equal(response.headers.get('content-type')?.split(';')[0], 'application/json')
+      assert.equal(await response.clone().text(), checkpointJson)
+    }
+    return response
+  }
+  const stream = await start(asWebEvent(new Request('https://example.com/api/chat?drop=executor-query', {
+    method: 'POST', headers: { 'x-chat-attempt': attemptId, 'x-chat-token': token }, body,
+  })))
+  assert.equal(stream.status, 200)
+  assert.equal(stream.headers.get('x-chat-reconnectable'), '1')
+  assert.equal(stream.headers.get('x-vercel-ai-ui-message-stream'), 'v1')
+  assert.equal(stream.headers.get('content-type'), 'text/event-stream')
+  await Promise.all(tasks)
+  for (const [stage, phase, fence] of [['generate', 'running', 1], ['commit', 'completed', 2]] as const) {
+    const url = new URL('https://chat-delivery/run')
+    url.searchParams.set('name', name)
+    url.searchParams.set('stage', stage)
+    const time = String(Date.now())
+    const response = await object.fetch(new Request(url, { method: 'POST', headers: {
+      'x-chat-workflow-time': time, 'x-chat-workflow-auth': hmac(`${url.pathname}${url.search}:${time}`),
+    } }))
+    assert.equal(response.status, 200)
+    assert.deepEqual(await response.json(), { phase, fence })
+    if (stage === 'generate') assert.deepEqual(rows.get('checkpoint'), JSON.parse(checkpointJson))
+  }
+  assert.deepEqual(stages, ['generate', 'commit'])
+  const frames = (await stream.clone().text()).split('\n\n')
+  assert.equal(frames.shift(), ': connected')
+  assert.equal(frames.pop(), '')
+  assert.equal(frames.pop(), 'data: [DONE]')
+  assert(frames.length > 0)
+  frames.forEach((frame, offset) => assert.match(frame, new RegExp(`^id: ${offset}\\ndata: \\{`)))
+  return stream
+}
+
 try {
   await new Promise(resolve => setTimeout(resolve, 0))
   if (!replay) assert.deepEqual(started, mode === 'events' ? [] : ['pin', 'history'])

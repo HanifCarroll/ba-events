@@ -356,6 +356,19 @@ export function getTurnAssistantMessage(db: D1Database, userId: string, turn: Ch
 // ---------------------------------------------------------------------------------------------------------------------
 // A signed-in user's conversations and messages
 
+/** Prepare child-first erasure, including soft-deleted conversations, for the account deletion batch. */
+export function prepareUserHistoryErasure(db: D1Database, userId: string) {
+	const ownedConversations = 'SELECT id FROM conversations WHERE user_id = ?1'
+	return [
+		['chat_turns', `user_id = ?1 OR conversation_id IN (${ownedConversations})`],
+		['messages', `conversation_id IN (${ownedConversations})`],
+		['conversations', 'user_id = ?1'],
+	].map(([table, condition]) => ({
+		table,
+		statement: db.prepare(`DELETE FROM ${table} WHERE ${condition}`).bind(userId),
+	}))
+}
+
 export function listConversations(db: D1Database, userId: string, limit: number, offset: number) {
 	return run(async () => {
 		const [page, total] = await db.batch([

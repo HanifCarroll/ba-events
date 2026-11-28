@@ -58,7 +58,7 @@ The Worker MUST sign people in through Better Auth with a one-time magic link, s
 - **THEN** their session carries their original user id, so their profile, saved events, preferences, and conversations are theirs
 
 ### Requirement: Account deletion is session scoped
-Account deletion MUST require the authenticated account and MUST NOT trust a mismatched client user identifier.
+Account deletion MUST require the authenticated account and MUST NOT trust a mismatched client user identifier. It MUST erase that account's Event Chat conversations (including soft-deleted conversations), messages, and turns in the same transaction that deletes the account. It MUST retain product feedback with the account reference cleared and leave other accounts and Telegram conversations unchanged.
 
 #### Scenario: Deletion request names another account
 - **WHEN** the supplied identifier differs from the session user
@@ -67,6 +67,10 @@ Account deletion MUST require the authenticated account and MUST NOT trust a mis
 #### Scenario: Deletion request without a session
 - **WHEN** nobody is signed in, on either backend
 - **THEN** deletion is denied and no account is deleted
+
+#### Scenario: Deletion fails during history erasure or account removal
+- **WHEN** an authenticated account deletion cannot finish every operation in the transaction
+- **THEN** neither the account nor its history is deleted
 
 ### Requirement: Saved controls preserve localized accessible names
 Save controls SHALL use the active UI locale. When a saved control has visible text, its accessible name SHALL include that text and describe the remove action.
@@ -123,6 +127,7 @@ Sign-in, callback verification, profile saves, and account deletion MUST have ex
 - `src/features/auth/api/better-auth.server.ts`
 - `src/features/auth/api/magic-link-email.server.ts`
 - `src/features/auth/api/user-store.server.ts`
+- `src/features/chat/api/chat-d1.server.ts`
 - `src/routes/api/auth/[...path]/+server.ts`
 - `src/routes/api/saved/+server.ts`
 - `migrations/0004_better_auth.sql`
@@ -135,7 +140,7 @@ Sign-in, callback verification, profile saves, and account deletion MUST have ex
 - `src/features/events/lib/{saved-membership,saved-list}.machine.ts`
 
 ### Deterministic tests
-- `src/features/auth/api/better-auth-d1.server.test.ts` (magic link, Google linking, sessions, cross-user checks, `/api/saved`, and the user import on Miniflare D1)
+- `src/features/auth/api/better-auth-d1.server.test.ts` (magic link, Google linking, sessions, cross-user checks, atomic account and history deletion, `/api/saved`, and the user import on Miniflare D1)
 - `src/features/auth/hooks/better-auth-session-sync.test.ts` (another tab's sign-in and sign-out, and account deletion clearing the state)
 - `src/features/auth/hooks/identity-machines.test.ts`
 - `src/features/auth/hooks/account-deletion.test.ts`
