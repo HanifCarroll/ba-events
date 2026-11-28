@@ -99,6 +99,10 @@ The homepage SHALL lead with the current agenda and render exactly one centered 
 - **THEN** the agenda omits timed occurrences at their explicit end, or three hours after their start if no end is known
 - **AND** all-day and time-TBA events remain through their Buenos Aires start day, and ongoing multi-day events with a later explicit end remain eligible
 
+#### Scenario: An ongoing event started on a previous Buenos Aires day
+- **WHEN** the homepage or a public agenda shows an ongoing Event Listing that started before today's Buenos Aires midnight
+- **THEN** the agenda groups that card under Today where day headings are shown, and the card shows the localized Ongoing label followed by its actual local start date at every viewport width
+
 #### Scenario: A venue offers several time slots on the same day
 - **WHEN** remaining timed occurrences share a normalized title, a known venue, and a Buenos Aires start date
 - **THEN** they appear on one card listing distinct remaining times in order and linking to the next upcoming occurrence, or the first remaining one if no later slot remains
@@ -160,6 +164,51 @@ The D1 homepage feed SHALL omit out-of-scope and unjudged events before applying
 - **WHEN** a date-only event is dated today or an exhibition that started yesterday ends tomorrow
 - **THEN** the sitemap lists both events, even though their stored starts have passed
 - **AND** a date-only event from yesterday and a timed event whose cutoff has passed are not listed
+
+### Requirement: The public date agendas use the homepage's eligibility and Buenos Aires time
+The site SHALL serve `/agenda/hoy`, `/agenda/fin-de-semana`, `/agenda/esta-semana`, and `/agenda/gratis` with event cards, the date-specific text and FAQ, and a canonical URL. The pages SHALL use the Agenda's schedule, Editorial Scope, Event Image, remaining-time, grouping, and Free Admission rules. Their URLs SHALL appear in the sitemap with the latest relevant Event Listing revision, if any.
+
+#### Scenario: A visitor opens an agenda at a date boundary
+- **WHEN** a visitor requests one of the public agendas
+- **THEN** Hoy covers the current Buenos Aires calendar day, the weekend covers the current or coming Friday–Sunday, and the week ends at local midnight seven days after today
+- **AND** an eligible event still in progress may appear if its interval overlaps the selected dates; it appears under today, contributes once to the today count, and stops appearing when its occurrence ends
+- **AND** Gratis excludes pay-what-you-can events and orders the remaining free events by date
+- **AND** the page describes its empty state when there are no matches and includes structured data only for the event cards it shows
+
+#### Scenario: A visitor with an English preference requests a Spanish agenda
+- **WHEN** the visitor opens a Spanish agenda URL with an English preference cookie or English `Accept-Language`
+- **THEN** the initial document and event-card labels are Spanish, and the site does not change the saved language preference
+
+### Requirement: Public topic agendas classify the shared Agenda selection
+The site SHALL serve and list in the sitemap weekly agendas for theatre, live music, fairs, exhibitions, poetry, and tango. Topic criteria SHALL apply to eligible Agenda events before grouping. Fairs, exhibitions, poetry, and tango SHALL show at most six matching later cards within 60 Buenos Aires days, distinguish no matches this week from no matches in that horizon, and never substitute another topic's events.
+
+#### Scenario: A listing has ambiguous wording
+- **WHEN** a title mentions a holiday rather than a fair, or a tarot reading rather than poetry
+- **THEN** the listing is not selected solely for that wording
+- **AND** a concert at a theatre can appear on both the theatre and live music agendas because the theatre page explicitly includes other events at theatre venues
+
+### Requirement: Barrio and venue agendas use public Catalog locations
+The site SHALL serve a page for each listed barrio even if its weekly Agenda is empty, and an index that links to barrios with current or upcoming eligible events. It SHALL show today's remaining events first, omit hidden and unconfirmed locations, and rank other barrio links by weekly card count rather than distance. A venue page SHALL show up to 30 current or upcoming eligible cards and omit unset public details. Venue pages and the barrio index SHALL use the Agenda’s occurrence cutoff. Venues without current or upcoming eligible events SHALL return a themed Spanish 404 and SHALL NOT appear in the sitemap. The initial document and card labels on venue URLs SHALL be Spanish without changing the visitor's language preference.
+
+#### Scenario: Two venues have the same readable slug
+- **WHEN** two venue names normalize to the same slug
+- **THEN** the oldest record gets the bare slug, using the venue ID to break creation-time ties, and the other venues have ID-suffixed slugs
+- **AND** venue eligibility does not change which slug belongs to each venue
+
+### Requirement: Discovery URLs keep their own language
+The English weekend and free-event pages SHALL show the same selection as their Spanish counterparts, render their document and cards in English without changing the visitor’s saved language, and show English date navigation linking to English equivalents when available and Spanish agendas otherwise. The current item SHALL not be a link. The site SHALL serve the Spanish and English about pages with their approved copy and current count of enabled Instagram source accounts. All four routes SHALL be linked from the footer and sitemap.
+
+#### Scenario: A Spanish-preferring visitor opens an English listing
+- **WHEN** the visitor requests the English weekend, free-event, or about URL with a Spanish preference
+- **THEN** the document uses `lang="en"`, has an English title and metadata, and links to its Spanish counterpart
+- **AND** the visitor's saved preference does not change, and event cards still link to the existing event detail URLs
+
+### Requirement: The site feedback controls use the active language
+The navigation label, dialog, and its submission states SHALL use the active language. The icon-only dialog close button SHALL have an accessible name in the active language. The privacy and about pages SHALL refer to the option by the same name as the menu.
+
+#### Scenario: A feedback submission fails in Spanish
+- **WHEN** a person opens **Comentarios** and the submission fails
+- **THEN** the dialog shows the failure in Spanish and keeps the draft available to retry
 
 ### Requirement: Card artwork preserves complete posters with a subtle background
 Event artwork SHALL preserve the full image without cropping inside a softly tinted container. The container SHALL remain visually quieter than the card content when artwork dimensions leave unused space.

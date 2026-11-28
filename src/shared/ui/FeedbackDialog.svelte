@@ -13,6 +13,7 @@
 	import { Button } from '#shared/ui/button/index.ts';
 	import { Textarea } from '#shared/ui/textarea/index.ts';
 	import { track } from '#shared/lib/analytics.ts';
+	import * as m from '#paraglide/messages.js';
 
 	let {
 		open,
@@ -52,41 +53,41 @@
 				>
 					<CheckCircle class="h-6 w-6 text-primary" />
 				</div>
-				<DialogTitle class="font-display text-foreground mb-2">Thank you!</DialogTitle>
+				<DialogTitle class="font-display text-foreground mb-2">{m.feedback_thanks()}</DialogTitle>
 				<DialogDescription class="text-muted-foreground">
-					Your feedback helps us improve BA Eventos.
+					{m.feedback_thanks_description()}
 				</DialogDescription>
 			</div>
 		{:else}
 			<!-- Feedback form -->
 			<DialogHeader>
 				<DialogTitle class="font-display text-foreground">
-					What feedback do you have for us?
+					{m.feedback_prompt()}
 				</DialogTitle>
 				<DialogDescription class="text-muted-foreground">
-					Tell us what you like, what could be better, or report any issues.
+					{m.feedback_description()}
 				</DialogDescription>
 			</DialogHeader>
 
 			<Textarea
 				class="min-h-[120px] bg-background/50 border-border/50 focus-visible:border-primary/50 focus-visible:ring-primary/20"
-				placeholder="Start typing..."
+				placeholder={m.feedback_placeholder()}
 				value={feedback}
 				oninput={(e) => send({ type: 'EDIT', message: e.currentTarget.value })}
 				disabled={isSubmitting}
 				autofocus
 			/>
 
-			{#if $snapshot.context.error}<p role="alert" class="text-sm text-destructive">{$snapshot.context.error}</p>{/if}
+			{#if $snapshot.context.error}<p role="alert" class="text-sm text-destructive">{m.feedback_error()}</p>{/if}
 
 			<DialogFooter>
-				<Button variant="ghost" onclick={() => handleClose(false)}>Cancel</Button>
+				<Button variant="ghost" onclick={() => handleClose(false)}>{m.feedback_cancel()}</Button>
 				<Button
 					onclick={handleSubmit}
 					disabled={!feedback.trim() || isSubmitting}
 					class="bg-primary hover:bg-primary/90"
 				>
-					{isSubmitting ? 'Sending...' : 'Send Feedback'}
+					{isSubmitting ? m.feedback_sending() : m.feedback_send()}
 				</Button>
 			</DialogFooter>
 		{/if}

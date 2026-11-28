@@ -1,8 +1,10 @@
+import type { RequestEvent } from '@sveltejs/kit';
+import { trace } from '@opentelemetry/api';
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('$app/env', () => ({ dev: false }));
 
-import { handleCanonicalOrigin, handleLocaleSync, handleReadOnly } from './hooks.server';
+import { handleCanonicalOrigin, handleLocaleSync, handleParaglide, handleReadOnly } from './hooks.server';
 
 const eventFor = (url: string, method = 'GET') => ({ url: new URL(url), request: new Request(url, { method }), route: { id: null } });
 
@@ -93,6 +95,35 @@ describe('locale preference synchronization', () => {
 		};
 		await handleLocaleSync({ event, resolve } as never);
 		expect(cookies.set).toHaveBeenCalledWith('PARAGLIDE_LOCALE', 'es', expect.objectContaining({ httpOnly: false }));
+	});
+});
+
+describe('discovery locale', () => {
+	it.each([['/en/about', 'es', 'en'], ['/agenda/gratis', 'en', 'es']] as const)('pins the locale on %s independently of the preference', async (path, saved, language) => {
+		const url = `https://baeventos.com${path}`;
+		const set = vi.fn();
+		const span = trace.getTracer('test').startSpan('discovery-locale');
+		const event: RequestEvent = {
+			...eventFor(url),
+			request: new Request(url, { headers: { accept: 'text/html', cookie: `PARAGLIDE_LOCALE=${saved}` } }),
+			cookies: { get: () => saved, getAll: () => [], set, delete: vi.fn(), parse: vi.fn(), serialize: vi.fn() },
+			locals: { user: null, isAdmin: false, profile: {
+				id: 'fixture-profile', email: 'fixture@example.test', display_name: null, role: 'user', locale: saved,
+				created_at: '2026-11-27T12:00:00.000Z', updated_at: '2026-11-27T12:00:00.000Z',
+			} },
+			fetch, getClientAddress: () => '127.0.0.1', params: {}, platform: undefined, setHeaders: vi.fn(),
+			isDataRequest: false, isSubRequest: false, isRemoteRequest: false,
+			tracing: { enabled: false, root: span, current: span },
+		};
+		try {
+			const response = await handleLocaleSync({ event, resolve: async (synced) => handleParaglide({
+				event: synced, resolve: async (_event, options) => new Response(await options?.transformPageChunk?.({ html: '%paraglide.lang%', done: true })),
+			}) });
+			expect(await response.text()).toBe(language);
+			expect(set).not.toHaveBeenCalled();
+		} finally {
+			span.end();
+		}
 	});
 });
 

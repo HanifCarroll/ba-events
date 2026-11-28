@@ -4,11 +4,17 @@
 	import * as m from '#paraglide/messages.js'
 	import { formatDoorsTime, formatShortDate, formatTime } from '#shared/lib/utils/formatting.ts'
 	import { formatPrice } from '../lib/format-price.ts'
-	import type { HomeAgendaCardEvent, HomeAgendaEvent } from '../lib/home-feed.ts'
+	import { homeDay, type HomeAgendaCardEvent, type HomeAgendaEvent } from '../lib/home-feed.ts'
+	import { barrioPaths } from '#features/discovery/lib/place-pages.ts'
 	import { HOME_ARTWORK_SIZES } from '../lib/artwork-delivery.ts'
 	import EventArtwork from './EventArtwork.svelte'
 
-	let { event, index, onAsk }: { event: HomeAgendaCardEvent; index: number; onAsk?: (event: HomeAgendaEvent) => void } = $props()
+	let { event, index, displayDay, onAsk }: {
+		event: HomeAgendaCardEvent
+		index: number
+		displayDay: string
+		onAsk?: (event: HomeAgendaEvent) => void
+	} = $props()
 	let expanded = $state<string | null>(null)
 	let hovered = $state<string | null>(null)
 	const visibleTooltip = $derived(hovered ?? expanded)
@@ -25,7 +31,10 @@
 
 	const sourceIsPost = $derived(/^https:\/\/(?:www\.)?instagram\.com\/(?:p|reel)\/[\w-]+\/?(?:[?#].*)?$/i.test(event.sourceUrl ?? ''))
 	const hasTime = $derived(event.time_tba || !event.is_all_day)
+	const ongoingFromEarlierDay = $derived(homeDay(event.starts_at) < displayDay)
 	const price = $derived(event.payWhatYouCan ? m.home_price_pay_what_you_can() : formatPrice(event.price, event.is_free))
+	const barrioLink = $derived(!event.location_hidden && !event.location_tba && event.venue_neighborhood
+		? barrioPaths.get(event.venue_neighborhood) : undefined)
 	const venue = $derived(event.location_hidden ? m.event_location_hidden() :
 		[event.venue_name, event.venue_neighborhood].filter(Boolean).join(' · ') || m.concierge_location_tba())
 	const terms = [
@@ -70,6 +79,10 @@
 	{/each}{rest}
 {/snippet}
 
+{#snippet startDate()}
+	<time datetime={event.starts_at}>{formatShortDate(event.starts_at)}</time>{#if hasTime}{' · '}{/if}
+{/snippet}
+
 <article data-section="event-card" class="agenda-card flex min-w-0 flex-col border-b border-[#3b3b42] pb-3">
 	<div class="card-content group relative">
 		<a href={`/events/${encodeURIComponent(event.id)}`} class="card-art block after:absolute after:inset-0 after:z-1">
@@ -88,8 +101,12 @@
 			/>
 		</a>
 		<div class="card-copy space-y-1 pt-2 wrap-anywhere">
-			<div class={['text-xs font-medium text-[#d0ff36] tabular-nums sm:text-sm', !hasTime && 'hidden md:block']}>
-				<span class="hidden md:inline"><time datetime={event.starts_at}>{formatShortDate(event.starts_at)}</time>{#if hasTime}{' · '}{/if}</span>
+			<div class={['text-xs font-medium text-[#d0ff36] tabular-nums sm:text-sm', !hasTime && !ongoingFromEarlierDay && 'hidden md:block']}>
+				{#if ongoingFromEarlierDay}
+					<span>{m.home_ongoing()}</span>{' · '}{@render startDate()}
+				{:else}
+					<span class="hidden md:inline">{@render startDate()}</span>
+				{/if}
 				{#if event.slotStarts}
 					{#each event.slotStarts as slot, i (slot)}{#if i}{' · '}{/if}<time datetime={slot}>{formatTime(slot)}</time>{/each}
 				{:else if event.time_tba}
@@ -100,7 +117,9 @@
 				<h2 class="line-clamp-2 text-base leading-tight font-semibold has-[:focus-visible]:line-clamp-none has-[[aria-expanded=true]]:line-clamp-none group-has-[a:hover]:underline group-has-[a:focus-visible]:underline">{@render glossaryText(event.name, 'title')}</h2>
 			</div>
 			<p class="relative text-xs leading-snug text-[#ccccd4]">
-				{@render glossaryText(venue, 'meta')}<span class="hidden md:inline">{' · '}</span><span class="block text-[#f6f6f7] md:inline md:text-inherit">{@render glossaryText(price, 'price')}</span>
+				{#if barrioLink}
+					{#if event.venue_name}{@render glossaryText(event.venue_name, 'meta')}{' · '}{/if}<a data-sveltekit-reload class="relative z-10 underline-offset-4 hover:underline focus-visible:underline" href={barrioLink}>{event.venue_neighborhood}</a>
+				{:else}{@render glossaryText(venue, 'meta')}{/if}<span class="hidden md:inline">{' · '}</span><span class="block text-[#f6f6f7] md:inline md:text-inherit">{@render glossaryText(price, 'price')}</span>
 			</p>
 		</div>
 	</div>

@@ -20,6 +20,9 @@ import {
   semanticEventSearchD1,
 } from './search-d1.server.ts'
 import {
+  discoveryAgendaD1,
+  discoveryVenuesD1,
+  enabledInstagramSourceCountD1,
   eventArtworkD1,
   eventByIdD1,
   eventsByIdsD1,
@@ -79,6 +82,10 @@ export async function getEventsWithVenues(limit = 50) {
 export async function getHomeAgendaEvents(window: HomeWindow) {
   return homeAgendaD1(boundCatalogD1(), window)
 }
+
+export const getDiscoveryAgendaEvents = (window: HomeWindow) => discoveryAgendaD1(boundCatalogD1(), window)
+export const getDiscoveryVenues = () => discoveryVenuesD1(boundCatalogD1())
+export const getEnabledInstagramSourceCount = () => enabledInstagramSourceCountD1(boundCatalogD1())
 
 export function getUpcomingEventSitemapRows(asOf: Date) {
   return upcomingEventSitemapRowsD1(boundCatalogD1(), asOf)

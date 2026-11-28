@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { Dialog as DialogPrimitive } from "bits-ui";
 	import { X } from "lucide-svelte";
+	import * as m from "#paraglide/messages.js";
 	import { cn } from "#shared/lib/utils/index.ts";
 	import DialogPortal from "./dialog-portal.svelte";
 	import DialogOverlay from "./dialog-overlay.svelte";
@@ -35,10 +36,10 @@
 		{#if showCloseButton}
 			<DialogPrimitive.Close
 				data-slot="dialog-close"
+				aria-label={m.dialog_close()}
 				class="ring-offset-background focus:ring-ring text-muted-foreground hover:text-primary absolute top-4 right-4 rounded-xs transition-colors focus:ring-2 focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4"
 			>
-				<X />
-				<span class="sr-only">Close</span>
+				<X aria-hidden="true" />
 			</DialogPrimitive.Close>
 		{/if}
 	</DialogPrimitive.Content>
