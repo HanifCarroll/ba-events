@@ -1,5 +1,5 @@
 import type { RequestEvent } from '@sveltejs/kit'
-import { verifyChatExecution } from '#features/chat/api/delivery-auth.server.ts'
+import { verifyChatExecution } from '#features/chat/lib/delivery-protocol.ts'
 import { POST as executeChat } from '#features/chat/api/execute.server.ts'
 import { requestChatTiming } from '#features/chat/lib/timing.ts'
 

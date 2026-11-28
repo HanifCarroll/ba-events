@@ -1,6 +1,6 @@
 import { WorkflowEntrypoint, WorkerEntrypoint, type WorkflowEvent, type WorkflowStep } from 'cloudflare:workers'
 import type { ChatDeliveryEnv } from './index.ts'
-import { workflowRequest, type ExecutionStage } from './recovery.ts'
+import { workflowRequest, type ExecutionStage } from '#features/chat/lib/delivery-protocol.ts'
 import { createChatTiming } from '#features/chat/lib/timing.ts'
 
 export type ChatWorkflowParams = { name: string }
