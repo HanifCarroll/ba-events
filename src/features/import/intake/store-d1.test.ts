@@ -621,7 +621,7 @@ describe.skipIf(bun)('the operator flow on D1', () => {
     await run(commitPlanEffect(store, reschedule.id, publishers))
     expect(await db.prepare('SELECT starts_at, ticket_url, offers_valid_from, doors_at, organizer_name FROM events WHERE id = ?').bind(create.event_id).first())
       .toEqual({ starts_at: `${newDate}T03:00:00.000Z`, ticket_url: newTicket, offers_valid_from: null, doors_at: null, organizer_name: 'Nube' })
-  })
+  }, 15_000) // Three real D1 preview/commit cycles share this budget.
 
   it.each(['20:00', '21:00', '22:00'])('checks doors at %s against a kept verified start and end', async doors_time => {
     await source()
